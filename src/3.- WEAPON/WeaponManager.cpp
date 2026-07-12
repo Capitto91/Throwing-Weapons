@@ -48,6 +48,25 @@ namespace Weapon
         weaponState.SetState(State::kInHand);
     }
 
+    void WeaponManager::OnLoadingScreenClosed()
+    {
+        switch (weaponState.GetState()) {
+        case State::kThrown:
+        case State::kStuck:
+        case State::kReturning:
+            RecallWeapon();
+            break;
+        case State::kAiming:
+            // El arma sigue en la mano (el desequipar solo pasa al soltar);
+            // solo reordenamos el estado por si la pulsación de soltar se
+            // perdió durante la carga.
+            weaponState.SetState(State::kInHand);
+            break;
+        default:
+            break;
+        }
+    }
+
     void WeaponManager::BeginAiming()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -68,7 +87,9 @@ namespace Weapon
         auto* weapon = weaponState.GetActiveWeapon();
 
         if (player && weapon) {
-            RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon);
+            // Sin cola y aplicación inmediata: un desequipar encolado podía
+            // perderse en silencio si se dispara desde un evento de carga.
+            RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
         }
 
         weaponState.SetState(State::kThrown);
@@ -80,7 +101,13 @@ namespace Weapon
         auto* weapon = weaponState.GetActiveWeapon();
 
         if (player && weapon) {
-            RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon);
+            // Se difiere al siguiente tick (tarea de SKSE) en vez de
+            // llamarlo aquí mismo: invocado justo al cerrarse una pantalla
+            // de carga, el juego aceptaba la orden (sonaba el sonido de
+            // equipar) pero nunca llegaba a equipar el arma de verdad.
+            SKSE::GetTaskInterface()->AddTask([player, weapon]() {
+                RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+            });
         }
 
         weaponState.SetActiveWeapon(nullptr);

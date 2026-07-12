@@ -55,6 +55,53 @@ namespace Events
             ~EquipGuard() override = default;
         };
 
+        // Recupera el arma si el ciclo estaba en marcha cuando se cierra
+        // cualquier pantalla de carga (puerta, viaje rápido...). A
+        // diferencia de la resincronización de kPostLoadGame, aquí sí es
+        // seguro reequipar: WeaponManager recuerda el arma exacta de la
+        // sesión en curso, no hace falta adivinar nada (ver
+        // WeaponManager::OnLoadingScreenClosed).
+        //
+        // Se descartaron dos alternativas, probadas en el juego:
+        // - TESCellAttachDetachEvent filtrado al jugador: nunca se dispara
+        //   para su referencia (igual que en Papyrus, OnCellAttach/
+        //   OnCellDetach tampoco lo hacen).
+        // - TESCellFullyLoadedEvent: solo salta cuando el motor tiene que
+        //   cargar datos nuevos, así que no se dispara al volver a una
+        //   celda exterior ya visitada/en caché (p. ej. salir de un
+        //   interior hacia el exterior del que se venía).
+        // El cierre de "Loading Menu" es independiente de la caché: salta
+        // siempre que el jugador termina cualquier transición con pantalla
+        // de carga.
+        class LoadingScreenWatcher final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+        {
+        public:
+            static LoadingScreenWatcher* GetSingleton()
+            {
+                static LoadingScreenWatcher singleton;
+                return &singleton;
+            }
+
+            LoadingScreenWatcher(const LoadingScreenWatcher&) = delete;
+            LoadingScreenWatcher(LoadingScreenWatcher&&) = delete;
+            LoadingScreenWatcher& operator=(const LoadingScreenWatcher&) = delete;
+            LoadingScreenWatcher& operator=(LoadingScreenWatcher&&) = delete;
+
+        protected:
+            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+            {
+                if (a_event && !a_event->opening && a_event->menuName == RE::LoadingMenu::MENU_NAME) {
+                    Weapon::WeaponManager::GetSingleton()->OnLoadingScreenClosed();
+                }
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+        private:
+            LoadingScreenWatcher() = default;
+            ~LoadingScreenWatcher() override = default;
+        };
+
         void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
         {
             switch (a_message->type) {
@@ -81,5 +128,6 @@ namespace Events
     {
         SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
         RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
+        RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
     }
 }
