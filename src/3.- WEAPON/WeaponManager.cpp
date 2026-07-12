@@ -3,6 +3,8 @@
 
 #include "3.- WEAPON/WeaponManager.h"
 
+#include "4.- THROW/ThrowManager.h"
+
 namespace Weapon
 {
     WeaponManager* WeaponManager::GetSingleton()
@@ -87,6 +89,12 @@ namespace Weapon
         auto* weapon = weaponState.GetActiveWeapon();
 
         if (player && weapon) {
+            // El proyectil réplica se crea antes de desequipar, mientras el
+            // arma todavía está en la mano (para tomar su posición justo
+            // ahí, ver Throw::LaunchWeapon), y "al mismo tiempo" (Mecanica
+            // del arma.txt, punto 2) el arma original se oculta.
+            Throw::LaunchWeapon(player);
+
             // Sin cola y aplicación inmediata: un desequipar encolado podía
             // perderse en silencio si se dispara desde un evento de carga.
             RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);

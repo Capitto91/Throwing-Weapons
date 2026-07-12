@@ -31,3 +31,11 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - Se descartaron dos alternativas antes de llegar a esta: `TESCellAttachDetachEvent` filtrado al jugador nunca se dispara para su referencia (igual que en Papyrus, `OnCellAttach`/`OnCellDetach` tampoco lo hacen); `TESCellFullyLoadedEvent` solo salta cuando el motor tiene que cargar datos nuevos, así que no se disparaba al volver a una celda exterior ya visitada/en caché.
   - `EquipObject`/`UnequipObject` fuerzan aplicación inmediata sin cola; además, el reequipar se difiere un tick (tarea de SKSE) en vez de llamarse dentro del propio evento de cierre de carga — invocado en ese instante exacto, el juego aceptaba la orden (sonaba el sonido de equipar) pero nunca llegaba a equipar el arma de verdad.
   - No se toca nada al cargar una partida guardada (no hay forma fiable de saber si el arma sin equipar es por nuestro ciclo o por decisión del jugador tras reiniciar el proceso), se deja tal cual está en el guardado.
+
+### v0.2.1
+
+- Lanzamiento del proyectil réplica (`Throw::LaunchWeapon`, llamado desde `WeaponManager::ThrowWeapon` justo antes de desequipar el arma original):
+  - Usa el sistema nativo `RE::Projectile` de Skyrim (formulario `Projectile` `CAP_ThorMjolnir_Projectile`, tipo Lobber): da gratis la trayectoria parabólica (punto 3 de la mecánica) y el clavado en superficie/enemigo (punto 6).
+  - Origen del lanzamiento: el nodo `WEAPON` de la mano derecha (misma posición que el arma, punto 2), no la cámara.
+  - Dirección: hacia donde apunta la cámara (decisión de diseño, no especificada por el documento), sin autoapuntado del motor.
+  - Decisión de arquitectura para el regreso (no implementado todavía, documentada en `CLAUDE.md`): la física nativa vale para la ida pero no para la vuelta (curva no balística, velocidad recalculada, homing a enemigo); el regreso se controlará a mano, sin Havok.
