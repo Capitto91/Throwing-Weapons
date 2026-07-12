@@ -12,6 +12,9 @@ set_warnings("allextra")
 add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
+-- third-party dependencies
+add_requires("simpleini")
+
 -- define targets
 target("Throwing-Weapons")
     add_rules("commonlibsse-ng.plugin", {
@@ -25,3 +28,4 @@ target("Throwing-Weapons")
     add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
+    add_packages("simpleini")
