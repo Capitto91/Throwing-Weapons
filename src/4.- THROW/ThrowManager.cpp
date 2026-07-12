@@ -5,6 +5,9 @@
 
 #include "1.- CORE/Constants.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace Throw
 {
     namespace
@@ -22,39 +25,46 @@ namespace Throw
         }
 
         // Ángulos de lanzamiento a partir de hacia dónde apunta la cámara.
+        // Se calculan a partir del vector de dirección (columna Y de la
+        // matriz, "adelante" en la convención de Gamebryo/NetImmerse), no
+        // con ToEulerAnglesXYZ: esa función descompone en orden X-Y-Z, pero
+        // Skyrim compone estas rotaciones en orden Z-X-Y (por eso solo hay
+        // EulerAnglesToAxesZXY, no una versión XYZ, para construir
+        // matrices); con solo giro horizontal coincide casi por casualidad,
+        // pero se descuadra en cuanto se mezcla con inclinación vertical.
         RE::Projectile::ProjectileRot GetCameraAimAngles()
         {
-            auto*        camera = RE::PlayerCamera::GetSingleton();
-            RE::NiPoint3 eulerAngles;
-
-            if (camera && camera->cameraRoot) {
-                camera->cameraRoot->world.rotate.ToEulerAnglesXYZ(eulerAngles);
+            auto* camera = RE::PlayerCamera::GetSingleton();
+            if (!camera || !camera->cameraRoot) {
+                return { 0.0f, 0.0f };
             }
 
-            return { eulerAngles.x, eulerAngles.z };
+            const RE::NiPoint3 forward = camera->cameraRoot->world.rotate.GetVectorY();
+            const float        pitch = -std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+            const float        yaw = std::atan2(forward.x, forward.y);
+
+            return { pitch, yaw };
         }
     }
 
-    void LaunchWeapon(RE::Actor* a_shooter)
+    void LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon)
     {
         if (!a_shooter) {
             return;
         }
 
-        auto* projectileBase = RE::TESForm::LookupByEditorID<RE::BGSProjectile>(Constants::kThrowableProjectile);
-        if (!projectileBase) {
+        auto* ammo = RE::TESForm::LookupByEditorID<RE::TESAmmo>(Constants::kThrowableAmmo);
+        if (!ammo) {
             logs::error(
-                "No se encontró el Projectile \"{}\": revisa que exista en la Creation Kit.",
-                Constants::kThrowableProjectile);
+                "No se encontró el Ammo \"{}\": revisa que exista en la Creation Kit.",
+                Constants::kThrowableAmmo);
             return;
         }
 
-        RE::Projectile::LaunchData launchData(projectileBase, a_shooter, GetLaunchOrigin(a_shooter), GetCameraAimAngles());
-        launchData.useOrigin = true;
-        // Apuntado manual por cámara, sin ayuda de autoapuntado del motor.
-        launchData.autoAim = false;
+        const auto origin = GetLaunchOrigin(a_shooter);
+        const auto angles = GetCameraAimAngles();
 
         RE::ProjectileHandle handle;
-        RE::Projectile::Launch(&handle, launchData);
+        RE::Projectile::LaunchArrow(&handle, a_shooter, ammo, a_weapon, origin, angles);
     }
 }

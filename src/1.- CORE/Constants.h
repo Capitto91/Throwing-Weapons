@@ -22,4 +22,13 @@ namespace Constants
     // Projectile independiente del arma; no hay forma de generarlo en
     // tiempo de ejecución.
     inline constexpr std::string_view kThrowableProjectile{ "CAP_ThorMjolnir_Projectile" };
+
+    // EditorID del Ammo (creado en la Creation Kit) que referencia al
+    // Projectile de arriba. Se lanza vía Projectile::LaunchArrow (la misma
+    // ruta que usan las flechas reales) en vez de construir el LaunchData a
+    // mano: con el constructor genérico el proyectil no colisionaba con
+    // nada (ni paredes), aunque la capa de colisión y el modelo eran
+    // correctos — LaunchArrow configura algo más que hace falta para que
+    // el motor registre los impactos.
+    inline constexpr std::string_view kThrowableAmmo{ "CAP_ThorMjolnir_Ammo" };
 }

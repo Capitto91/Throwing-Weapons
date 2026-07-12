@@ -93,7 +93,7 @@ namespace Weapon
             // arma todavía está en la mano (para tomar su posición justo
             // ahí, ver Throw::LaunchWeapon), y "al mismo tiempo" (Mecanica
             // del arma.txt, punto 2) el arma original se oculta.
-            Throw::LaunchWeapon(player);
+            Throw::LaunchWeapon(player, weapon->As<RE::TESObjectWEAP>());
 
             // Sin cola y aplicación inmediata: un desequipar encolado podía
             // perderse en silencio si se dispara desde un evento de carga.

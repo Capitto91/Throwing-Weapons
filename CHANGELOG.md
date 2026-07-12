@@ -35,7 +35,17 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
 ### v0.2.1
 
 - Lanzamiento del proyectil réplica (`Throw::LaunchWeapon`, llamado desde `WeaponManager::ThrowWeapon` justo antes de desequipar el arma original):
-  - Usa el sistema nativo `RE::Projectile` de Skyrim (formulario `Projectile` `CAP_ThorMjolnir_Projectile`, tipo Lobber): da gratis la trayectoria parabólica (punto 3 de la mecánica) y el clavado en superficie/enemigo (punto 6).
+  - Usa el sistema nativo `RE::Projectile` de Skyrim para dar gratis la trayectoria parabólica (punto 3 de la mecánica) y el clavado en superficie/enemigo (punto 6).
   - Origen del lanzamiento: el nodo `WEAPON` de la mano derecha (misma posición que el arma, punto 2), no la cámara.
-  - Dirección: hacia donde apunta la cámara (decisión de diseño, no especificada por el documento), sin autoapuntado del motor.
+  - Dirección: hacia donde apunta la cámara (decisión de diseño, no especificada por el documento), calculada a partir del vector de dirección de la cámara (no de `ToEulerAnglesXYZ`, que descompone en un orden distinto al que usa Skyrim y da ángulos incorrectos en cuanto se mezcla inclinación vertical con giro horizontal).
   - Decisión de arquitectura para el regreso (no implementado todavía, documentada en `CLAUDE.md`): la física nativa vale para la ida pero no para la vuelta (curva no balística, velocidad recalculada, homing a enemigo); el regreso se controlará a mano, sin Havok.
+
+## 2026-07-13
+
+### v0.2.2
+
+- Lanzamiento del proyectil, de verdad funcional de punta a punta (probado en el juego contra paredes y NPCs):
+  - Cambiado de tipo `Lobber`/`Missile` a **Arrow**, lanzado vía `RE::Projectile::LaunchArrow` con un formulario `Ammo` dedicado (`CAP_ThorMjolnir_Ammo`) en vez de construir el `LaunchData` a mano — es la misma ruta que usa el motor para flechas reales, y resultó ser necesaria para que el impacto contra actores se registre (daño) y para que el arma quede clavada en vez de destruirse al chocar.
+  - `Lobber`/`Grenade` no servía: usa un modelo de trayectoria distinto (pensado para lanzar hacia un punto de impacto calculado) que no respondía al par dirección+velocidad que le pasábamos, dejando el proyectil flotando sin moverse.
+  - La capa de colisión (`Collision Layer`) del formulario `Projectile` estaba vacía en la Creation Kit; sin ella asignada (a `L_PROJECTILE`, la misma que usan las flechas) el proyectil atravesaba paredes y actores sin registrar ningún impacto.
+  - Desmarcado "Can be Picked Up" en el `Projectile`: al quedar clavado, se podía recoger como si fuera munición suelta (añadiendo el `Ammo` falso al inventario, no el arma real) dejando además un modelo fantasma en el mundo. La única forma prevista de recuperar el arma es el botón, no recogerla del suelo.
