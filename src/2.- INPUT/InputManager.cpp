@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "3.- WEAPON/WeaponManager.h"
 
 #include <SimpleIni.h>
 
@@ -78,7 +79,18 @@ namespace Input
         }
 
         auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player || !ActorUtils::IsThrowableWeaponEquipped(player)) {
+        auto* weaponManager = Weapon::WeaponManager::GetSingleton();
+
+        // El botón participa en el ciclo si el arma arrojadiza está en la
+        // mano derecha (para empezar a apuntar) o si el ciclo ya está en
+        // marcha y el arma está fuera de la mano (para recuperarla). Con
+        // el arma fuera, la mano queda vacía (ver WeaponManager::ThrowWeapon),
+        // así que la comprobación de equipada por sí sola no basta.
+        const bool participa = player &&
+                                (weaponManager->GetState() != Weapon::State::kInHand ||
+                                    ActorUtils::IsThrowableWeaponEquipped(player));
+
+        if (!participa) {
             return RE::BSEventNotifyControl::kContinue;
         }
 
@@ -89,22 +101,12 @@ namespace Input
             }
 
             if (button->IsDown()) {
-                OnAimStart();
+                weaponManager->OnAimButtonDown();
             } else if (button->IsUp()) {
-                OnAimRelease();
+                weaponManager->OnAimButtonUp();
             }
         }
 
         return RE::BSEventNotifyControl::kContinue;
-    }
-
-    void InputManager::OnAimStart() const
-    {
-        logs::info("Botón de apuntado pulsado con el arma arrojadiza equipada en la mano derecha.");
-    }
-
-    void InputManager::OnAimRelease() const
-    {
-        logs::info("Botón de apuntado soltado con el arma arrojadiza equipada en la mano derecha.");
     }
 }

@@ -38,12 +38,6 @@ namespace Input
         void LoadConfig();
         bool IsAimBinding(const RE::ButtonEvent* a_event) const;
 
-        // Puntos de entrada hacia el resto del sistema. Por ahora sólo
-        // registran el evento en el log; 4.- THROW / 5.- RETURN se
-        // engancharán aquí para lanzar y recuperar el arma.
-        void OnAimStart() const;
-        void OnAimRelease() const;
-
         AimBinding aimBinding{};
     };
 }
