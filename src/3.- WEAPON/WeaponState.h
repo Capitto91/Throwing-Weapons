@@ -22,13 +22,15 @@ namespace Weapon
         [[nodiscard]] State GetState() const noexcept { return state; }
         void                SetState(State a_state);
 
-        // Arma original que se ocultó al lanzar, para poder reequiparla tal
-        // cual al recuperarla.
-        [[nodiscard]] RE::TESBoundObject* GetThrownWeapon() const noexcept { return thrownWeapon; }
-        void                              SetThrownWeapon(RE::TESBoundObject* a_weapon) noexcept { thrownWeapon = a_weapon; }
+        // Arma comprometida con el ciclo actual: se fija al empezar a
+        // apuntar (para no depender de lo que haya en la mano en el
+        // momento de soltar el botón) y se usa para reequiparla tal cual al
+        // recuperarla.
+        [[nodiscard]] RE::TESBoundObject* GetActiveWeapon() const noexcept { return activeWeapon; }
+        void                              SetActiveWeapon(RE::TESBoundObject* a_weapon) noexcept { activeWeapon = a_weapon; }
 
     private:
         State               state{ State::kInHand };
-        RE::TESBoundObject* thrownWeapon{ nullptr };
+        RE::TESBoundObject* activeWeapon{ nullptr };
     };
 }

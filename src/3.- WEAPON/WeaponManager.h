@@ -25,17 +25,27 @@ namespace Weapon
 
         [[nodiscard]] State GetState() const noexcept { return weaponState.GetState(); }
 
+        // Fuerza la vuelta a "en mano", olvidando cualquier arma activa.
+        // Se usa para resincronizar con la realidad del juego (al cargar
+        // partida) o para autocorregir un "apuntando" del que nunca llegó
+        // el botón de soltar (ver Events::EventManager).
+        void ResetToInHand();
+
     private:
         WeaponManager() = default;
         ~WeaponManager() = default;
 
-        // Desequipa el arma original (queda oculta y el jugador pasa a
+        // Fija como arma activa la que hay en la mano derecha y pasa a
+        // "apuntando".
+        void BeginAiming();
+
+        // Desequipa el arma activa (queda oculta y el jugador pasa a
         // combate desarmado) y pasa a estado "lanzada". La réplica en forma
         // de proyectil la crea 4.- THROW; aquí solo se gestiona el arma
         // física del jugador.
         void ThrowWeapon();
 
-        // Reequipa el arma original y vuelve a "en mano". La recuperación es
+        // Reequipa el arma activa y vuelve a "en mano". La recuperación es
         // instantánea por ahora: la trayectoria de regreso es
         // responsabilidad de 5.- RETURN, que sustituirá esta transición
         // directa una vez exista.

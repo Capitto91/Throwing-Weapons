@@ -3,24 +3,12 @@
 
 #include "Plugin.h"
 
-#include "2.- INPUT/InputManager.h"
+#include "10.- EVENTS/EventManager.h"
 
 namespace Plugin
 {
-    namespace
-    {
-        void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
-        {
-            // kInputLoaded: los dispositivos de entrada ya están listos para
-            // registrar event sinks.
-            if (a_message->type == SKSE::MessagingInterface::kInputLoaded) {
-                Input::InputManager::GetSingleton()->Init();
-            }
-        }
-    }
-
     void Init()
     {
-        SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
+        Events::Init();
     }
 }

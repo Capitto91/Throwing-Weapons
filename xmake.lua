@@ -29,3 +29,7 @@ target("Throwing-Weapons")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
     add_packages("simpleini")
+
+    -- despliega el INI por defecto junto al DLL (mismo prefixdir que usa
+    -- commonlibsse-ng.plugin para el binario)
+    add_installfiles("Data/SKSE/Plugins/ThrowingWeapons.ini", { prefixdir = "SKSE/Plugins" })
