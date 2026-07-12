@@ -1,8 +1,13 @@
-SKSE_PLUGIN_LOAD(const SKSE::LoadInterface* a_skse)
+// Punto de entrada principal del plugin SKSE.
+// Inicializa la DLL, registra el plugin en Skyrim y ejecuta la inicialización
+// de los diferentes sistemas internos del mod.
+
+
+SKSEPluginLoad(const SKSE::LoadInterface* skse)
 {
-	SKSE::Init(a_skse);
+    SKSE::Init(skse);
 
-	logs::info("Hello World!");
 
-	return true;
+
+    return true;
 }
