@@ -33,10 +33,24 @@ Build system is **xmake**, not CMake/MSBuild directly (`xmake.lua` at root). `li
 
 Decisión tomada al implementar `THROW`/`RETURN`, no recogida en `Mecanica del arma.txt` (que describe intención, no implementación):
 
-- **Ida (lanzamiento)**: usa el sistema nativo de `RE::Projectile` de Skyrim (Havok), tipo Lobber, afectado por gravedad. Da gratis el arco parabólico (punto 3), la detección de impacto y el clavado en superficie/enemigo (punto 6, mismo mecanismo que usan las flechas al clavarse, incluido ir "pegado" a un NPC que se mueve).
+- **Ida (lanzamiento)**: usa el sistema nativo de `RE::Projectile` de Skyrim (Havok), afectado por gravedad. Da gratis el arco parabólico (punto 3), la detección de impacto y el clavado en superficie/enemigo (punto 6, mismo mecanismo que usan las flechas al clavarse, incluido ir "pegado" a un NPC que se mueve).
 - **Vuelta (regreso)**: NO se reutiliza la física nativa. Los requisitos (curva no balística hacia el jugador, velocidad recalculada según distancia/tiempo para cumplir el límite de 2s del punto 8, desviarse hacia un enemigo dentro de un ángulo máximo en el punto 10, enderezarse antes de llegar en el punto 11) no se pueden conseguir ajustando parámetros de gravedad/velocidad de un cuerpo simulado por Havok — forzar la posición de un objeto simulado activamente por el motor de físicas produce tirones/clipping. En su lugar: al empezar el regreso se destruye el `Projectile` físico y se controla manualmente la posición/rotación cada tick (sin simulación de Havok), incluyendo detección de golpes a enemigos por proximidad propia (punto 9), ya que se pierde la colisión automática del motor.
 - El punto de transición entre ambos sistemas coincide con la transición de estado ya existente `kThrown`/`kStuck` → `kReturning` en `WeaponState`, así que no añade complejidad extra a la máquina de estados.
 - Coste de rendimiento: el control manual del regreso no es más caro que la física nativa — al contrario, se elimina la simulación de Havok para ese objeto y se sustituye por aritmética simple de posición por fotograma.
+
+### Trampas conocidas (THROW)
+
+- Lanzar con `RE::Projectile::LaunchArrow` + un `Ammo` propio que apunte al `Projectile`, no con `LaunchData`/`Projectile::Launch` a mano: si no, no registra ningún impacto.
+- Tipo de proyectil `Arrow`, no `Missile`/`Lobber`(`Grenade`): Lobber no responde a dirección+velocidad (queda flotando); Missile se destruye al chocar en vez de quedar clavado.
+- El `Projectile` necesita `Collision Layer` asignado (p. ej. `L_PROJECTILE`) y "Can be Picked Up" desmarcado (si no, se recoge como munición falsa y deja un modelo fantasma).
+- Dirección de cámara: vector `GetVectorY()` de `camera->cameraRoot->world.rotate` + `atan2`/`asin`, no `NiMatrix3::ToEulerAnglesXYZ` (orden de ejes distinto al que compone Skyrim; da ángulos mal en cuanto hay inclinación vertical, aunque con solo giro horizontal parezca coincidir).
+- "Clavada" = `ImpactResult::kImpale`/`kStick` (vía `skyrim_cast<RE::MissileProjectile*>`), no cualquier valor distinto de `kNone` (`kBounce` sigue en vuelo). Contra actores ese campo no cambia de forma fiable: hace falta además `RE::TESHitEvent` filtrado por `a_event->source` (no `a_event->projectile`, que llega a 0 con `LaunchArrow` + un arma como `a_weap`).
+- Nunca reprogramar un sondeo periódico llamando a `SKSE::GetTaskInterface()->AddTask` desde dentro de la propia tarea que se ejecuta: congela el juego por completo. Usar un hilo aparte que duerma un intervalo real y solo entonces llame a `AddTask` (aplica también a `RETURN` si usa el mismo patrón de sondeo).
+
+### Trampas conocidas (WEAPON / EVENTS)
+
+- `RE::ActorEquipManager::EquipObject`/`UnequipObject` quedan en cola por defecto. Incluso forzando aplicación inmediata (`a_queueEquip=false, a_forceEquip=true, a_applyNow=true`), llamarlo síncronamente dentro de ciertos manejadores de eventos (p. ej. al cerrarse una pantalla de carga) falla en silencio — suena el efecto pero no llega a equipar. Hay que diferirlo un tick con `SKSE::GetTaskInterface()->AddTask`.
+- Para detectar que el jugador cambió de celda (puerta, viaje rápido...): `TESCellAttachDetachEvent` nunca se dispara para la referencia del jugador (igual que `OnCellAttach`/`OnCellDetach` en Papyrus); `TESCellFullyLoadedEvent` solo salta si el motor carga datos nuevos, así que falla al volver a una celda ya visitada/en caché. La señal fiable es el cierre de `"Loading Menu"` vía `RE::MenuOpenCloseEvent`/`RE::UI`.
 
 ## Source layout
 

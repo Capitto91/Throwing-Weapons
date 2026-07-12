@@ -102,6 +102,50 @@ namespace Events
             ~LoadingScreenWatcher() override = default;
         };
 
+        // El golpe contra un actor no se refleja de forma fiable en
+        // ImpactResult (ver Throw::TrackProjectile — comprobado en el
+        // juego: al clavarse en un enemigo, el sondeo nunca detectaba el
+        // impacto), así que se detecta aparte con RE::TESHitEvent.
+        // Se filtra por a_event->source (el arma causante), no por
+        // a_event->projectile: comprobado en el juego que este último llega
+        // a 0 al lanzar vía LaunchArrow con un arma como a_weap en vez de un
+        // TESObjectWEAP real de un arco, mientras que source sí trae el
+        // FormID del arma correctamente.
+        class ProjectileHitWatcher final : public RE::BSTEventSink<RE::TESHitEvent>
+        {
+        public:
+            static ProjectileHitWatcher* GetSingleton()
+            {
+                static ProjectileHitWatcher singleton;
+                return &singleton;
+            }
+
+            ProjectileHitWatcher(const ProjectileHitWatcher&) = delete;
+            ProjectileHitWatcher(ProjectileHitWatcher&&) = delete;
+            ProjectileHitWatcher& operator=(const ProjectileHitWatcher&) = delete;
+            ProjectileHitWatcher& operator=(ProjectileHitWatcher&&) = delete;
+
+        protected:
+            RE::BSEventNotifyControl ProcessEvent(const RE::TESHitEvent* a_event, RE::BSTEventSource<RE::TESHitEvent>*) override
+            {
+                auto* weaponManager = Weapon::WeaponManager::GetSingleton();
+                if (weaponManager->GetState() != Weapon::State::kThrown) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                auto* activeWeapon = weaponManager->GetActiveWeapon();
+                if (a_event && activeWeapon && a_event->source == activeWeapon->GetFormID()) {
+                    weaponManager->OnProjectileImpact();
+                }
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+
+        private:
+            ProjectileHitWatcher() = default;
+            ~ProjectileHitWatcher() override = default;
+        };
+
         void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
         {
             switch (a_message->type) {
@@ -129,5 +173,6 @@ namespace Events
         SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
         RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
         RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
+        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(ProjectileHitWatcher::GetSingleton());
     }
 }
