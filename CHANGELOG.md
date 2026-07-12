@@ -50,7 +50,7 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - La capa de colisión (`Collision Layer`) del formulario `Projectile` estaba vacía en la Creation Kit; sin ella asignada (a `L_PROJECTILE`, la misma que usan las flechas) el proyectil atravesaba paredes y actores sin registrar ningún impacto.
   - Desmarcado "Can be Picked Up" en el `Projectile`: al quedar clavado, se podía recoger como si fuera munición suelta (añadiendo el `Ammo` falso al inventario, no el arma real) dejando además un modelo fantasma en el mundo. La única forma prevista de recuperar el arma es el botón, no recogerla del suelo.
 
-### v0.2.4
+### v0.2.3
 
 - Detección de impacto y distancia máxima (`Throw::TrackProjectile`, en `ThrowProjectile.cpp`), completando lo que quedaba pendiente de `THROW`, probado en el juego contra pared/árbol, NPC y lanzamiento al vacío:
   - `Throw::LaunchWeapon` ahora devuelve el `ProjectileHandle` del proyectil lanzado (antes se descartaba); `WeaponManager::ThrowWeapon` lo persiste en `WeaponState` y arranca su seguimiento.
@@ -59,3 +59,9 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - El golpe contra un actor no se refleja en `ImpactResult` (queda clavado visualmente pero el campo no cambia); se detecta aparte con `RE::TESHitEvent` (`Events::ProjectileHitWatcher`), filtrado por `a_event->source` (el arma causante) — `a_event->projectile` llega a 0 al lanzar vía `LaunchArrow` con un arma como `a_weap` en vez de un arco real, así que no sirve para filtrar.
   - Distancia máxima de lanzamiento (`Constants::kMaxThrowDistance`, 6000 unidades — valor no especificado por el documento, elegido como placeholder), si se supera sin impactar, dispara la recuperación automática (punto 5).
   - El sondeo se autocancela si el estado deja de ser "lanzada" por cualquier otro motivo (botón de recuperar, resincronización tras pantalla de carga) o si el proyectil deja de existir.
+
+### v0.2.4
+
+- Dos huecos detectados al repasar el sondeo de `THROW` antes de abordar `RETURN`:
+  - `WeaponManager::RecallWeapon` ahora destruye (`Projectile::Kill`) la réplica en vuelo o clavada al recuperar el arma — proceso inverso al lanzamiento (punto 2). Sin esto, tanto el botón de recuperar como el auto-regreso (distancia máxima, pantalla de carga) dejaban el proyectil abandonado en el mundo para siempre como un arma fantasma.
+  - Caída al agua (caso no cubierto por el documento): `ImpactResult` no cambia nunca al caer al agua, así que `Throw::TrackProjectile` no lo detectaba como impacto ni como distancia máxima, y el arma se quedaba flotando/hundiéndose indefinidamente. Se detecta aparte con `TESObjectREFR::IsInWater()` (comparación barata de altura de agua vs. posición Z, apta para el sondeo) y se trata igual que "no impactó": recuperación automática (`WeaponManager::OnProjectileEnteredWater`).

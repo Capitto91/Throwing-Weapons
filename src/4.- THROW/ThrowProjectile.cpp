@@ -59,6 +59,18 @@ namespace Throw
 				return;
 			}
 
+			// El agua no es una superficie donde clavarse: ImpactResult no
+			// cambia al caer en ella (comprobado en el juego, se queda
+			// flotando/hundiéndose sin "impactar" nunca), así que hay que
+			// detectarlo aparte. IsInWater() es una comprobación barata
+			// (compara la altura del agua de la celda con la posición Z
+			// del proyectil), apta para el sondeo periódico.
+			if (projectile->IsInWater()) {
+				logs::info("Proyectil: ha caído al agua, recuperando automáticamente");
+				weaponManager->OnProjectileEnteredWater();
+				return;
+			}
+
 			const auto distanceMoved = projectile->GetProjectileRuntimeData().distanceMoved;
 			if (distanceMoved >= Constants::kMaxThrowDistance) {
 				logs::info(

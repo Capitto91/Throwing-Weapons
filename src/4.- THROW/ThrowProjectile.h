@@ -11,6 +11,9 @@ namespace Throw
 	// - Si impacta contra algo (enemigo o superficie, punto 6 de Mecanica
 	//   del arma.txt), notifica a Weapon::WeaponManager::OnProjectileImpact
 	//   para pasar a "clavada".
+	// - Si cae al agua (caso no cubierto por el documento; el agua no es
+	//   una superficie donde clavarse), notifica a
+	//   Weapon::WeaponManager::OnProjectileEnteredWater para recuperarlo.
 	// - Si supera Constants::kMaxThrowDistance sin impactar (punto 5),
 	//   notifica a Weapon::WeaponManager::OnProjectileMaxRangeReached para
 	//   iniciar la recuperación automática.

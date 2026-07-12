@@ -66,6 +66,13 @@ namespace Weapon
 		}
 	}
 
+	void WeaponManager::OnProjectileEnteredWater()
+	{
+		if (weaponState.GetState() == State::kThrown) {
+			RecallWeapon();
+		}
+	}
+
 	void WeaponManager::OnLoadingScreenClosed()
 	{
 		switch (weaponState.GetState()) {
@@ -142,6 +149,16 @@ namespace Weapon
 			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
 				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 			});
+		}
+
+		// Proceso inverso al lanzamiento (punto 2 de Mecanica del
+		// arma.txt): la réplica desaparece al recuperar el arma original.
+		// Sin esto, el Projectile nativo (clavado, o todavía en vuelo si
+		// el recall vino por distancia máxima/agua) se quedaba para
+		// siempre en el mundo como un arma fantasma (comprobado en el
+		// juego).
+		if (auto projectile = weaponState.GetProjectileHandle().get()) {
+			projectile->Kill();
 		}
 
 		weaponState.SetActiveWeapon(nullptr);

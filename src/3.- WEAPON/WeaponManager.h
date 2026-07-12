@@ -31,12 +31,20 @@ namespace Weapon
 		[[nodiscard]] RE::TESBoundObject* GetActiveWeapon() const noexcept { return weaponState.GetActiveWeapon(); }
 
 		// Llamados desde Throw::TrackProjectile (4.- THROW) al vigilar el
-		// proyectil en vuelo. Ambos ignoran la notificación si el arma ya
+		// proyectil en vuelo. Todos ignoran la notificación si el arma ya
 		// no está en "lanzada" (p. ej. el jugador ya pulsó recuperar, o una
 		// pantalla de carga resincronizó el estado primero), para no pisar
 		// una transición más reciente.
 		void OnProjectileImpact();
 		void OnProjectileMaxRangeReached();
+
+		// Igual que OnProjectileMaxRangeReached (recuperación automática):
+		// el agua no es una superficie donde el arma pueda quedar clavada,
+		// y Mecanica del arma.txt no cubre este caso. Comprobado en el
+		// juego que ImpactResult nunca cambia al caer al agua (se queda
+		// flotando/hundiéndose sin "impactar"), así que se trata igual que
+		// no impactar contra nada.
+		void OnProjectileEnteredWater();
 
 		// Fuerza la vuelta a "en mano" sin tocar el arma física, olvidando
 		// cualquier arma activa. Se usa al cargar/empezar partida: tras
