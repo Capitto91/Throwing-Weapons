@@ -73,14 +73,20 @@ namespace Weapon
 	void WeaponManager::OnProjectileMaxRangeReached()
 	{
 		if (weaponState.GetState() == State::kThrown) {
-			RecallWeapon();
+			// Regreso animado (con curva), no recuperación instantánea: el
+			// jugador no ha pulsado el botón, pero el arma debe volar de
+			// vuelta igual que si lo hubiera hecho (puntos 5 y 7 de
+			// Mecanica del arma.txt), no teletransportarse a la mano.
+			BeginReturn();
 		}
 	}
 
 	void WeaponManager::OnProjectileEnteredWater()
 	{
 		if (weaponState.GetState() == State::kThrown) {
-			RecallWeapon();
+			// Mismo motivo que OnProjectileMaxRangeReached: regreso
+			// animado, no recuperación instantánea.
+			BeginReturn();
 		}
 	}
 

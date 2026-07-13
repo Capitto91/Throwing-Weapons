@@ -37,7 +37,14 @@ namespace Constants
 	// el arma regrese automáticamente si no ha impactado contra nada
 	// (Mecanica del arma.txt, punto 5). El documento no especifica un
 	// valor concreto; es una decisión de diseño no cubierta por él.
-	inline constexpr float kMaxThrowDistance = 6000.0f;
+	// Duplicada (6000 → 12000) tras comprobar en el juego que, al activarse
+	// este auto-regreso, la réplica que controla 5.- RETURN tarda
+	// perceptiblemente en cargar su 3D (misma espera que en cualquier otro
+	// inicio de regreso, ver ReturnManager::WaitFor3DThenStart) — el hueco
+	// se nota más aquí porque el arma está muy lejos del jugador, donde el
+	// streaming de objetos es más lento; a esta distancia el caso ya casi
+	// no se da en juego normal (algo suele impactar antes).
+	inline constexpr float kMaxThrowDistance = 12000.0f;
 
 	// Nombre del nodo 3D raíz del modelo del arma tal como quedó en el NIF
 	// exportado (nombre por defecto del exportador, nunca renombrado en la
@@ -54,12 +61,13 @@ namespace Constants
 	// Aceleración de regreso por defecto, en unidades de juego por segundo
 	// al cuadrado (punto 8 de Mecanica del arma.txt): el arma parte con
 	// velocidad cero y acelera de forma constante, en vez de moverse a
-	// velocidad plana. Elegida para que, a la distancia máxima de
-	// lanzamiento (kMaxThrowDistance), tarde exactamente kReturnMaxDuration
-	// partiendo del reposo (2*distancia/tiempo² = 2*6000/2² = 3000); para
-	// cualquier distancia menor (siempre el caso, al ser kMaxThrowDistance
-	// un límite duro) tarda menos de ese máximo sin necesidad de forzar el
-	// aumento de aceleración — ver Return::ComputeReturnAcceleration.
+	// velocidad plana. A esta aceleración, un regreso desde
+	// kMaxThrowDistance tardaría más de kReturnMaxDuration en llegar —
+	// Return::ComputeReturnAcceleration se encarga de aumentarla lo
+	// necesario para no superar ese límite (punto 8, aceleración
+	// híbrida); para distancias menores (la mayoría de los lanzamientos)
+	// este valor por defecto ya cumple el límite sin necesidad de
+	// aumentarlo.
 	inline constexpr float kReturnAcceleration = 3000.0f;
 
 	// Límite de duración del regreso, en segundos (punto 8 de Mecanica del

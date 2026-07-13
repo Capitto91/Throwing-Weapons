@@ -41,14 +41,19 @@ namespace Weapon
 		// desenganchar el modelo clavado al recuperar (ver
 		// Throw::DetachEmbeddedWeapon).
 		void OnProjectileImpact(RE::TESObjectREFR* a_target = nullptr);
+
+		// Recuperación automática (punto 5 de Mecanica del arma.txt): el
+		// jugador no ha pulsado el botón, pero el arma vuelve igual que si
+		// lo hubiera hecho, con el mismo regreso animado y curvo de
+		// 5.- RETURN (BeginReturn()) — no un recall instantáneo.
 		void OnProjectileMaxRangeReached();
 
-		// Igual que OnProjectileMaxRangeReached (recuperación automática):
-		// el agua no es una superficie donde el arma pueda quedar clavada,
-		// y Mecanica del arma.txt no cubre este caso. Comprobado en el
-		// juego que ImpactResult nunca cambia al caer al agua (se queda
-		// flotando/hundiéndose sin "impactar"), así que se trata igual que
-		// no impactar contra nada.
+		// Igual que OnProjectileMaxRangeReached (regreso automático y
+		// animado, no instantáneo): el agua no es una superficie donde el
+		// arma pueda quedar clavada, y Mecanica del arma.txt no cubre este
+		// caso. Comprobado en el juego que ImpactResult nunca cambia al
+		// caer al agua (se queda flotando/hundiéndose sin "impactar"), así
+		// que se trata igual que no impactar contra nada.
 		void OnProjectileEnteredWater();
 
 		// Llamado por Return::BeginReturn (5.- RETURN), en el hilo
