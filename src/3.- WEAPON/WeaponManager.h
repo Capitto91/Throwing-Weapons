@@ -35,8 +35,12 @@ namespace Weapon
 		// impacto fue contra un actor. Todos ignoran la notificación si el
 		// arma ya no está en "lanzada" (p. ej. el jugador ya pulsó
 		// recuperar, o una pantalla de carga resincronizó el estado
-		// primero), para no pisar una transición más reciente.
-		void OnProjectileImpact();
+		// primero), para no pisar una transición más reciente. a_target es
+		// el actor contra el que impactó, si se conoce (nullptr si fue
+		// contra una superficie) — se guarda para poder localizar y
+		// desenganchar el modelo clavado al recuperar (ver
+		// Throw::DetachEmbeddedWeapon).
+		void OnProjectileImpact(RE::TESObjectREFR* a_target = nullptr);
 		void OnProjectileMaxRangeReached();
 
 		// Igual que OnProjectileMaxRangeReached (recuperación automática):

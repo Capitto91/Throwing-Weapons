@@ -45,6 +45,34 @@ namespace Throw
 
 			return { pitch, yaw };
 		}
+
+		// Busca recursivamente, a partir de a_node, un descendiente cuyo
+		// nombre sea Constants::kEmbeddedWeaponNodeName y lo desengancha de
+		// su padre en cuanto lo encuentra.
+		bool DetachNodeByName(RE::NiNode* a_node, std::string_view a_name)
+		{
+			if (!a_node) {
+				return false;
+			}
+
+			for (auto& child : a_node->GetChildren()) {
+				auto* childPtr = child.get();
+				if (!childPtr) {
+					continue;
+				}
+
+				if (childPtr->name == a_name) {
+					a_node->DetachChild(childPtr);
+					return true;
+				}
+
+				if (DetachNodeByName(childPtr->AsNode(), a_name)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
 	}
 
 	RE::ProjectileHandle LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon)
@@ -67,5 +95,22 @@ namespace Throw
 		RE::ProjectileHandle handle;
 		RE::Projectile::LaunchArrow(&handle, a_shooter, ammo, a_weapon, origin, angles);
 		return handle;
+	}
+
+	void DetachEmbeddedWeapon(RE::TESObjectREFR* a_target)
+	{
+		if (!a_target) {
+			return;
+		}
+
+		auto* root = a_target->Get3D();
+		if (DetachNodeByName(root ? root->AsNode() : nullptr, Constants::kEmbeddedWeaponNodeName)) {
+			logs::info("DetachEmbeddedWeapon: nodo \"{}\" desenganchado de \"{}\"", Constants::kEmbeddedWeaponNodeName, a_target->GetName());
+		} else {
+			logs::warn(
+				"DetachEmbeddedWeapon: no se encontró el nodo \"{}\" en \"{}\" (¿se llamó demasiado pronto tras el impacto?)",
+				Constants::kEmbeddedWeaponNodeName,
+				a_target->GetName());
+		}
 	}
 }

@@ -36,9 +36,19 @@ namespace Weapon
 		[[nodiscard]] RE::ProjectileHandle GetProjectileHandle() const noexcept { return projectileHandle; }
 		void                               SetProjectileHandle(RE::ProjectileHandle a_handle) noexcept { projectileHandle = a_handle; }
 
+		// Actor donde se clavó la réplica, si el impacto fue contra un
+		// actor (vacío si fue contra una superficie). Lo fija
+		// WeaponManager::OnProjectileImpact; lo usa
+		// Throw::DetachEmbeddedWeapon al recuperar, porque en ese caso el
+		// ProjectileHandle guardado no sirve (ver comentario de
+		// Constants::kEmbeddedWeaponNodeName).
+		[[nodiscard]] RE::ObjectRefHandle GetImpactTarget() const noexcept { return impactTarget; }
+		void                              SetImpactTarget(RE::ObjectRefHandle a_target) noexcept { impactTarget = a_target; }
+
 	private:
 		State                state{ State::kInHand };
 		RE::TESBoundObject*  activeWeapon{ nullptr };
 		RE::ProjectileHandle projectileHandle;
+		RE::ObjectRefHandle  impactTarget;
 	};
 }

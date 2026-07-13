@@ -16,4 +16,14 @@ namespace Throw
 	// que el llamante pueda seguirlo (ver Throw::TrackProjectile) y
 	// persistirlo en WeaponState.
 	[[nodiscard]] RE::ProjectileHandle LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon);
+
+	// Al clavarse en un actor, la referencia Projectile original deja de
+	// existir (comprobado en el juego: el motor la destruye al procesar
+	// el golpe) y el modelo del arma queda enganchado directamente al
+	// árbol de nodos 3D de a_target, con un retraso de aprox. 1 segundo
+	// tras el impacto (ver Constants::kEmbeddedWeaponNodeName). Busca ese
+	// nodo recursivamente y lo desengancha si lo encuentra; no hace nada
+	// si a_target es nulo o el nodo todavía no existe (p. ej. si se llama
+	// menos de un segundo después del impacto).
+	void DetachEmbeddedWeapon(RE::TESObjectREFR* a_target);
 }

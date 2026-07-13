@@ -30,7 +30,7 @@ Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son pa
 - **APIs inventadas**: no dar por buena la firma de una función/clase de CommonLibSSE-NG de memoria. Verificar contra los headers reales en `lib/commonlibsse-ng` (grep/búsqueda directa) antes de usarla, especialmente si existe en varias forks (Sample, Fudge, NG) con diferencias.
 - **Offsets/direcciones hardcodeadas**: nunca usar direcciones de memoria fijas (`0x140XXXXXX`). Siempre `REL::RelocationID` / `REL::Relocation<>` con Address Library, para no romper compatibilidad SE/AE/VR.
 - **Punteros nulos sin comprobar**: cualquier resultado de búsqueda de formulario/objeto (`TESForm::LookupByID`, casts con `skyrim_cast`, etc.) debe comprobarse antes de usarse. Un `nullptr` sin verificar aquí no lanza excepción manejable, crashea el juego entero.
-- **Hilos y el motor**: no asumir que el motor de Skyrim es thread-safe. Cualquier llamada que toque el juego (formularios, actores, UI) debe ejecutarse en el hilo principal vía `SKSE::GetTaskInterface()->AddTask` salvo que se sepa explícitamente que es segura desde otro hilo (ver también la trampa de `AddTask` reentrante en la sección de THROW más abajo).
+- **Hilos y el motor**: no asumir que el motor de Skyrim es thread-safe. Cualquier llamada que toque el juego (formularios, actores, UI) debe ejecutarse en el hilo principal vía `SKSE::GetTaskInterface()->AddTask` salvo que se sepa explícitamente que es segura desde otro hilo (ver también la trampa de `AddTask` reentrante en "Arquitectura de física de proyectiles" más abajo).
 - **Gestión de memoria**: preferir RAII y los wrappers de CommonLibSSE-NG sobre `new`/`delete` manual. Si se instala un hook/trampolín, comprobar que restaura el estado original correctamente y que no colisiona con offsets que puedan estar parcheados por otro mod/librería.
 - **Excepciones cruzando el motor**: el código nativo de Skyrim no espera excepciones de C++ propagándose desde callbacks del motor (eventos, hooks). Si una función puede lanzar (parseo de datos externos, por ejemplo), capturarla localmente en vez de dejar que suba.
 - **Serialización del cosave** (si se implementa guardado de datos vía `SKSE::SerializationInterface`): versionar siempre los registros (`WriteRecord` con número de versión) para poder migrar en el futuro, comprobar el valor de retorno de `Load`/`Write`, y manejar explícitamente el caso de partidas guardadas antiguas sin esos datos.
@@ -44,21 +44,13 @@ Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son pa
 
 ## Arquitectura de física de proyectiles
 
-Decisión tomada al implementar `THROW`/`RETURN`, no recogida en `Mecanica del arma.txt` (que describe intención, no implementación):
+- **Ida**: `RE::Projectile` nativo (Havok) — da gratis el arco parabólico y el clavado (puntos 3 y 6).
+- **Vuelta**: no reutiliza la física nativa (la curva no balística, velocidad variable a 2s, homing y enderezado de `Mecanica del arma.txt` no se pueden lograr forzando un cuerpo simulado por Havok). Al empezar el regreso se destruye el `Projectile` y se controla posición/rotación a mano cada tick. Transición en `kThrown`/`kStuck` → `kReturning`.
 
-- **Ida (lanzamiento)**: usa el sistema nativo de `RE::Projectile` de Skyrim (Havok), afectado por gravedad. Da gratis el arco parabólico (punto 3), la detección de impacto y el clavado en superficie/enemigo (punto 6, mismo mecanismo que usan las flechas al clavarse, incluido ir "pegado" a un NPC que se mueve).
-- **Vuelta (regreso)**: NO se reutiliza la física nativa. Los requisitos (curva no balística hacia el jugador, velocidad recalculada según distancia/tiempo para cumplir el límite de 2s del punto 8, desviarse hacia un enemigo dentro de un ángulo máximo en el punto 10, enderezarse antes de llegar en el punto 11) no se pueden conseguir ajustando parámetros de gravedad/velocidad de un cuerpo simulado por Havok — forzar la posición de un objeto simulado activamente por el motor de físicas produce tirones/clipping. En su lugar: al empezar el regreso se destruye el `Projectile` físico y se controla manualmente la posición/rotación cada tick (sin simulación de Havok), incluyendo detección de golpes a enemigos por proximidad propia (punto 9), ya que se pierde la colisión automática del motor.
-- El punto de transición entre ambos sistemas coincide con la transición de estado ya existente `kThrown`/`kStuck` → `kReturning` en `WeaponState`, así que no añade complejidad extra a la máquina de estados.
-- Coste de rendimiento: el control manual del regreso no es más caro que la física nativa — al contrario, se elimina la simulación de Havok para ese objeto y se sustituye por aritmética simple de posición por fotograma.
+### Dos cosas que RETURN va a necesitar
 
-### Trampas conocidas (THROW)
-
-- Lanzar con `RE::Projectile::LaunchArrow` + un `Ammo` propio que apunte al `Projectile`, no con `LaunchData`/`Projectile::Launch` a mano: si no, no registra ningún impacto.
-- Tipo de proyectil `Arrow`, no `Missile`/`Lobber`(`Grenade`): Lobber no responde a dirección+velocidad (queda flotando); Missile se destruye al chocar en vez de quedar clavado.
-- El `Projectile` necesita `Collision Layer` asignado (p. ej. `L_PROJECTILE`) y "Can be Picked Up" desmarcado (si no, se recoge como munición falsa y deja un modelo fantasma).
-- Dirección de cámara: vector `GetVectorY()` de `camera->cameraRoot->world.rotate` + `atan2`/`asin`, no `NiMatrix3::ToEulerAnglesXYZ` (orden de ejes distinto al que compone Skyrim; da ángulos mal en cuanto hay inclinación vertical, aunque con solo giro horizontal parezca coincidir).
-- "Clavada" = `ImpactResult::kImpale`/`kStick` (vía `skyrim_cast<RE::MissileProjectile*>`), no cualquier valor distinto de `kNone` (`kBounce` sigue en vuelo). Contra actores ese campo no cambia de forma fiable: hace falta además `RE::TESHitEvent` filtrado por `a_event->source` (no `a_event->projectile`, que llega a 0 con `LaunchArrow` + un arma como `a_weap`).
-- Nunca reprogramar un sondeo periódico llamando a `SKSE::GetTaskInterface()->AddTask` desde dentro de la propia tarea que se ejecuta: congela el juego por completo. Usar un hilo aparte que duerma un intervalo real y solo entonces llame a `AddTask` (aplica también a `RETURN` si usa el mismo patrón de sondeo).
+- **No hay ningún hook de "por fotograma" en este proyecto.** El patrón ya usado en `THROW` (y que RETURN necesitará para el control manual por tick): un `std::thread` que duerme un intervalo real y solo entonces reencola en el hilo principal vía `SKSE::GetTaskInterface()->AddTask`. Nunca llamar `AddTask` desde dentro de la propia tarea que se ejecuta (congela el juego).
+- **El `Projectile` no sobrevive a un impacto contra un actor** (el motor lo destruye al procesar el golpe). Lo que queda clavado es un nodo 3D (`"Scene Root"`, sin renombrar) enganchado al hueso del golpe con ~1s de retraso — se localiza por nombre en `actor->Get3D()` y se quita con `NiNode::DetachChild()` (ver `Throw::DetachEmbeddedWeapon`, reutilizable). RETURN no puede depender del `Projectile` para el caso "clavado en actor".
 
 ### Trampas conocidas (WEAPON / EVENTS)
 

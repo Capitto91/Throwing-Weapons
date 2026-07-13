@@ -49,12 +49,16 @@ namespace Weapon
 	{
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetProjectileHandle({});
+		weaponState.SetImpactTarget({});
 		weaponState.SetState(State::kInHand);
 	}
 
-	void WeaponManager::OnProjectileImpact()
+	void WeaponManager::OnProjectileImpact(RE::TESObjectREFR* a_target)
 	{
 		if (weaponState.GetState() == State::kThrown) {
+			if (a_target) {
+				weaponState.SetImpactTarget(RE::ObjectRefHandle(a_target));
+			}
 			weaponState.SetState(State::kStuck);
 		}
 	}
@@ -155,21 +159,24 @@ namespace Weapon
 		// arma.txt): la réplica desaparece al recuperar el arma original.
 		// Sin esto, el Projectile nativo (todavía en vuelo, o clavado en
 		// una superficie) se quedaba para siempre en el mundo como un arma
-		// fantasma (comprobado en el juego). No cubre el caso de clavado
-		// en un actor: ahí el handle guardado deja de resolver a nada, y
-		// tampoco se encuentra buscando por RE::Projectile::Manager ni por
-		// radio en el mundo (las dos vías probadas y descartadas, ver
-		// CLAUDE.md) — el motor parece destruir la referencia al embeberse
-		// en el esqueleto y dejar solo geometría 3D reenganchada
-		// directamente al actor, ya no una referencia consultable. Queda
-		// pendiente para RETURN, que tomará el objeto visual directamente
-		// en vez de depender de Kill() sobre una referencia.
+		// fantasma (comprobado en el juego).
 		if (auto projectile = weaponState.GetProjectileHandle().get()) {
 			projectile->Kill();
+		} else if (auto* target = weaponState.GetImpactTarget().get().get()) {
+			// Clavado en un actor: aquí el ProjectileHandle guardado nunca
+			// resuelve a nada (el motor destruye la referencia al
+			// procesar el golpe) y ya no hay ninguna referencia del
+			// motor que buscar (comprobado: 0 resultados tanto en
+			// RE::Projectile::Manager como por radio en el mundo). Lo
+			// único que queda es un nodo 3D reenganchado directamente al
+			// esqueleto del actor; Throw::DetachEmbeddedWeapon lo busca y
+			// lo desengancha.
+			Throw::DetachEmbeddedWeapon(target);
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetProjectileHandle({});
+		weaponState.SetImpactTarget({});
 		weaponState.SetState(State::kInHand);
 	}
 }

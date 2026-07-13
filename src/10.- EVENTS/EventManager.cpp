@@ -135,7 +135,7 @@ namespace Events
 
 				auto* activeWeapon = weaponManager->GetActiveWeapon();
 				if (a_event && activeWeapon && a_event->source == activeWeapon->GetFormID()) {
-					weaponManager->OnProjectileImpact();
+					weaponManager->OnProjectileImpact(a_event->target.get());
 				}
 
 				return RE::BSEventNotifyControl::kContinue;

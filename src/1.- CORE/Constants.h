@@ -37,4 +37,16 @@ namespace Constants
 	// (Mecanica del arma.txt, punto 5). El documento no especifica un
 	// valor concreto; es una decisión de diseño no cubierta por él.
 	inline constexpr float kMaxThrowDistance = 6000.0f;
+
+	// Nombre del nodo 3D raíz del modelo del arma tal como quedó en el NIF
+	// exportado (nombre por defecto del exportador, nunca renombrado en la
+	// Creation Kit). Al clavarse en un actor, el motor destruye la
+	// referencia Projectile original (comprobado en el juego: el handle ya
+	// no resuelve a nada, ni siquiera en el instante del impacto) y, con
+	// aprox. 1 segundo de retraso, engancha este nodo directamente al
+	// hueso donde impactó — ya no es una referencia del juego, solo
+	// geometría. Es la única forma encontrada de localizarlo para poder
+	// desengancharlo (ver Throw::DetachEmbeddedWeapon). Si se reexporta el
+	// modelo con el nodo raíz renombrado, este valor deja de coincidir.
+	inline constexpr std::string_view kEmbeddedWeaponNodeName{ "Scene Root" };
 }
