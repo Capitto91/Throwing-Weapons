@@ -99,14 +99,32 @@ namespace Weapon
 		// trayecto).
 		void RecallWeapon();
 
-		// Empieza el regreso de verdad (5.- RETURN) a partir del proyectil
-		// ya existente (en vuelo o clavado en superficie) o, si está
-		// clavado en un actor y no hay ya un Projectile vivo, lanzando una
-		// réplica nueva en la posición donde se desengancha (ver
-		// Throw::DetachEmbeddedWeapon/Throw::SpawnProjectileAt). Si no hay
-		// forma de arrancarlo (sin jugador o sin punto de partida), cae a
-		// RecallWeapon() como red de seguridad.
+		// Empieza el regreso de verdad (5.- RETURN). En los tres puntos de
+		// partida posibles (en vuelo, clavada en superficie, clavada en un
+		// actor) se captura la posición actual, se destruye/desengancha lo
+		// que hubiera hasta ahora, y se lanza una réplica visual nueva ahí
+		// mismo (ver Throw::SpawnWeaponReplicaAt) para que Return la
+		// controle — nunca se reutiliza el Projectile nativo de la ida
+		// (comprobado en el juego: un Projectile todavía activo en Havok
+		// compite con el control manual tick a tick; ver CHANGELOG.md
+		// v0.3.x). Si no hay forma de arrancarlo (sin jugador o sin punto
+		// de partida), cae a RecallWeapon() como red de seguridad.
 		void BeginReturn();
+
+		// Caso "clavado en un actor": intenta desenganchar el nodo 3D
+		// (Throw::DetachEmbeddedWeapon) y, si lo consigue, lanza la réplica
+		// y arranca el regreso. El nodo puede tardar hasta ~1s en aparecer
+		// tras el impacto (ver Constants::kEmbeddedWeaponNodeName); si
+		// todavía no está, reintenta en segundo plano en vez de rendirse a
+		// la primera (comprobado en el juego: sin reintento, el arma se
+		// queda enganchada para siempre). a_attemptsLeft llega a 0 sin
+		// éxito cae a RecallWeapon().
+		void TryDetachAndBeginReturn(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft);
+
+		// Lanza la réplica visual en a_position (ver
+		// Throw::SpawnWeaponReplicaAt) y arranca Return::BeginReturn sobre
+		// ella. Punto de partida común a los tres casos de BeginReturn().
+		void SpawnReplicaAndBeginReturn(RE::Actor* a_player, const RE::NiPoint3& a_position);
 
 		// Reequipa el arma activa y vuelve a "en mano", sin tocar el
 		// proyectil (ya limpiado por el llamante). Código compartido entre

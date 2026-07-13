@@ -3,10 +3,13 @@
 
 #include "3.- WEAPON/WeaponManager.h"
 
+#include "1.- CORE/Constants.h"
 #include "4.- THROW/ThrowManager.h"
 #include "4.- THROW/ThrowProjectile.h"
 #include "5.- RETURN/ReturnManager.h"
 
+#include <chrono>
+#include <thread>
 #include <tuple>
 
 namespace Weapon
@@ -53,6 +56,7 @@ namespace Weapon
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetProjectileHandle({});
 		weaponState.SetImpactTarget({});
+		weaponState.SetReturnReplicaHandle({});
 		weaponState.SetState(State::kInHand);
 	}
 
@@ -157,6 +161,12 @@ namespace Weapon
 		// fantasma (comprobado en el juego).
 		if (auto projectile = weaponState.GetProjectileHandle().get()) {
 			projectile->Kill();
+		} else if (auto replica = weaponState.GetReturnReplicaHandle().get()) {
+			// Regreso ya en marcha (ver BeginReturn/SpawnReplicaAndBeginReturn):
+			// la réplica visual no es un Projectile, se borra como
+			// cualquier referencia normal.
+			replica->Disable();
+			replica->SetDelete(true);
 		} else if (auto* target = weaponState.GetImpactTarget().get().get()) {
 			// Clavado en un actor: aquí el ProjectileHandle guardado nunca
 			// resuelve a nada (el motor destruye la referencia al
@@ -182,30 +192,99 @@ namespace Weapon
 			return;
 		}
 
-		auto handle = weaponState.GetProjectileHandle();
+		// A partir de aquí ya no se vuelve a entrar por este botón mientras
+		// se resuelve el punto de partida (OnAimButtonDown solo llama a
+		// BeginReturn() en kThrown/kStuck): evita arrancar dos intentos de
+		// regreso en paralelo si se pulsa varias veces seguidas mientras
+		// TryDetachAndBeginReturn todavía está reintentando.
+		weaponState.SetState(State::kReturning);
 
-		if (!handle.get()) {
-			// Clavado en un actor: no hay Projectile vivo del que partir
-			// (ver "Arquitectura de física de proyectiles" en CLAUDE.md).
-			// Se recupera la posición del modelo clavado al desengancharlo
-			// del actor, y se lanza una réplica nueva justo ahí para que
-			// Return::BeginReturn la controle desde el principio.
-			auto* target = weaponState.GetImpactTarget().get().get();
-			auto  position = target ? Throw::DetachEmbeddedWeapon(target) : std::nullopt;
-
-			auto* weapon = weaponState.GetActiveWeapon();
-			handle = (position && weapon) ? Throw::SpawnProjectileAt(player, weapon->As<RE::TESObjectWEAP>(), *position) : RE::ProjectileHandle{};
-
-			if (!handle.get()) {
-				RecallWeapon();
-				return;
-			}
-
-			weaponState.SetProjectileHandle(handle);
+		if (auto projectile = weaponState.GetProjectileHandle().get()) {
+			// En vuelo o clavado en superficie: se captura la posición
+			// actual, se destruye el Projectile nativo y se lanza la
+			// réplica visual que Return va a controlar (ver comentario en
+			// el header: un Projectile todavía activo en Havok compite
+			// con el control manual tick a tick).
+			const auto position = projectile->GetPosition();
+			projectile->Kill();
+			SpawnReplicaAndBeginReturn(player, position);
+			return;
 		}
 
-		weaponState.SetState(State::kReturning);
-		Return::BeginReturn(player, handle);
+		// Clavado en un actor: no hay Projectile vivo del que partir (ver
+		// "Arquitectura de física de proyectiles" en CLAUDE.md).
+		// TryDetachAndBeginReturn desengancha el modelo clavado (con
+		// reintentos) y lanza la réplica en esa posición.
+		auto targetHandle = weaponState.GetImpactTarget();
+		if (targetHandle.get().get()) {
+			TryDetachAndBeginReturn(targetHandle, Constants::kEmbeddedWeaponDetachMaxAttempts);
+		} else {
+			RecallWeapon();
+		}
+	}
+
+	void WeaponManager::TryDetachAndBeginReturn(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft)
+	{
+		if (weaponState.GetState() != State::kReturning) {
+			// El ciclo cambió por otra vía mientras se reintentaba (p. ej.
+			// una pantalla de carga resincronizó el estado); no hay nada
+			// que retomar aquí.
+			return;
+		}
+
+		auto* target = a_targetHandle.get().get();
+		auto  position = target ? Throw::DetachEmbeddedWeapon(target) : std::nullopt;
+
+		if (!position) {
+			if (a_attemptsLeft > 0) {
+				// El nodo "Scene Root" puede tardar hasta ~1s en aparecer
+				// tras el impacto (ver Constants::kEmbeddedWeaponNodeName);
+				// se reintenta en segundo plano en vez de rendirse a la
+				// primera (comprobado en el juego: sin esto, el arma se
+				// queda enganchada para siempre si se pulsa recuperar antes
+				// de ese margen).
+				std::thread([this, a_targetHandle, a_attemptsLeft]() {
+					std::this_thread::sleep_for(Constants::kEmbeddedWeaponDetachRetryInterval);
+					SKSE::GetTaskInterface()->AddTask([this, a_targetHandle, a_attemptsLeft]() {
+						TryDetachAndBeginReturn(a_targetHandle, a_attemptsLeft - 1);
+					});
+				}).detach();
+			} else {
+				RecallWeapon();
+			}
+			return;
+		}
+
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			RecallWeapon();
+			return;
+		}
+
+		// El nodo desenganchado está literalmente encima/dentro del cuerpo
+		// del actor (ahí es donde estaba clavado); lanzar la réplica justo
+		// ahí puede solapar su colisión con la del actor y hacer que el
+		// motor la vuelva a clavar de forma nativa antes de que
+		// Return::BeginReturn llegue a tomar control (hipótesis a probar:
+		// no confirmado en el juego todavía). Se separa un poco hacia
+		// arriba para evitar ese solape.
+		SpawnReplicaAndBeginReturn(player, *position + RE::NiPoint3{ 0.0f, 0.0f, 40.0f });
+	}
+
+	void WeaponManager::SpawnReplicaAndBeginReturn(RE::Actor* a_player, const RE::NiPoint3& a_position)
+	{
+		auto* weapon = weaponState.GetActiveWeapon();
+		auto  handle = weapon ? Throw::SpawnWeaponReplicaAt(a_player, weapon->As<RE::TESObjectWEAP>(), a_position) : RE::ObjectRefHandle{};
+
+		logs::info("SpawnReplicaAndBeginReturn: réplica en ({:.1f},{:.1f},{:.1f}) -> handle {}", a_position.x, a_position.y, a_position.z, handle.get() != nullptr);
+
+		if (!handle.get()) {
+			RecallWeapon();
+			return;
+		}
+
+		weaponState.SetReturnReplicaHandle(handle);
+		Return::BeginReturn(a_player, handle);
 	}
 
 	void WeaponManager::ReequipAndReset()
@@ -226,6 +305,7 @@ namespace Weapon
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetProjectileHandle({});
 		weaponState.SetImpactTarget({});
+		weaponState.SetReturnReplicaHandle({});
 		weaponState.SetState(State::kInHand);
 	}
 }

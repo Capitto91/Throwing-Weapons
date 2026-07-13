@@ -46,9 +46,10 @@ namespace Throw
 			return { pitch, yaw };
 		}
 
-		// Lanza la réplica compartiendo la ruta LaunchArrow + Ammo dedicado
-		// (ver Constants::kThrowableAmmo) que usan tanto el lanzamiento real
-		// como el reposicionamiento sin lanzar de Throw::SpawnProjectileAt.
+		// Lanza el proyectil réplica del arma vía LaunchArrow + Ammo dedicado
+		// (ver Constants::kThrowableAmmo), usado solo por el lanzamiento
+		// real (Throw::LaunchWeapon). El regreso (5.- RETURN) no usa esta
+		// ruta — ver Throw::SpawnWeaponReplicaAt.
 		RE::ProjectileHandle LaunchArrowReplica(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_origin, const RE::Projectile::ProjectileRot& a_angles)
 		{
 			auto* ammo = RE::TESForm::LookupByEditorID<RE::TESAmmo>(Constants::kThrowableAmmo);
@@ -103,13 +104,19 @@ namespace Throw
 		return LaunchArrowReplica(a_shooter, a_weapon, GetLaunchOrigin(a_shooter), GetCameraAimAngles());
 	}
 
-	RE::ProjectileHandle SpawnProjectileAt(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position)
+	RE::ObjectRefHandle SpawnWeaponReplicaAt(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position)
 	{
-		if (!a_shooter) {
+		if (!a_shooter || !a_weapon) {
 			return {};
 		}
 
-		return LaunchArrowReplica(a_shooter, a_weapon, a_position, { 0.0f, 0.0f });
+		auto ref = a_shooter->PlaceObjectAtMe(a_weapon, false);
+		if (!ref) {
+			return {};
+		}
+
+		ref->SetPosition(a_position);
+		return RE::ObjectRefHandle(ref.get());
 	}
 
 	std::optional<RE::NiPoint3> DetachEmbeddedWeapon(RE::TESObjectREFR* a_target)

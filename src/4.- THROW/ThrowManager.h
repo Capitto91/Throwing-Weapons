@@ -19,13 +19,19 @@ namespace Throw
 	// persistirlo en WeaponState.
 	[[nodiscard]] RE::ProjectileHandle LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon);
 
-	// Crea el proyectil réplica ya en reposo en a_position, sin lanzarlo
-	// (ángulos a cero); usado por Weapon::WeaponManager para arrancar el
-	// regreso (5.- RETURN) cuando no hay ya un Projectile en vuelo/clavado
-	// del que partir (caso "clavado en un actor", ver
-	// Throw::DetachEmbeddedWeapon). El llamante debe ponerlo en modo
-	// Havok "keyframed" antes de que la física le dé tiempo a moverlo.
-	[[nodiscard]] RE::ProjectileHandle SpawnProjectileAt(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position);
+	// Crea una referencia normal del arma (no un Projectile) en a_position,
+	// para que Weapon::WeaponManager la use como punto de partida de
+	// TODOS los casos de 5.- RETURN (en vuelo, clavada en superficie o en
+	// un actor) — nunca se reutiliza el Projectile nativo para el regreso.
+	// Motivo (comprobado en el juego, ver CHANGELOG.md v0.3.x): un
+	// Projectile activo en Havok (todavía en vuelo, o recién relanzado vía
+	// Projectile::LaunchArrow) tiene su propia lógica interna de vuelo
+	// balístico que compite con el control manual tick a tick, dejando el
+	// arma "congelada"/parpadeando en vez de volar. Una referencia normal
+	// (sin esa maquinaria de vuelo) no tiene ese problema. El llamante debe
+	// ponerla en modo Havok "keyframed" antes de que la física le dé
+	// tiempo a moverla.
+	[[nodiscard]] RE::ObjectRefHandle SpawnWeaponReplicaAt(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position);
 
 	// Al clavarse en un actor, la referencia Projectile original deja de
 	// existir (comprobado en el juego: el motor la destruye al procesar

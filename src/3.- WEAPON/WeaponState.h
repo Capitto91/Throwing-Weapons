@@ -45,10 +45,19 @@ namespace Weapon
 		[[nodiscard]] RE::ObjectRefHandle GetImpactTarget() const noexcept { return impactTarget; }
 		void                              SetImpactTarget(RE::ObjectRefHandle a_target) noexcept { impactTarget = a_target; }
 
+		// Réplica visual (no un Projectile, ver Throw::SpawnWeaponReplicaAt)
+		// que 5.- RETURN controla a mano durante el regreso. Distinta de
+		// projectileHandle: esta se crea al empezar el regreso, en los tres
+		// casos posibles (en vuelo, clavada en superficie o en un actor),
+		// nunca reutilizando el Projectile de la ida.
+		[[nodiscard]] RE::ObjectRefHandle GetReturnReplicaHandle() const noexcept { return returnReplicaHandle; }
+		void                              SetReturnReplicaHandle(RE::ObjectRefHandle a_handle) noexcept { returnReplicaHandle = a_handle; }
+
 	private:
 		State                state{ State::kInHand };
 		RE::TESBoundObject*  activeWeapon{ nullptr };
 		RE::ProjectileHandle projectileHandle;
 		RE::ObjectRefHandle  impactTarget;
+		RE::ObjectRefHandle  returnReplicaHandle;
 	};
 }

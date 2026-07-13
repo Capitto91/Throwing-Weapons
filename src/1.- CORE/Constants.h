@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string_view>
 
 namespace Constants
@@ -65,4 +66,14 @@ namespace Constants
 	// del jugador) provoque oscilaciones al intentar alcanzarlo con
 	// precisión exacta.
 	inline constexpr float kReturnArrivalDistance = 30.0f;
+
+	// El nodo "Scene Root" (ver kEmbeddedWeaponNodeName) tarda hasta ~1s en
+	// aparecer tras el impacto contra un actor. Si se pulsa recuperar antes
+	// de eso, Throw::DetachEmbeddedWeapon no lo encuentra todavía;
+	// Weapon::WeaponManager reintenta en vez de rendirse a la primera
+	// (comprobado en el juego: sin reintento, el arma se queda enganchada
+	// para siempre). kEmbeddedWeaponDetachMaxAttempts reintentos cada
+	// kEmbeddedWeaponDetachRetryInterval cubren de sobra ese margen de 1s.
+	inline constexpr int                       kEmbeddedWeaponDetachMaxAttempts = 10;
+	inline constexpr std::chrono::milliseconds kEmbeddedWeaponDetachRetryInterval{ 150 };
 }
