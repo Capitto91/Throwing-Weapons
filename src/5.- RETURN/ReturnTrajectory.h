@@ -1,7 +1,7 @@
 // Cálculo matemático de la trayectoria de retorno: curva de Bezier
 // cuadrática (punto 7 de Mecanica del arma.txt) recorrida con aceleración
-// híbrida partiendo de velocidad cero (punto 8). Pendiente: homing con
-// ángulo máximo (punto 10) y enderezado antes de llegar (punto 11).
+// híbrida partiendo de velocidad cero (punto 8). Pendiente: enderezado
+// antes de llegar (punto 11).
 
 #pragma once
 

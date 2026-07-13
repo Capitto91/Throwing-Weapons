@@ -15,7 +15,8 @@ namespace Return
 	// Trayectoria curva (nunca en línea recta, punto 7) con aceleración
 	// híbrida partiendo de velocidad cero (punto 8). Pendiente: golpear
 	// sin clavarse durante el regreso (punto 9), homing con ángulo máximo
-	// (punto 10), enderezado antes de llegar (punto 11) y temblor previo
-	// al desprendimiento (punto 12).
+	// (punto 10, descartado tras pruebas en el juego — ver CHANGELOG.md),
+	// enderezado antes de llegar (punto 11) y temblor previo al
+	// desprendimiento (punto 12).
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_handle);
 }

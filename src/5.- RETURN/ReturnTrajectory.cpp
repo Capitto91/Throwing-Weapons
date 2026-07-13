@@ -40,7 +40,7 @@ namespace Return
 			side.Unitize();
 		}
 
-		const float offset = std::clamp(distance * Constants::kReturnCurveLateralFraction, Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
+		const float        offset = std::clamp(distance * Constants::kReturnCurveLateralFraction, Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
 		const RE::NiPoint3 midpoint = a_start + forward * (distance * 0.5f);
 
 		return midpoint + side * offset;
