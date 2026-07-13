@@ -1,23 +1,54 @@
-// Implementación del cálculo de trayectoria de retorno (fase 1: línea recta
-// con aceleración híbrida).
+// Implementación del cálculo de trayectoria de retorno (curva de Bezier
+// cuadrática con aceleración híbrida).
 
 #include "5.- RETURN/ReturnTrajectory.h"
 
+#include "1.- CORE/Constants.h"
+
+#include <algorithm>
 #include <cmath>
 
 namespace Return
 {
-	RE::NiPoint3 ComputeNextPosition(const RE::NiPoint3& a_current, const RE::NiPoint3& a_target, float a_speed, float a_deltaTime)
+	RE::NiPoint3 ComputeReturnControlPoint(const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, const RE::NiPoint3& a_preferredSide)
 	{
-		const RE::NiPoint3 toTarget = a_target - a_current;
-		const float        distance = toTarget.Length();
-		const float        step = a_speed * a_deltaTime;
-
-		if (distance <= 0.0f || step >= distance) {
-			return a_target;
+		const RE::NiPoint3 toEnd = a_end - a_start;
+		const float        distance = toEnd.Length();
+		if (distance <= 0.0f) {
+			return a_start;
 		}
 
-		return a_current + toTarget * (step / distance);
+		const RE::NiPoint3 forward = toEnd / distance;
+
+		// Componente de a_preferredSide perpendicular a la línea recta
+		// (proyección rechazada, Gram-Schmidt): el arma se recoge con la
+		// mano derecha, así que se pasa el vector "derecha" del jugador
+		// para que la curva entre siempre por ese lado en vez de uno
+		// arbitrario.
+		RE::NiPoint3 side = a_preferredSide - forward * forward.Dot(a_preferredSide);
+		if (side.SqrLength() <= 0.0001f) {
+			// a_preferredSide casi paralelo a la línea recta (caso
+			// degenerado, p. ej. clavado justo detrás/delante del
+			// jugador): cualquier perpendicular horizontal sirve para
+			// seguir cumpliendo la curvatura obligatoria del punto 7.
+			static const RE::NiPoint3 kWorldUp{ 0.0f, 0.0f, 1.0f };
+			side = forward.UnitCross(kWorldUp);
+			if (side.SqrLength() <= 0.0001f) {
+				side = { 1.0f, 0.0f, 0.0f };
+			}
+		} else {
+			side.Unitize();
+		}
+
+		const float offset = std::clamp(distance * Constants::kReturnCurveLateralFraction, Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
+		const RE::NiPoint3 midpoint = a_start + forward * (distance * 0.5f);
+
+		return midpoint + side * offset;
+	}
+
+	float ComputeTraveledDistance(float a_acceleration, float a_elapsedTime)
+	{
+		return 0.5f * a_acceleration * a_elapsedTime * a_elapsedTime;
 	}
 
 	float ComputeReturnAcceleration(float a_distance, float a_defaultAcceleration, float a_maxDuration)

@@ -6,7 +6,9 @@
 #include "1.- CORE/Constants.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "5.- RETURN/ReturnTrajectory.h"
+#include "9.- MATH/CurveMath.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -34,14 +36,18 @@ namespace Return
 		std::atomic<bool> g_active{ false };
 
 		// Aceleración (punto 8 de Mecanica del arma.txt) y tiempo
-		// transcurrido del regreso en curso; ambas se fijan una vez en
-		// StartControlling y Tick las va consumiendo. Al ser un arma
-		// única, solo hay un regreso en marcha a la vez, y ambas variables
-		// solo se tocan desde el hilo principal (dentro de tareas de
+		// transcurrido, y geometría de la curva de Bezier (punto 7) del regreso
+		// en curso; todas se fijan una vez en StartControlling y Tick las va
+		// consumiendo. Al ser un arma única, solo hay un regreso en marcha a
+		// la vez, y todas estas variables solo se tocan desde el hilo
+		// principal (dentro de tareas de
 		// SKSE::GetTaskInterface()->AddTask, que se ejecutan en orden), así
 		// que no hacen falta atómicas.
-		float g_acceleration{ 0.0f };
-		float g_elapsedTime{ 0.0f };
+		float        g_acceleration{ 0.0f };
+		float        g_elapsedTime{ 0.0f };
+		RE::NiPoint3 g_startPosition{};
+		RE::NiPoint3 g_controlPoint{};
+		float        g_totalDistance{ 0.0f };
 
 		RE::NiPoint3 GetHandPosition(RE::Actor* a_player)
 		{
@@ -50,6 +56,21 @@ namespace Return
 			}
 
 			return a_player->GetPosition();
+		}
+
+		// Vector "derecha" del jugador en el mundo (eje X local de su nodo
+		// 3D raíz, misma convención que Throw::GetCameraAimAngles usa para
+		// "adelante" con el eje Y): se usa para que la curva del regreso
+		// (punto 7) entre siempre por el lado de la mano derecha, donde se
+		// recoge el arma, en vez de un lado arbitrario.
+		RE::NiPoint3 GetPlayerRightVector(RE::Actor* a_player)
+		{
+			auto* node = a_player->Get3D();
+			if (!node) {
+				return { 1.0f, 0.0f, 0.0f };
+			}
+
+			return node->world.rotate.GetVectorX();
 		}
 
 		// TESObjectREFR::SetPosition solo actualiza la posición "lógica" del
@@ -117,13 +138,17 @@ namespace Return
 			}
 
 			// Aceleración constante partiendo de velocidad cero (punto 8 de
-			// Mecanica del arma.txt): la velocidad de este tick es
-			// aceleración × tiempo transcurrido desde que empezó a
-			// controlarse, no un valor plano.
+			// Mecanica del arma.txt): la distancia recorrida hasta este tick
+			// es ½·aceleración·tiempo², no una velocidad plana.
 			g_elapsedTime += kTickDeltaSeconds;
-			const float speed = g_acceleration * g_elapsedTime;
+			const float traveled = ComputeTraveledDistance(g_acceleration, g_elapsedTime);
+			const float t = g_totalDistance > 0.0f ? std::clamp(traveled / g_totalDistance, 0.0f, 1.0f) : 1.0f;
 
-			const auto nextPos = ComputeNextPosition(currentPos, handPos, speed, kTickDeltaSeconds);
+			// Curva de Bezier cuadrática (punto 7: el regreso nunca es una
+			// línea recta). g_startPosition y g_controlPoint se fijaron una
+			// vez en StartControlling; el punto final sigue a la mano del
+			// jugador aunque se mueva durante el regreso.
+			const auto nextPos = Math::EvaluateQuadraticBezier(g_startPosition, g_controlPoint, handPos, t);
 			refr->SetPosition(nextPos);
 			SetHavokPosition(*refr, nextPos);
 			refr->Update3DPosition(true);
@@ -164,12 +189,22 @@ namespace Return
 			// Constants::kReturnMaxDuration en cubrir la distancia actual a
 			// la mano — entonces se aumenta lo justo para cumplir ese
 			// límite.
-			const float distance = (GetHandPosition(a_player) - refr->GetPosition()).Length();
+			const auto  handPos = GetHandPosition(a_player);
+			const auto  startPos = refr->GetPosition();
+			const float distance = (handPos - startPos).Length();
 			g_acceleration = ComputeReturnAcceleration(distance, Constants::kReturnAcceleration, Constants::kReturnMaxDuration);
 			g_elapsedTime = 0.0f;
 
+			// Curva de Bezier cuadrática (punto 7): el punto de control se
+			// calcula una única vez aquí, a partir de la mano en este
+			// instante; el punto final de la curva (Tick) sí sigue a la mano
+			// en cada tick si el jugador se mueve durante el regreso.
+			g_startPosition = startPos;
+			g_controlPoint = ComputeReturnControlPoint(startPos, handPos, GetPlayerRightVector(a_player));
+			g_totalDistance = distance;
+
 			logs::info("Return::StartControlling arrancando en ({:.1f},{:.1f},{:.1f}), distancia={:.1f}, aceleración={:.1f}",
-				refr->GetPosition().x, refr->GetPosition().y, refr->GetPosition().z, distance, g_acceleration);
+				startPos.x, startPos.y, startPos.z, distance, g_acceleration);
 
 			g_active = true;
 			std::thread(RunLoop, a_handle, RE::ActorHandle(a_player)).detach();

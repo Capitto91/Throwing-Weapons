@@ -12,8 +12,10 @@ namespace Return
 	// código, sin fuerzas/gravedad) antes de empezar a moverla — ver
 	// CLAUDE.md, "Arquitectura de física de proyectiles". Al llegar, la
 	// borra y notifica a Weapon::WeaponManager::OnReturnComplete.
-	// Fase 1: trayectoria en línea recta a velocidad constante, sin
-	// curvatura/velocidad híbrida/homing/enderezado/temblor todavía
-	// (puntos 7, 8, 9, 10, 11, 12 de Mecanica del arma.txt pendientes).
+	// Trayectoria curva (nunca en línea recta, punto 7) con aceleración
+	// híbrida partiendo de velocidad cero (punto 8). Pendiente: golpear
+	// sin clavarse durante el regreso (punto 9), homing con ángulo máximo
+	// (punto 10), enderezado antes de llegar (punto 11) y temblor previo
+	// al desprendimiento (punto 12).
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_handle);
 }

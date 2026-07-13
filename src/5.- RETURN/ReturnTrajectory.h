@@ -1,18 +1,32 @@
-// Cálculo matemático de la trayectoria de retorno.
-// Fase 1: línea recta hacia la mano del jugador, con aceleración híbrida
-// (punto 8 de Mecanica del arma.txt). Pendiente: curvatura obligatoria
-// (punto 7), homing con ángulo máximo (punto 10) y enderezado antes de
-// llegar (punto 11).
+// Cálculo matemático de la trayectoria de retorno: curva de Bezier
+// cuadrática (punto 7 de Mecanica del arma.txt) recorrida con aceleración
+// híbrida partiendo de velocidad cero (punto 8). Pendiente: homing con
+// ángulo máximo (punto 10) y enderezado antes de llegar (punto 11).
 
 #pragma once
 
 namespace Return
 {
-	// Devuelve la siguiente posición al avanzar desde a_current hacia
-	// a_target, como mucho a_speed unidades por segundo durante
-	// a_deltaTime. Nunca sobrepasa a_target, aunque el paso calculado sea
-	// mayor que la distancia restante.
-	[[nodiscard]] RE::NiPoint3 ComputeNextPosition(const RE::NiPoint3& a_current, const RE::NiPoint3& a_target, float a_speed, float a_deltaTime);
+	// Punto de control de la curva de Bezier cuadrática usada para el
+	// regreso (punto 7: nunca en línea recta). Se calcula una única vez,
+	// al empezar el regreso (ver Return::BeginReturn/StartControlling), a
+	// partir de a_start (posición de partida) y a_end (mano del jugador
+	// en ese instante) — no se recalcula aunque la mano se mueva después,
+	// solo el punto final de la curva sigue a la mano en cada tick.
+	// a_preferredSide indica hacia qué lado curvar (se usa el vector
+	// "derecha" del jugador en el instante de empezar el regreso, para
+	// que el arma entre por el lado de la mano derecha, donde se recoge,
+	// en vez de un lado arbitrario); si es paralelo a la línea recta
+	// start-end (caso degenerado), se cae a una perpendicular horizontal
+	// cualquiera.
+	[[nodiscard]] RE::NiPoint3 ComputeReturnControlPoint(const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, const RE::NiPoint3& a_preferredSide);
+
+	// Distancia recorrida tras a_elapsedTime segundos de aceleración
+	// constante a_acceleration partiendo de velocidad cero (misma
+	// cinemática que ComputeReturnAcceleration: distancia = ½·a·t²). Se
+	// usa cada tick para saber en qué punto (0-1) de la curva de Bezier
+	// está el arma.
+	[[nodiscard]] float ComputeTraveledDistance(float a_acceleration, float a_elapsedTime);
 
 	// Aceleración a aplicar durante todo el regreso (punto 8 de Mecanica
 	// del arma.txt, partiendo siempre de velocidad cero): a_distance es la

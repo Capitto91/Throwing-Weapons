@@ -87,4 +87,16 @@ namespace Constants
 	// posición exacta del clavado frente a caer a esa aproximación.
 	inline constexpr int                       kEmbeddedWeaponDetachMaxAttempts = 20;
 	inline constexpr std::chrono::milliseconds kEmbeddedWeaponDetachRetryInterval{ 150 };
+
+	// Desviación lateral del punto de control de la curva de Bezier
+	// cuadrática del regreso, como fracción de la distancia total a
+	// recorrer (punto 7 de Mecanica del arma.txt: el regreso nunca es una
+	// línea recta) — ver Return::ComputeReturnControlPoint.
+	// kReturnCurveMinOffset/MaxOffset acotan esa fracción en unidades
+	// absolutas, para que un lanzamiento muy corto no dé una curva
+	// ridículamente cerrada, ni uno muy largo una exageradamente ancha.
+	// Ninguno de los tres valores está especificado por el documento.
+	inline constexpr float kReturnCurveLateralFraction = 0.28f;
+	inline constexpr float kReturnCurveMinOffset = 60.0f;
+	inline constexpr float kReturnCurveMaxOffset = 500.0f;
 }
