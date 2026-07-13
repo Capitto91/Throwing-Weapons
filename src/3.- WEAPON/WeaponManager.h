@@ -113,12 +113,14 @@ namespace Weapon
 
 		// Caso "clavado en un actor": intenta desenganchar el nodo 3D
 		// (Throw::DetachEmbeddedWeapon) y, si lo consigue, lanza la réplica
-		// y arranca el regreso. El nodo puede tardar hasta ~1s en aparecer
-		// tras el impacto (ver Constants::kEmbeddedWeaponNodeName); si
-		// todavía no está, reintenta en segundo plano en vez de rendirse a
-		// la primera (comprobado en el juego: sin reintento, el arma se
-		// queda enganchada para siempre). a_attemptsLeft llega a 0 sin
-		// éxito cae a RecallWeapon().
+		// y arranca el regreso. El nodo puede tardar en aparecer tras el
+		// impacto (ver Constants::kEmbeddedWeaponNodeName); si todavía no
+		// está, reintenta en segundo plano en vez de rendirse a la primera.
+		// El jugador nunca debe ver el arma reaparecer sin animación: si
+		// a_attemptsLeft llega a 0 sin encontrar el nodo, arranca el
+		// regreso igualmente desde la posición actual del actor (menos
+		// preciso que el punto exacto del clavado, pero siempre animado)
+		// en vez de caer a RecallWeapon().
 		void TryDetachAndBeginReturn(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft);
 
 		// Lanza la réplica visual en a_position (ver

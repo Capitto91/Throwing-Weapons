@@ -237,18 +237,32 @@ namespace Weapon
 
 		if (!position) {
 			if (a_attemptsLeft > 0) {
-				// El nodo "Scene Root" puede tardar hasta ~1s en aparecer
-				// tras el impacto (ver Constants::kEmbeddedWeaponNodeName);
-				// se reintenta en segundo plano en vez de rendirse a la
-				// primera (comprobado en el juego: sin esto, el arma se
-				// queda enganchada para siempre si se pulsa recuperar antes
-				// de ese margen).
+				// El nodo "Scene Root" puede tardar en aparecer tras el
+				// impacto (ver Constants::kEmbeddedWeaponNodeName; en el
+				// juego se ha visto tardar bastante más de 1s en algunos
+				// casos); se reintenta en segundo plano en vez de rendirse
+				// a la primera.
 				std::thread([this, a_targetHandle, a_attemptsLeft]() {
 					std::this_thread::sleep_for(Constants::kEmbeddedWeaponDetachRetryInterval);
 					SKSE::GetTaskInterface()->AddTask([this, a_targetHandle, a_attemptsLeft]() {
 						TryDetachAndBeginReturn(a_targetHandle, a_attemptsLeft - 1);
 					});
 				}).detach();
+				return;
+			}
+
+			// Agotados los reintentos sin encontrar el nodo: el jugador no
+			// debe ver nunca el arma reaparecer sin animación de vuelta
+			// (recall instantáneo), así que se arranca el regreso animado
+			// desde la posición actual del actor en vez de rendirse. Es
+			// menos preciso que el punto exacto donde estaba clavada, pero
+			// garantiza que siempre se vea volar. Si el nodo "Scene Root"
+			// apareciera más tarde, se quedaría enganchado al actor sin que
+			// nada vuelva a buscarlo — riesgo aceptado del margen de
+			// reintentos.
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (player && target) {
+				SpawnReplicaAndBeginReturn(player, target->GetPosition());
 			} else {
 				RecallWeapon();
 			}
@@ -261,14 +275,7 @@ namespace Weapon
 			return;
 		}
 
-		// El nodo desenganchado está literalmente encima/dentro del cuerpo
-		// del actor (ahí es donde estaba clavado); lanzar la réplica justo
-		// ahí puede solapar su colisión con la del actor y hacer que el
-		// motor la vuelva a clavar de forma nativa antes de que
-		// Return::BeginReturn llegue a tomar control (hipótesis a probar:
-		// no confirmado en el juego todavía). Se separa un poco hacia
-		// arriba para evitar ese solape.
-		SpawnReplicaAndBeginReturn(player, *position + RE::NiPoint3{ 0.0f, 0.0f, 40.0f });
+		SpawnReplicaAndBeginReturn(player, *position);
 	}
 
 	void WeaponManager::SpawnReplicaAndBeginReturn(RE::Actor* a_player, const RE::NiPoint3& a_position)

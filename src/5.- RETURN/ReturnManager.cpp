@@ -33,6 +33,16 @@ namespace Return
 		// única); controla si el hilo de fondo sigue reencolando pasos.
 		std::atomic<bool> g_active{ false };
 
+		// Aceleración (punto 8 de Mecanica del arma.txt) y tiempo
+		// transcurrido del regreso en curso; ambas se fijan una vez en
+		// StartControlling y Tick las va consumiendo. Al ser un arma
+		// única, solo hay un regreso en marcha a la vez, y ambas variables
+		// solo se tocan desde el hilo principal (dentro de tareas de
+		// SKSE::GetTaskInterface()->AddTask, que se ejecutan en orden), así
+		// que no hacen falta atómicas.
+		float g_acceleration{ 0.0f };
+		float g_elapsedTime{ 0.0f };
+
 		RE::NiPoint3 GetHandPosition(RE::Actor* a_player)
 		{
 			if (auto* weaponNode = a_player->GetNodeByName("WEAPON")) {
@@ -106,7 +116,14 @@ namespace Return
 				return;
 			}
 
-			const auto nextPos = ComputeNextPosition(currentPos, handPos, Constants::kReturnSpeed, kTickDeltaSeconds);
+			// Aceleración constante partiendo de velocidad cero (punto 8 de
+			// Mecanica del arma.txt): la velocidad de este tick es
+			// aceleración × tiempo transcurrido desde que empezó a
+			// controlarse, no un valor plano.
+			g_elapsedTime += kTickDeltaSeconds;
+			const float speed = g_acceleration * g_elapsedTime;
+
+			const auto nextPos = ComputeNextPosition(currentPos, handPos, speed, kTickDeltaSeconds);
 			refr->SetPosition(nextPos);
 			SetHavokPosition(*refr, nextPos);
 			refr->Update3DPosition(true);
@@ -141,7 +158,18 @@ namespace Return
 			}
 			SetHavokPosition(*refr, refr->GetPosition());
 			refr->Update3DPosition(true);
-			logs::info("Return::StartControlling arrancando en ({:.1f},{:.1f},{:.1f})", refr->GetPosition().x, refr->GetPosition().y, refr->GetPosition().z);
+
+			// Aceleración híbrida (punto 8): por defecto salvo que a esa
+			// aceleración, partiendo de velocidad cero, tardara más de
+			// Constants::kReturnMaxDuration en cubrir la distancia actual a
+			// la mano — entonces se aumenta lo justo para cumplir ese
+			// límite.
+			const float distance = (GetHandPosition(a_player) - refr->GetPosition()).Length();
+			g_acceleration = ComputeReturnAcceleration(distance, Constants::kReturnAcceleration, Constants::kReturnMaxDuration);
+			g_elapsedTime = 0.0f;
+
+			logs::info("Return::StartControlling arrancando en ({:.1f},{:.1f},{:.1f}), distancia={:.1f}, aceleración={:.1f}",
+				refr->GetPosition().x, refr->GetPosition().y, refr->GetPosition().z, distance, g_acceleration);
 
 			g_active = true;
 			std::thread(RunLoop, a_handle, RE::ActorHandle(a_player)).detach();

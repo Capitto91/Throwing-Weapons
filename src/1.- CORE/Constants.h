@@ -51,13 +51,21 @@ namespace Constants
 	// modelo con el nodo raíz renombrado, este valor deja de coincidir.
 	inline constexpr std::string_view kEmbeddedWeaponNodeName{ "Scene Root" };
 
-	// Velocidad de regreso en línea recta, en unidades de juego por
-	// segundo. Fase 1 de RETURN (sin curvatura ni velocidad híbrida
-	// todavía): valor plano provisional, pendiente de sustituir por el
-	// cálculo del punto 8 de Mecanica del arma.txt (constante salvo que
-	// tarde más de 2 segundos, en cuyo caso se acelera para cumplir ese
-	// límite).
-	inline constexpr float kReturnSpeed = 3000.0f;
+	// Aceleración de regreso por defecto, en unidades de juego por segundo
+	// al cuadrado (punto 8 de Mecanica del arma.txt): el arma parte con
+	// velocidad cero y acelera de forma constante, en vez de moverse a
+	// velocidad plana. Elegida para que, a la distancia máxima de
+	// lanzamiento (kMaxThrowDistance), tarde exactamente kReturnMaxDuration
+	// partiendo del reposo (2*distancia/tiempo² = 2*6000/2² = 3000); para
+	// cualquier distancia menor (siempre el caso, al ser kMaxThrowDistance
+	// un límite duro) tarda menos de ese máximo sin necesidad de forzar el
+	// aumento de aceleración — ver Return::ComputeReturnAcceleration.
+	inline constexpr float kReturnAcceleration = 3000.0f;
+
+	// Límite de duración del regreso, en segundos (punto 8 de Mecanica del
+	// arma.txt): si a kReturnAcceleration el arma tardaría más en volver,
+	// se aumenta la aceleración lo necesario para cumplir este límite.
+	inline constexpr float kReturnMaxDuration = 2.0f;
 
 	// Distancia, en unidades de juego, a la que se considera que el arma
 	// ha llegado a la mano del jugador durante el regreso y se reequipa.
@@ -67,13 +75,16 @@ namespace Constants
 	// precisión exacta.
 	inline constexpr float kReturnArrivalDistance = 30.0f;
 
-	// El nodo "Scene Root" (ver kEmbeddedWeaponNodeName) tarda hasta ~1s en
-	// aparecer tras el impacto contra un actor. Si se pulsa recuperar antes
-	// de eso, Throw::DetachEmbeddedWeapon no lo encuentra todavía;
-	// Weapon::WeaponManager reintenta en vez de rendirse a la primera
-	// (comprobado en el juego: sin reintento, el arma se queda enganchada
-	// para siempre). kEmbeddedWeaponDetachMaxAttempts reintentos cada
-	// kEmbeddedWeaponDetachRetryInterval cubren de sobra ese margen de 1s.
-	inline constexpr int                       kEmbeddedWeaponDetachMaxAttempts = 10;
+	// El nodo "Scene Root" (ver kEmbeddedWeaponNodeName) tarda en aparecer
+	// tras el impacto contra un actor — se ha visto tardar bastante más de
+	// 1s en algunos casos en el juego. Si se pulsa recuperar antes de eso,
+	// Throw::DetachEmbeddedWeapon no lo encuentra todavía;
+	// Weapon::WeaponManager reintenta en vez de rendirse a la primera. Si
+	// se agotan los reintentos sin encontrarlo, WeaponManager::TryDetachAndBeginReturn
+	// arranca igualmente el regreso animado desde la posición del actor
+	// (nunca un recall instantáneo visible para el jugador), así que
+	// kEmbeddedWeaponDetachMaxAttempts solo decide cuánto se prioriza la
+	// posición exacta del clavado frente a caer a esa aproximación.
+	inline constexpr int                       kEmbeddedWeaponDetachMaxAttempts = 20;
 	inline constexpr std::chrono::milliseconds kEmbeddedWeaponDetachRetryInterval{ 150 };
 }
