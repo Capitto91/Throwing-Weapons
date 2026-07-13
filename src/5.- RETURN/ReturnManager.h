@@ -13,10 +13,10 @@ namespace Return
 	// CLAUDE.md, "Arquitectura de física de proyectiles". Al llegar, la
 	// borra y notifica a Weapon::WeaponManager::OnReturnComplete.
 	// Trayectoria curva (nunca en línea recta, punto 7) con aceleración
-	// híbrida partiendo de velocidad cero (punto 8). Pendiente: golpear
-	// sin clavarse durante el regreso (punto 9), homing con ángulo máximo
-	// (punto 10, descartado tras pruebas en el juego — ver CHANGELOG.md),
-	// enderezado antes de llegar (punto 11) y temblor previo al
-	// desprendimiento (punto 12).
+	// híbrida partiendo de velocidad cero (punto 8). Gira sobre sí misma
+	// durante el vuelo y se endereza justo antes de llegar (punto 11).
+	// Pendiente: golpear sin clavarse durante el regreso (punto 9), homing
+	// con ángulo máximo (punto 10, descartado tras pruebas en el juego —
+	// ver CHANGELOG.md) y temblor previo al desprendimiento (punto 12).
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_handle);
 }

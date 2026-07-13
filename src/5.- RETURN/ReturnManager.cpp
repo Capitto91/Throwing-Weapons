@@ -8,10 +8,12 @@
 #include "3.- WEAPON/WeaponManager.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "9.- MATH/CurveMath.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 namespace Return
@@ -49,6 +51,25 @@ namespace Return
 		RE::NiPoint3 g_startPosition{};
 		RE::NiPoint3 g_controlPoint{};
 		float        g_totalDistance{ 0.0f };
+
+		// Ángulo de giro sobre sí misma acumulado (punto 11), en radianes,
+		// envuelto a [0, 2π) cada tick para que combinarlo con el ángulo de
+		// enderezado (Tick) no acumule valores cada vez mayores. Ahora se
+		// aplica a la guiñada (Z), no al cabeceo (X) — ver comentario en
+		// Tick sobre por qué (probado en el juego: girar sobre el cabeceo
+		// dejaba el modelo "estirado" hacia la dirección de vuelo en vez
+		// de un giro de hacha).
+		float g_spinAngle{ 0.0f };
+
+		// Cabeceo (pitch) hacia la mano en el instante de arrancar el
+		// regreso, fijado una vez en StartControlling. Mientras el arma
+		// gira rápido sobre sí misma (ahora en la guiñada), el cabeceo se
+		// mantiene en este valor fijo en vez de seguir la curva tick a
+		// tick — combinar un ángulo cambiante con el giro rápido componía
+		// un efecto de tornillo en vez de un giro limpio (probado en el
+		// juego). Solo se interpola hacia el cabeceo real de la curva
+		// durante el enderezado final.
+		float g_initialPitch{ 0.0f };
 
 		RE::NiPoint3 GetHandPosition(RE::Actor* a_player)
 		{
@@ -90,6 +111,28 @@ namespace Return
 
 			RE::hkVector4 havokPosition(a_position * RE::bhkWorld::GetWorldScale());
 			rigidBody->SetPosition(havokPosition);
+		}
+
+		// Mismo motivo que SetHavokPosition, pero para la rotación (punto
+		// 11): TESObjectREFR::SetAngle actualiza el nodo 3D visual, pero no
+		// el bhkRigidBody de Havok. EulerAnglesToAxesZXY usa la misma
+		// convención de ejes que el motor (ver Math::ComputeLookAtAngles).
+		void SetHavokRotation(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_angle)
+		{
+			auto* node = a_refr.Get3D();
+			auto* collisionObj = node ? node->GetCollisionObject() : nullptr;
+			auto* rigidBody = collisionObj ? collisionObj->GetRigidBody() : nullptr;
+			if (!rigidBody) {
+				return;
+			}
+
+			RE::NiMatrix3 rotationMatrix;
+			rotationMatrix.EulerAnglesToAxesZXY(a_angle);
+			const RE::NiQuaternion niRotation(rotationMatrix);
+
+			RE::hkQuaternion havokRotation;
+			havokRotation.vec = RE::hkVector4(niRotation.x, niRotation.y, niRotation.z, niRotation.w);
+			rigidBody->SetRotation(havokRotation);
 		}
 
 		// Detiene el hilo de fondo, borra la réplica controlada a mano y
@@ -158,6 +201,41 @@ namespace Return
 			const auto nextPos = Math::EvaluateQuadraticBezier(g_startPosition, g_controlPoint, handPos, t);
 			refr->SetPosition(nextPos);
 			SetHavokPosition(*refr, nextPos);
+
+			// Punto 11: gira sobre sí misma durante el vuelo (velocidad
+			// constante) y, en el último tramo antes de llegar a la mano,
+			// se endereza para apuntar en la dirección de vuelo — tangente
+			// real de la curva en este punto, no la línea recta hacia la
+			// mano, para que el enderezado seleccione la orientación
+			// coherente con hacia dónde está curvándose el arma.
+			//
+			// Probado en el juego: girar sobre el cabeceo (X, como en la
+			// primera versión) dejaba el modelo "estirado" hacia la
+			// dirección de vuelo en vez de parecer el giro de un hacha
+			// arrojadiza. Corregido con un giro fijo de 90° sobre el
+			// alabeo (Y, Constants::kReturnModelRollOffset — el eje
+			// mango→cabeza del modelo) para dejarlo "de lado", y moviendo
+			// el giro en vuelo a la guiñada (Z) en su lugar. El cabeceo
+			// pasa a mantenerse fijo en g_initialPitch mientras dura el
+			// giro (mismo motivo que antes con la guiñada: dos ángulos
+			// cambiando a la vez componía el efecto de tornillo) y solo se
+			// interpola hacia el cabeceo real de la curva al enderezar.
+			const auto tangent = Math::EvaluateQuadraticBezierTangent(g_startPosition, g_controlPoint, handPos, t);
+			const auto lookAngles = Math::ComputeLookAtAngles(tangent);
+
+			constexpr float kTwoPi = 6.283185307179586f;
+			g_spinAngle = std::fmod(g_spinAngle + Math::DegreesToRadians(Constants::kReturnSpinDegreesPerSecond) * kTickDeltaSeconds, kTwoPi);
+
+			const float distanceToHand = (handPos - nextPos).Length();
+			const float straightenWeight = 1.0f - std::clamp(distanceToHand / Constants::kReturnStraightenDistance, 0.0f, 1.0f);
+
+			const float pitch = Math::LerpAngle(g_initialPitch, lookAngles.x, straightenWeight);
+			const float yaw = Math::LerpAngle(g_spinAngle, lookAngles.z, straightenWeight);
+
+			const RE::NiPoint3 angle{ pitch, Constants::kReturnModelRollOffset, yaw };
+			refr->SetAngle(angle);
+			SetHavokRotation(*refr, angle);
+
 			refr->Update3DPosition(true);
 		}
 
@@ -201,6 +279,8 @@ namespace Return
 			const float distance = (handPos - startPos).Length();
 			g_acceleration = ComputeReturnAcceleration(distance, Constants::kReturnAcceleration, Constants::kReturnMaxDuration);
 			g_elapsedTime = 0.0f;
+			g_spinAngle = 0.0f;
+			g_initialPitch = Math::ComputeLookAtAngles(handPos - startPos).x;
 
 			// Curva de Bezier cuadrática (punto 7): el punto de control se
 			// calcula una única vez aquí, a partir de la mano en este

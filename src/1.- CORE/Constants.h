@@ -119,4 +119,21 @@ namespace Constants
 	inline constexpr float kReturnCurveLateralFraction = 0.28f;
 	inline constexpr float kReturnCurveMinOffset = 60.0f;
 	inline constexpr float kReturnCurveMaxOffset = 500.0f;
+
+	// Punto 11 (enderezado antes de llegar): velocidad de giro sobre sí
+	// misma durante el vuelo, en grados por segundo, y distancia a la
+	// mano (unidades de juego) a partir de la cual empieza a enderezarse
+	// en vez de seguir girando. Sin valor especificado por el documento;
+	// subida de 720 a 1440 (2 → 4 vueltas/segundo) tras probar en el
+	// juego que con 720 se veían pocas vueltas a lo largo del regreso.
+	inline constexpr float kReturnSpinDegreesPerSecond = 1440.0f;
+	inline constexpr float kReturnStraightenDistance = 250.0f;
+
+	// Corrección de "montaje" del modelo 3D soportado (punto 11): girado
+	// 90° sobre su propio eje de alabeo (Y, el eje mango→cabeza) para que
+	// se vea "de lado" en vez de "estirado" hacia la dirección de vuelo
+	// durante el giro del regreso. Ajuste empírico, probado en el juego,
+	// específico de este modelo — no cubierto por el documento. Si se
+	// cambia de arma soportada, este valor podría no aplicar.
+	inline constexpr float kReturnModelRollOffset = 1.5707963267948966f;  // 90°
 }
