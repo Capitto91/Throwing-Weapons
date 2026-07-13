@@ -74,3 +74,14 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - `Throw::DetachEmbeddedWeapon` busca ese nodo recursivamente en el árbol 3D del actor y lo desengancha (`NiNode::DetachChild`) — pura manipulación de grafo de escena, no hay ninguna referencia/`Projectile` que destruir en este caso.
   - `Events::ProjectileHitWatcher` guarda ahora el actor golpeado (`WeaponState::SetImpactTarget`, vía `a_event->target`) para que `WeaponManager::RecallWeapon` sepa dónde buscar cuando el `ProjectileHandle` no resuelve a nada.
   - Limitación conocida y aceptada: si se recupera el arma menos de ~1 segundo después del impacto, el nodo todavía no existe y no se encuentra (`DetachEmbeddedWeapon` lo registra con `logs::warn` en ese caso). No se ha añadido reintento con retraso porque es un caso de borde improbable en juego normal, y esta ruta entera es el placeholder de `RecallWeapon` que sustituirá `RETURN`.
+
+## 2026-07-13 (RETURN, fase 1)
+
+### v0.3.1
+
+- Primera versión del regreso manual del arma (`Return::BeginReturn`, `WeaponManager::BeginReturn`): trayectoria en línea recta a velocidad constante hacia la mano del jugador, para validar el mecanismo antes de añadir curvatura/velocidad híbrida/homing/enderezado/temblor (puntos 7-12 de `Mecanica del arma.txt`, todavía pendientes).
+  - Revisión de la arquitectura anotada en `CLAUDE.md`: en vez de destruir el `Projectile` nativo, se le pone `SetMotionType(hkpMotion::MotionType::kKeyframed)` — modo estándar de Havok para "movido por código" (sin fuerzas/gravedad, con colisión) — y se controla con `SetPosition`/`SetAngle` cada tick. Evita los tirones/clipping sin tener que destruir ni recrear la referencia.
+  - Tres puntos de partida posibles al pulsar recuperar estando lanzada o clavada: proyectil todavía en vuelo, clavado en una superficie (ambos con `Projectile` vivo, se reutiliza tal cual), o clavado en un actor (sin `Projectile` vivo — se lanza uno nuevo con `Throw::SpawnProjectileAt` en la posición exacta donde estaba enganchado el modelo, justo antes de desengancharlo).
+  - Sondeo por tick con un único hilo persistente (duerme ~16ms y reencola en el hilo principal en bucle), a diferencia del hilo-nuevo-por-comprobación de `Throw::TrackProjectile` — a este ritmo (~60/s) generar un hilo por paso sería mucho más gasto que en el sondeo de estado de `THROW` (~20/s).
+  - Al llegar a la mano (distancia `Constants::kReturnArrivalDistance`), `Return` destruye el proyectil y notifica a `WeaponManager::OnReturnComplete`, que reequipa el arma real — comparte el reequipado con la recuperación instantánea (`WeaponManager::ReequipAndReset`, extraído de la antigua `RecallWeapon`).
+  - `RecallWeapon` (recuperación instantánea, sin trayectoria) se mantiene como red de seguridad: para cuando no hay forma de arrancar un regreso de verdad, y para abortar uno ya en marcha (p. ej. pantalla de carga a mitad del trayecto).

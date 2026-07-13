@@ -5,7 +5,7 @@ Mientras el jugador no tiene el arma en la mano, puede golpear con los puños, p
 El lanzamiento tiene una distancia máxima. Si no impacta contra nada, el arma regresa automáticamente.
 Cuando impacta contra un enemigo o una superficie, el arma queda clavada.
 El regreso se realiza siguiendo una trayectoria curva, nunca en línea recta.
-El regreso tiene una velocidad híbrida: mantiene una velocidad constante siempre que pueda volver en un máximo de 2 segundos. Si con esa velocidad tardaría más, aumenta automáticamente lo necesario para cumplir ese límite de 2 segundos.
+El regreso tiene una velocidad híbrida: mantiene una velocidad y aceleracion constante siempre que pueda volver en un máximo de 2 segundos. Si con esa velocidad tardaría más, aumenta automáticamente lo necesario para cumplir ese límite de 2 segundos.
 Durante el regreso, el arma también puede golpear a los enemigos, pero ya no se queda clavada en ellos.
 La trayectoria de regreso, que siempre debe mantener una curvatura, prioriza intentar golpear al menos a un enemigo. Esta funcionalidad está limitada por un ángulo máximo de desviación de la trayectoria.
 Durante el vuelo, el arma gira sobre sí misma. Sin embargo, justo antes de alcanzar un objetivo o de volver a la mano del jugador, se endereza para que, o bien el filo/cabeza apunte hacia el objetivo, o bien el mango quede orientado para que el jugador pueda agarrarla. Esto podría calcularse utilizando las normales de la malla de colisión.

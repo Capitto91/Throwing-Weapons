@@ -46,13 +46,31 @@ namespace Throw
 			return { pitch, yaw };
 		}
 
+		// Lanza la réplica compartiendo la ruta LaunchArrow + Ammo dedicado
+		// (ver Constants::kThrowableAmmo) que usan tanto el lanzamiento real
+		// como el reposicionamiento sin lanzar de Throw::SpawnProjectileAt.
+		RE::ProjectileHandle LaunchArrowReplica(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_origin, const RE::Projectile::ProjectileRot& a_angles)
+		{
+			auto* ammo = RE::TESForm::LookupByEditorID<RE::TESAmmo>(Constants::kThrowableAmmo);
+			if (!ammo) {
+				logs::error(
+					"No se encontró el Ammo \"{}\": revisa que exista en la Creation Kit.",
+					Constants::kThrowableAmmo);
+				return {};
+			}
+
+			RE::ProjectileHandle handle;
+			RE::Projectile::LaunchArrow(&handle, a_shooter, ammo, a_weapon, a_origin, a_angles);
+			return handle;
+		}
+
 		// Busca recursivamente, a partir de a_node, un descendiente cuyo
-		// nombre sea Constants::kEmbeddedWeaponNodeName y lo desengancha de
-		// su padre en cuanto lo encuentra.
-		bool DetachNodeByName(RE::NiNode* a_node, std::string_view a_name)
+		// nombre sea a_name; si lo encuentra, captura su posición en el
+		// mundo, lo desengancha de su padre y la devuelve.
+		std::optional<RE::NiPoint3> FindAndDetachNodeByName(RE::NiNode* a_node, std::string_view a_name)
 		{
 			if (!a_node) {
-				return false;
+				return std::nullopt;
 			}
 
 			for (auto& child : a_node->GetChildren()) {
@@ -62,16 +80,17 @@ namespace Throw
 				}
 
 				if (childPtr->name == a_name) {
+					const auto position = childPtr->world.translate;
 					a_node->DetachChild(childPtr);
-					return true;
+					return position;
 				}
 
-				if (DetachNodeByName(childPtr->AsNode(), a_name)) {
-					return true;
+				if (auto found = FindAndDetachNodeByName(childPtr->AsNode(), a_name)) {
+					return found;
 				}
 			}
 
-			return false;
+			return std::nullopt;
 		}
 	}
 
@@ -81,30 +100,28 @@ namespace Throw
 			return {};
 		}
 
-		auto* ammo = RE::TESForm::LookupByEditorID<RE::TESAmmo>(Constants::kThrowableAmmo);
-		if (!ammo) {
-			logs::error(
-				"No se encontró el Ammo \"{}\": revisa que exista en la Creation Kit.",
-				Constants::kThrowableAmmo);
+		return LaunchArrowReplica(a_shooter, a_weapon, GetLaunchOrigin(a_shooter), GetCameraAimAngles());
+	}
+
+	RE::ProjectileHandle SpawnProjectileAt(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position)
+	{
+		if (!a_shooter) {
 			return {};
 		}
 
-		const auto origin = GetLaunchOrigin(a_shooter);
-		const auto angles = GetCameraAimAngles();
-
-		RE::ProjectileHandle handle;
-		RE::Projectile::LaunchArrow(&handle, a_shooter, ammo, a_weapon, origin, angles);
-		return handle;
+		return LaunchArrowReplica(a_shooter, a_weapon, a_position, { 0.0f, 0.0f });
 	}
 
-	void DetachEmbeddedWeapon(RE::TESObjectREFR* a_target)
+	std::optional<RE::NiPoint3> DetachEmbeddedWeapon(RE::TESObjectREFR* a_target)
 	{
 		if (!a_target) {
-			return;
+			return std::nullopt;
 		}
 
 		auto* root = a_target->Get3D();
-		if (DetachNodeByName(root ? root->AsNode() : nullptr, Constants::kEmbeddedWeaponNodeName)) {
+		auto  position = FindAndDetachNodeByName(root ? root->AsNode() : nullptr, Constants::kEmbeddedWeaponNodeName);
+
+		if (position) {
 			logs::info("DetachEmbeddedWeapon: nodo \"{}\" desenganchado de \"{}\"", Constants::kEmbeddedWeaponNodeName, a_target->GetName());
 		} else {
 			logs::warn(
@@ -112,5 +129,7 @@ namespace Throw
 				Constants::kEmbeddedWeaponNodeName,
 				a_target->GetName());
 		}
+
+		return position;
 	}
 }

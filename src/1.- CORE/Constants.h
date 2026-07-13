@@ -49,4 +49,20 @@ namespace Constants
 	// desengancharlo (ver Throw::DetachEmbeddedWeapon). Si se reexporta el
 	// modelo con el nodo raíz renombrado, este valor deja de coincidir.
 	inline constexpr std::string_view kEmbeddedWeaponNodeName{ "Scene Root" };
+
+	// Velocidad de regreso en línea recta, en unidades de juego por
+	// segundo. Fase 1 de RETURN (sin curvatura ni velocidad híbrida
+	// todavía): valor plano provisional, pendiente de sustituir por el
+	// cálculo del punto 8 de Mecanica del arma.txt (constante salvo que
+	// tarde más de 2 segundos, en cuyo caso se acelera para cumplir ese
+	// límite).
+	inline constexpr float kReturnSpeed = 3000.0f;
+
+	// Distancia, en unidades de juego, a la que se considera que el arma
+	// ha llegado a la mano del jugador durante el regreso y se reequipa.
+	// Sin especificar en el documento; valor pequeño elegido sin más
+	// criterio que evitar que el punto de destino en movimiento (la mano
+	// del jugador) provoque oscilaciones al intentar alcanzarlo con
+	// precisión exacta.
+	inline constexpr float kReturnArrivalDistance = 30.0f;
 }

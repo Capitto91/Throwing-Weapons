@@ -51,6 +51,13 @@ namespace Weapon
 		// no impactar contra nada.
 		void OnProjectileEnteredWater();
 
+		// Llamado por Return::BeginReturn (5.- RETURN), en el hilo
+		// principal, cuando el proyectil controlado a mano ha llegado a la
+		// mano del jugador. El proyectil ya ha sido destruido por el
+		// propio módulo Return antes de llamar aquí; esto solo reequipa el
+		// arma real y vuelve a "en mano".
+		void OnReturnComplete();
+
 		// Fuerza la vuelta a "en mano" sin tocar el arma física, olvidando
 		// cualquier arma activa. Se usa al cargar/empezar partida: tras
 		// reiniciar el proceso no hay forma fiable de saber si el arma no
@@ -83,11 +90,28 @@ namespace Weapon
 		// física del jugador.
 		void ThrowWeapon();
 
-		// Reequipa el arma activa y vuelve a "en mano". La recuperación es
-		// instantánea por ahora: la trayectoria de regreso es
-		// responsabilidad de 5.- RETURN, que sustituirá esta transición
-		// directa una vez exista.
+		// Recuperación instantánea: destruye/desengancha el proyectil (según
+		// esté en vuelo, clavado en superficie o clavado en un actor) y
+		// reequipa el arma de inmediato, sin trayectoria. Se usa cuando no
+		// hay forma de iniciar un regreso de verdad (sin jugador, sin
+		// proyectil ni actor del que partir) y para abortar un regreso ya
+		// en marcha (p. ej. al cerrarse una pantalla de carga a mitad del
+		// trayecto).
 		void RecallWeapon();
+
+		// Empieza el regreso de verdad (5.- RETURN) a partir del proyectil
+		// ya existente (en vuelo o clavado en superficie) o, si está
+		// clavado en un actor y no hay ya un Projectile vivo, lanzando una
+		// réplica nueva en la posición donde se desengancha (ver
+		// Throw::DetachEmbeddedWeapon/Throw::SpawnProjectileAt). Si no hay
+		// forma de arrancarlo (sin jugador o sin punto de partida), cae a
+		// RecallWeapon() como red de seguridad.
+		void BeginReturn();
+
+		// Reequipa el arma activa y vuelve a "en mano", sin tocar el
+		// proyectil (ya limpiado por el llamante). Código compartido entre
+		// RecallWeapon() y OnReturnComplete().
+		void ReequipAndReset();
 
 		WeaponState weaponState;
 	};

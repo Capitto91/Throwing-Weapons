@@ -45,7 +45,7 @@ Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son pa
 ## Arquitectura de física de proyectiles
 
 - **Ida**: `RE::Projectile` nativo (Havok) — da gratis el arco parabólico y el clavado (puntos 3 y 6).
-- **Vuelta**: no reutiliza la física nativa (la curva no balística, velocidad variable a 2s, homing y enderezado de `Mecanica del arma.txt` no se pueden lograr forzando un cuerpo simulado por Havok). Al empezar el regreso se destruye el `Projectile` y se controla posición/rotación a mano cada tick. Transición en `kThrown`/`kStuck` → `kReturning`.
+- **Vuelta**: no usa la simulación de Havok (la curva no balística, velocidad variable a 2s, homing y enderezado de `Mecanica del arma.txt` no se pueden lograr con un cuerpo simulado activamente por Havok). En vez de destruir el `Projectile`, se le pone `SetMotionType(hkpMotion::MotionType::kKeyframed)` — modo estándar de Havok para "movido por código": deja de recibir fuerzas/gravedad, conserva colisión, y se fija posición/rotación a mano cada tick con `SetPosition`/`SetAngle`. Si no hay `Projectile` vivo (clavado en actor, ver más abajo), se lanza uno nuevo en la posición correcta y se le pone `kKeyframed` antes de que la física lo mueva. Transición en `kThrown`/`kStuck` → `kReturning`.
 
 ### Dos cosas que RETURN va a necesitar
 

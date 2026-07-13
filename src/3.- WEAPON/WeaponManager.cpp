@@ -5,6 +5,9 @@
 
 #include "4.- THROW/ThrowManager.h"
 #include "4.- THROW/ThrowProjectile.h"
+#include "5.- RETURN/ReturnManager.h"
+
+#include <tuple>
 
 namespace Weapon
 {
@@ -31,7 +34,7 @@ namespace Weapon
 			break;
 		case State::kThrown:
 		case State::kStuck:
-			RecallWeapon();
+			BeginReturn();
 			break;
 		default:
 			break;
@@ -75,6 +78,11 @@ namespace Weapon
 		if (weaponState.GetState() == State::kThrown) {
 			RecallWeapon();
 		}
+	}
+
+	void WeaponManager::OnReturnComplete()
+	{
+		ReequipAndReset();
 	}
 
 	void WeaponManager::OnLoadingScreenClosed()
@@ -142,19 +150,6 @@ namespace Weapon
 
 	void WeaponManager::RecallWeapon()
 	{
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto* weapon = weaponState.GetActiveWeapon();
-
-		if (player && weapon) {
-			// Se difiere al siguiente tick (tarea de SKSE) en vez de
-			// llamarlo aquí mismo: invocado justo al cerrarse una pantalla
-			// de carga, el juego aceptaba la orden (sonaba el sonido de
-			// equipar) pero nunca llegaba a equipar el arma de verdad.
-			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
-				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
-			});
-		}
-
 		// Proceso inverso al lanzamiento (punto 2 de Mecanica del
 		// arma.txt): la réplica desaparece al recuperar el arma original.
 		// Sin esto, el Projectile nativo (todavía en vuelo, o clavado en
@@ -170,8 +165,62 @@ namespace Weapon
 			// RE::Projectile::Manager como por radio en el mundo). Lo
 			// único que queda es un nodo 3D reenganchado directamente al
 			// esqueleto del actor; Throw::DetachEmbeddedWeapon lo busca y
-			// lo desengancha.
-			Throw::DetachEmbeddedWeapon(target);
+			// lo desengancha (no necesitamos la posición devuelta aquí).
+			std::ignore = Throw::DetachEmbeddedWeapon(target);
+		}
+
+		ReequipAndReset();
+	}
+
+	void WeaponManager::BeginReturn()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			// Sin jugador no hay a quién volver; cae al placeholder
+			// instantáneo como red de seguridad.
+			RecallWeapon();
+			return;
+		}
+
+		auto handle = weaponState.GetProjectileHandle();
+
+		if (!handle.get()) {
+			// Clavado en un actor: no hay Projectile vivo del que partir
+			// (ver "Arquitectura de física de proyectiles" en CLAUDE.md).
+			// Se recupera la posición del modelo clavado al desengancharlo
+			// del actor, y se lanza una réplica nueva justo ahí para que
+			// Return::BeginReturn la controle desde el principio.
+			auto* target = weaponState.GetImpactTarget().get().get();
+			auto  position = target ? Throw::DetachEmbeddedWeapon(target) : std::nullopt;
+
+			auto* weapon = weaponState.GetActiveWeapon();
+			handle = (position && weapon) ? Throw::SpawnProjectileAt(player, weapon->As<RE::TESObjectWEAP>(), *position) : RE::ProjectileHandle{};
+
+			if (!handle.get()) {
+				RecallWeapon();
+				return;
+			}
+
+			weaponState.SetProjectileHandle(handle);
+		}
+
+		weaponState.SetState(State::kReturning);
+		Return::BeginReturn(player, handle);
+	}
+
+	void WeaponManager::ReequipAndReset()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto* weapon = weaponState.GetActiveWeapon();
+
+		if (player && weapon) {
+			// Se difiere al siguiente tick (tarea de SKSE) en vez de
+			// llamarlo aquí mismo: invocado justo al cerrarse una pantalla
+			// de carga, el juego aceptaba la orden (sonaba el sonido de
+			// equipar) pero nunca llegaba a equipar el arma de verdad.
+			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
+				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+			});
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
