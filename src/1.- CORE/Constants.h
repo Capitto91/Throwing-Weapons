@@ -96,6 +96,18 @@ namespace Constants
 	inline constexpr int                       kEmbeddedWeaponDetachMaxAttempts = 20;
 	inline constexpr std::chrono::milliseconds kEmbeddedWeaponDetachRetryInterval{ 150 };
 
+	// Intentos extra, tras agotar los de arriba, que
+	// WeaponManager::WatchForLateEmbeddedWeapon sigue vigilando en segundo
+	// plano si el nodo "Scene Root" no apareció a tiempo: el regreso ya ha
+	// arrancado con la posición aproximada del actor a esas alturas, así
+	// que esto no afecta a la trayectoria — solo evita dejar un arma
+	// fantasma clavada para siempre si el nodo aparece más tarde, y deja
+	// constancia en el log de cuánto tardó de verdad. Mismo intervalo que
+	// kEmbeddedWeaponDetachRetryInterval; valor elegido para dar una
+	// ventana de diagnóstico generosa (~6s extra) sin vigilar para
+	// siempre.
+	inline constexpr int kLateEmbeddedWeaponWatchAttempts = 40;
+
 	// Desviación lateral del punto de control de la curva de Bezier
 	// cuadrática del regreso, como fracción de la distancia total a
 	// recorrer (punto 7 de Mecanica del arma.txt: el regreso nunca es una

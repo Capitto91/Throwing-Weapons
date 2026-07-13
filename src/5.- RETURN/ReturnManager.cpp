@@ -4,6 +4,7 @@
 #include "5.- RETURN/ReturnManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/PerfTimer.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "9.- MATH/CurveMath.h"
@@ -114,6 +115,12 @@ namespace Return
 
 		void Tick(RE::ObjectRefHandle a_handle, RE::ActorHandle a_playerHandle)
 		{
+			// Diagnóstico temporal (ver PerfTimer.h): Tick() corre en el
+			// hilo principal hasta ~60 veces/segundo durante todo el
+			// regreso, así que cualquier coste aquí es coste de fotograma
+			// directo.
+			Perf::ScopedTimer timer{ "Return::Tick", std::chrono::microseconds{ 2000 } };
+
 			if (Weapon::WeaponManager::GetSingleton()->GetState() != Weapon::State::kReturning) {
 				// El ciclo salió de "regresando" por otra vía; nada que
 				// mover ni que limpiar aquí (ya se habrá encargado quien
@@ -239,12 +246,18 @@ namespace Return
 				return;
 			}
 
-			std::thread([a_player, a_handle, a_attemptsLeft]() {
-				std::this_thread::sleep_for(kTickInterval);
-				SKSE::GetTaskInterface()->AddTask([a_player, a_handle, a_attemptsLeft]() {
-					WaitFor3DThenStart(a_player, a_handle, a_attemptsLeft - 1);
-				});
-			}).detach();
+			{
+				// Diagnóstico temporal (ver PerfTimer.h): esta creación de
+				// hilo ocurre en el hilo principal, hasta ~60 veces/segundo
+				// mientras se espera a que cargue el 3D de la réplica.
+				Perf::ScopedTimer timer{ "Return::WaitFor3DThenStart creación de hilo", std::chrono::microseconds{ 1000 } };
+				std::thread([a_player, a_handle, a_attemptsLeft]() {
+					std::this_thread::sleep_for(kTickInterval);
+					SKSE::GetTaskInterface()->AddTask([a_player, a_handle, a_attemptsLeft]() {
+						WaitFor3DThenStart(a_player, a_handle, a_attemptsLeft - 1);
+					});
+				}).detach();
+			}
 		}
 	}
 

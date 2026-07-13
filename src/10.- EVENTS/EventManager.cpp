@@ -156,6 +156,12 @@ namespace Events
 				break;
 			case SKSE::MessagingInterface::kNewGame:
 			case SKSE::MessagingInterface::kPostLoadGame:
+				// Diagnóstico temporal (ver PerfTimer.h): marca con
+				// timestamp cuándo recibimos este mensaje, para poder
+				// cruzarlo con el momento de un tirón notado al
+				// cargar/empezar partida.
+				logs::info("Events::OnSKSEMessage recibido {} (empieza ResetToInHand)",
+					a_message->type == SKSE::MessagingInterface::kNewGame ? "kNewGame" : "kPostLoadGame");
 				// El estado del arma vive solo en memoria (no en el save):
 				// al cargar o empezar partida lo resincronizamos con la
 				// mano del jugador en vez de arrastrar un estado obsoleto de

@@ -128,6 +128,18 @@ namespace Weapon
 		// en vez de caer a RecallWeapon().
 		void TryDetachAndBeginReturn(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft);
 
+		// Llamado por TryDetachAndBeginReturn cuando se agotan sus
+		// reintentos sin encontrar el nodo: el regreso ya ha arrancado con
+		// la posición aproximada del actor a esas alturas (esto no la
+		// afecta), pero si el nodo "Scene Root" aparece más tarde se
+		// quedaría enganchado al actor para siempre como un arma fantasma.
+		// Sigue vigilando en segundo plano, sin bloquear nada, hasta
+		// Constants::kLateEmbeddedWeaponWatchAttempts intentos extra: si lo
+		// encuentra, lo desengancha (limpieza, ignora la posición) y deja
+		// constancia en el log de cuánto tardó de verdad — dato para poder
+		// ajustar los reintentos normales en vez de a ciegas.
+		void WatchForLateEmbeddedWeapon(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft);
+
 		// Lanza la réplica visual en a_position (ver
 		// Throw::SpawnWeaponReplicaAt) y arranca Return::BeginReturn sobre
 		// ella. Punto de partida común a los tres casos de BeginReturn().

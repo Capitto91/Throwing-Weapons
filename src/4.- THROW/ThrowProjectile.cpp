@@ -5,6 +5,7 @@
 #include "4.- THROW/ThrowProjectile.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/PerfTimer.h"
 #include "3.- WEAPON/WeaponManager.h"
 
 #include <chrono>
@@ -81,10 +82,16 @@ namespace Throw
 				return;
 			}
 
-			std::thread([a_handle]() {
-				std::this_thread::sleep_for(kPollInterval);
-				SKSE::GetTaskInterface()->AddTask([a_handle]() { PollProjectile(a_handle); });
-			}).detach();
+			{
+				// Diagnóstico temporal (ver PerfTimer.h): esta creación de
+				// hilo ocurre en el hilo principal, hasta 20 veces/segundo
+				// mientras el arma está en vuelo.
+				Perf::ScopedTimer timer{ "Throw::PollProjectile creación de hilo", std::chrono::microseconds{ 1000 } };
+				std::thread([a_handle]() {
+					std::this_thread::sleep_for(kPollInterval);
+					SKSE::GetTaskInterface()->AddTask([a_handle]() { PollProjectile(a_handle); });
+				}).detach();
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/PerfTimer.h"
 #include "4.- THROW/ThrowManager.h"
 #include "4.- THROW/ThrowProjectile.h"
 #include "5.- RETURN/ReturnManager.h"
@@ -53,6 +54,12 @@ namespace Weapon
 
 	void WeaponManager::ResetToInHand()
 	{
+		// Diagnóstico temporal (ver PerfTimer.h): único código nuestro que
+		// corre al cargar/empezar partida, para descartar (o confirmar con
+		// datos) que un tirón notado justo al arrancar la partida venga de
+		// aquí.
+		Perf::ScopedTimer timer{ "WeaponManager::ResetToInHand", std::chrono::microseconds{ 100 } };
+
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetProjectileHandle({});
 		weaponState.SetImpactTarget({});
@@ -248,12 +255,19 @@ namespace Weapon
 				// juego se ha visto tardar bastante más de 1s en algunos
 				// casos); se reintenta en segundo plano en vez de rendirse
 				// a la primera.
-				std::thread([this, a_targetHandle, a_attemptsLeft]() {
-					std::this_thread::sleep_for(Constants::kEmbeddedWeaponDetachRetryInterval);
-					SKSE::GetTaskInterface()->AddTask([this, a_targetHandle, a_attemptsLeft]() {
-						TryDetachAndBeginReturn(a_targetHandle, a_attemptsLeft - 1);
-					});
-				}).detach();
+				{
+					// Diagnóstico temporal (ver PerfTimer.h): esta creación
+					// de hilo ocurre en el hilo principal, cada
+					// kEmbeddedWeaponDetachRetryInterval (150ms) mientras se
+					// busca el nodo clavado en el actor.
+					Perf::ScopedTimer timer{ "WeaponManager::TryDetachAndBeginReturn creación de hilo", std::chrono::microseconds{ 1000 } };
+					std::thread([this, a_targetHandle, a_attemptsLeft]() {
+						std::this_thread::sleep_for(Constants::kEmbeddedWeaponDetachRetryInterval);
+						SKSE::GetTaskInterface()->AddTask([this, a_targetHandle, a_attemptsLeft]() {
+							TryDetachAndBeginReturn(a_targetHandle, a_attemptsLeft - 1);
+						});
+					}).detach();
+				}
 				return;
 			}
 
@@ -262,16 +276,19 @@ namespace Weapon
 			// (recall instantáneo), así que se arranca el regreso animado
 			// desde la posición actual del actor en vez de rendirse. Es
 			// menos preciso que el punto exacto donde estaba clavada, pero
-			// garantiza que siempre se vea volar. Si el nodo "Scene Root"
-			// apareciera más tarde, se quedaría enganchado al actor sin que
-			// nada vuelva a buscarlo — riesgo aceptado del margen de
-			// reintentos.
+			// garantiza que siempre se vea volar.
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			if (player && target) {
 				SpawnReplicaAndBeginReturn(player, target->GetPosition());
 			} else {
 				RecallWeapon();
 			}
+
+			// El regreso ya ha arrancado con la aproximación de arriba; esto
+			// solo evita dejar un arma fantasma si el nodo aparece más
+			// tarde, y mide cuánto tardó de verdad (ver comentario en el
+			// header).
+			WatchForLateEmbeddedWeapon(a_targetHandle, Constants::kLateEmbeddedWeaponWatchAttempts);
 			return;
 		}
 
@@ -282,6 +299,33 @@ namespace Weapon
 		}
 
 		SpawnReplicaAndBeginReturn(player, *position);
+	}
+
+	void WeaponManager::WatchForLateEmbeddedWeapon(RE::ObjectRefHandle a_targetHandle, int a_attemptsLeft)
+	{
+		auto* target = a_targetHandle.get().get();
+		if (!target) {
+			return;
+		}
+
+		if (auto position = Throw::DetachEmbeddedWeapon(target)) {
+			logs::info(
+				"WeaponManager::WatchForLateEmbeddedWeapon: el nodo apareció tarde en \"{}\" (tras agotar los reintentos normales) y se ha limpiado en ({:.1f},{:.1f},{:.1f})",
+				target->GetName(), position->x, position->y, position->z);
+			return;
+		}
+
+		if (a_attemptsLeft <= 0) {
+			logs::info("WeaponManager::WatchForLateEmbeddedWeapon: el nodo nunca llegó a aparecer en \"{}\", se deja de vigilar", target->GetName());
+			return;
+		}
+
+		std::thread([this, a_targetHandle, a_attemptsLeft]() {
+			std::this_thread::sleep_for(Constants::kEmbeddedWeaponDetachRetryInterval);
+			SKSE::GetTaskInterface()->AddTask([this, a_targetHandle, a_attemptsLeft]() {
+				WatchForLateEmbeddedWeapon(a_targetHandle, a_attemptsLeft - 1);
+			});
+		}).detach();
 	}
 
 	void WeaponManager::SpawnReplicaAndBeginReturn(RE::Actor* a_player, const RE::NiPoint3& a_position)
