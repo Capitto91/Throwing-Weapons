@@ -8,6 +8,8 @@ SKSE plugin (C++23) for Skyrim SE/AE adding a throwable/returning weapon mechani
 
 Design intent (throw/return physics, aiming, sticking, animation timing) is documented in `Mecanica del arma.txt` (Spanish) — read it before implementing the throw/return/physics modules.
 
+**Nota sobre el estado del código**: hubo una primera iteración completa (ida con `RE::Projectile` nativo, vuelta con control manual) que llegó a implementar y probar en el juego todos los puntos del documento de diseño hasta el 11. Se descartó por completo (código reseteado a este esqueleto) al decidir abandonar `RE::Projectile` también para la ida — ver "Arquitectura de física de proyectiles" más abajo para la razón y todo lo aprendido/verificado en esa iteración, que sigue siendo válido aunque el código ya no exista. El histórico detallado de esa iteración (qué se probó, qué falló y por qué) está en `CHANGELOG.md`.
+
 ## Build
 
 Build system is **xmake**, not CMake/MSBuild directly (`xmake.lua` at root). `lib/commonlibsse-ng` is a git submodule (CommonLibVR, branch `ng`) — if it's missing/empty, run `git submodule update --init --recursive` first.
@@ -44,15 +46,42 @@ Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son pa
 
 ## Arquitectura de física de proyectiles
 
-- **Ida**: `RE::Projectile` nativo (Havok, vía `Projectile::LaunchArrow`) — da gratis el arco parabólico y el clavado (puntos 3 y 6).
-- **Vuelta**: no reutiliza el `Projectile` de la ida bajo ningún concepto, en ninguno de los tres puntos de partida (en vuelo, clavado en superficie, clavado en un actor). Probado en el juego (varias rondas, ver `CHANGELOG.md` en torno a la v0.3.x): un `Projectile` todavía activo en Havok en el momento de tomar control (en vuelo, o recién relanzado vía `LaunchArrow`) tiene su propia lógica interna de vuelo balístico que compite con el control manual tick a tick — ni `SetMotionType(kKeyframed)` (con `a_force=true` incluso), ni escribir directamente el `bhkRigidBody`, ni forzar `Update3DPosition`, lo evitan de forma fiable; el arma se queda congelada/parpadeando en vez de volar. Un `Projectile` ya en reposo (clavado en superficie) no tenía este problema, pero no hay forma de garantizar ese estado de partida en los otros dos casos.
-  - En su lugar, al pulsar recuperar se captura la posición actual, se destruye/desengancha lo que hubiera (`Projectile::Kill()`, o `Throw::DetachEmbeddedWeapon` para el nodo clavado en un actor), y se lanza una **réplica visual nueva sin física de proyectil** con `Throw::SpawnWeaponReplicaAt` (`TESObjectREFR::PlaceObjectAtMe` con el propio `TESObjectWEAP` — una referencia normal, no un `Projectile`, así que no tiene la lógica de vuelo balístico que competía). Esa réplica sí se controla con `SetMotionType(kKeyframed)` + `SetPosition`/`Update3DPosition` cada tick sin problema, porque no hay nada más escribiendo su posición.
-  - Como con cualquier referencia recién creada, su `Get3D()` puede tardar unos frames en cargar en segundo plano; hay que esperar a que deje de ser nulo antes de empezar a moverla (ver `Return::WaitFor3DThenStart`).
+**Decisión (tras una primera iteración completa que sí usaba `RE::Projectile` nativo para la ida): ni la ida ni la vuelta usan `RE::Projectile`.** Las dos direcciones se controlan a mano, con el mismo patrón, sobre una referencia normal (`TESObjectREFR`) del propio `TESObjectWEAP` — nunca un `Projectile`. Motivos, confirmados en el juego a lo largo de varias iteraciones:
 
-### Dos cosas que RETURN necesita
+- Un `Projectile` todavía activo en Havok en el momento de tomar control manual (en vuelo, o recién relanzado vía `LaunchArrow`) tiene su propia lógica interna de vuelo balístico que compite con el control manual tick a tick — ni `SetMotionType(kKeyframed)` (con `a_force=true` incluso), ni escribir directamente el `bhkRigidBody`, ni forzar `Update3DPosition`, lo evitan de forma fiable; el arma se queda congelada/parpadeando en vez de volar.
+- Tampoco sirve para un giro/tumbado (punto 11): imprimir una velocidad angular con `bhkRigidBody::SetAngularVelocity` a un `Projectile` nativo recién lanzado, una única vez y sin más control manual, **no produce giro visible** (probado en el juego) — el motor aparentemente sigue reorientando el proyectil según su velocidad cada fotograma (comportamiento interno no expuesto), igual que hacen las flechas reales (apuntan siempre hacia donde vuelan, sin tumbarse).
+- Perder el `Projectile` nativo también significa perder gratis: arco parabólico (Havok), detección de impacto (`ImpactResult`/`TESHitEvent`) y aplicación de daño con todo el feedback de combate (reacciones de golpe, tambaleo, números de daño, aviso de combate). Ver más abajo qué hay que reconstruir a mano y con qué API verificada.
 
-- **No hay ningún hook de "por fotograma" en este proyecto.** El patrón usado en `THROW` y `RETURN` para el control manual por tick: un `std::thread` que duerme un intervalo real y solo entonces reencola en el hilo principal vía `SKSE::GetTaskInterface()->AddTask`. Nunca llamar `AddTask` desde dentro de la propia tarea que se ejecuta (congela el juego).
-- **El `Projectile` no sobrevive a un impacto contra un actor** (el motor lo destruye al procesar el golpe). Lo que queda clavado es un nodo 3D (`"Scene Root"`, sin renombrar) enganchado al hueso del golpe con ~1s de retraso — se localiza por nombre en `actor->Get3D()` y se quita con `NiNode::DetachChild()` (ver `Throw::DetachEmbeddedWeapon`, reutilizable).
+### El patrón de control manual (usado igual en ida y vuelta)
+
+1. Crear la réplica visual con `TESObjectREFR::PlaceObjectAtMe` sobre el propio `TESObjectWEAP` — una referencia normal, sin la lógica de vuelo balístico de un `Projectile`.
+2. Como con cualquier referencia recién creada, su `Get3D()` puede tardar unos frames en cargar en segundo plano; hay que esperar a que deje de ser nulo antes de empezar a moverla (sondeo con el mismo hilo-que-duerme-y-reencola del punto 3).
+3. **No hay ningún hook de "por fotograma" en este proyecto.** Para el control manual por tick: un `std::thread` que duerme un intervalo real (~16ms para movimiento fluido) y solo entonces reencola en el hilo principal vía `SKSE::GetTaskInterface()->AddTask`. Nunca llamar `AddTask` desde dentro de la propia tarea que se ejecuta (congela el juego).
+4. `node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true)` — modo Havok "movido por código" (sin fuerzas/gravedad, conserva colisión). Desactivar la colisión del todo (en vez de kKeyframed) reintrodujo tirones/clipping en pruebas anteriores — mejor mantenerla y, si hace falta ignorar autoimpactos, filtrar por puntero después de resolver el golpe (ver más abajo), no quitando la colisión.
+5. Cada tick: `TESObjectREFR::SetPosition`/`SetAngle` actualizan la posición/rotación "lógica", pero **no** el `bhkRigidBody` — hay que escribirlo aparte (`rigidBody->SetPosition(hkVector4)`/`SetRotation(hkQuaternion)`, unidades de Havok vía `bhkWorld::GetWorldScale()`), y llamar `Update3DPosition(true)` al final para sincronizar el nodo visual.
+
+### APIs verificadas para reconstruir lo que daba gratis `RE::Projectile`
+
+Todo esto se comprobó leyendo los headers reales de `commonlibsse-ng` (no asumido de memoria):
+
+- **Colisión (raycast por tick)**: `RE::TES::GetSingleton()->Pick(bhkPickData&)` (`include/RE/T/TES.h`). `bhkPickData` lleva un `hkpWorldRayCastInput` (`from`/`to` en `hkVector4`, `CFilter filterInfo`) y devuelve un `hkpWorldRayCastOutput` (`HasHit()`, `hitFraction`, `normal`, `rootCollidable`). Resolver el `rootCollidable` a una referencia con `RE::TESHavokUtilities::FindCollidableRef(const hkpCollidable&)`.
+  - `RE::CFilter` codifica **una sola** capa de colisión (`RE::COL_LAYER`, bits 0-6) — no una máscara de varias, y **no tiene forma de excluir una referencia concreta** (ni al lanzador ni a la propia réplica). Hay que filtrar a mano por puntero después de resolver el impacto (comparar contra el actor lanzador y contra el handle de la propia réplica).
+- **Daño**: no existe ningún `ApplyDamage`/`SendHitEvent`/`ProcessHitEvent` expuesto en `commonlibsse-ng` — el pipeline de aplicación real de Bethesda no está expuesto. Sí existen, verificados:
+  - `RE::HitData::Populate(Actor* aggressor, Actor* target, InventoryEntryData* weapon, bool isLeftHand)` calcula el daño real (armadura, resistencias, perks, sigilo, críticos) y rellena `hitData.totalDamage`.
+  - `RE::InventoryEntryData(TESBoundObject* a_object, std::int32_t a_countDelta)` tiene un constructor público que **no** requiere que el objeto ya esté en un contenedor — se puede construir uno temporal solo para pasarlo a `Populate` (`RE::InventoryEntryData entry(weaponForm, 1);`).
+  - `Actor::DamageActorValue(ActorValue::kHealth, hitData.totalDamage)` resta la vida — **se pasa en positivo**, la función internamente hace `-std::abs(valor)`.
+  - Con esto se consigue daño numéricamente correcto, pero **sin** reacciones de golpe, tambaleo, números de daño flotantes ni aviso de combate — ese feedback vive en el pipeline interno no expuesto. Limitación aceptada.
+- **Arco/velocidad**: `RE::BGSProjectile::data.speed` / `data.gravity` son miembros públicos (`struct BGSProjectileData`) — se pueden leer del formulario Projectile ya configurado en la Creation Kit (`Constants::kThrowableProjectile`) para no inventar una constante de velocidad nueva y mantener lo ya ajustado allí.
+- **Agua**: `TESObjectREFR::IsInWater()` existe en la clase base, no solo en `Projectile` — reutilizable en cualquier réplica.
+- **Clavado en un actor**: no hay API de "hueso más cercano a un punto del mundo". `NiNode::AttachChild(NiAVObject*, bool)` existe (inverso de `DetachChild`) si se quiere enganchar la réplica al esqueleto del actor, pero localizar el hueso correcto requeriría recorrer el árbol de nodos a mano — sin resolver todavía, ver `Mecanica del arma.txt` para el punto exacto de la mecánica que lo necesita.
+
+### Giro y ángulos de Euler (punto 11) — trampas encontradas
+
+- `TESObjectREFR::SetAngle(NiPoint3{x,y,z})` compone en orden Z-X-Y (`x`=cabeceo/eje X, `y`=alabeo/eje Y, `z`=guiñada/eje Z mundial) — no hay función inversa (`ToEulerAnglesXYZ` descompone en orden X-Y-Z, distinto). Para "mirar hacia una dirección" sin alabeo, calcular cabeceo/guiñada analíticamente (`pitch = -asin(dir.z)`, `yaw = atan2(dir.x, dir.y)`), no por descomposición de matriz.
+- **Variar dos canales de Euler a la vez (p. ej. guiñada seguiendo una curva mientras el cabeceo gira rápido) se ve como un sacacorchos, no como un giro limpio** — probado repetidamente en el juego. Solución que funcionó: congelar el canal que no es el del giro (fijarlo al valor inicial) mientras dura el giro rápido, y solo interpolarlo hacia su valor real durante un tramo final de "enderezado" (interpolación angular por el camino más corto, no un lerp lineal ingenuo, para no saltar al cruzar ±π).
+- Qué eje usar para el giro (tumbado tipo hacha, no atornillado) es **específico del modelo 3D**, no una fórmula general — para el arma soportada, tras varias rondas de prueba en el juego, lo que se ve bien es un giro constante sobre la guiñada (Z) más un desplazamiento fijo de 90° sobre el alabeo (Y), no girar directamente sobre el cabeceo (X). Verificar de nuevo si se cambia de arma.
+- Las cajas de colisión del NIF (`bhkBoxShape` bajo `bhkListShape`, visibles en NifSkope) revelan el eje "adelante" real del modelo con datos, no a ojo: mirar la traslación de cada `bhkTransformShape` (mango vs. cabeza) en vez de asumir que el eje Y local es el eje mango→cabeza.
+- La rotación de Havok también necesita sincronizarse a mano, igual que la posición: `bhkRigidBody::SetRotation(hkQuaternion)`, construido desde una `NiMatrix3` (`EulerAnglesToAxesZXY`) vía `NiQuaternion(const NiMatrix3&)`.
 
 ### Trampas conocidas (WEAPON / EVENTS)
 
@@ -61,4 +90,4 @@ Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son pa
 
 ## Source layout
 
-`src/` is organized into numbered topic folders (`1.- CORE`, `2.- IMPUT` [sic — historical typo for INPUT, kept for consistency with existing folder], `3.- WEAPON`, `4.- THROW`, `5.- RETURN`, `6.- PHYSICS`, `7.- COMBAT`, `8.- ANIMATION`, `9.- MATH`, `10.- EVENTS`, `11.- SKYRIM`). The numbering is just a stable sort order for browsing — it is **not** a build/dependency sequence, so don't assume module N depends only on modules < N.
+`src/` is organized into numbered topic folders (`1.- CORE`, `2.- INPUT`, `3.- WEAPON`, `4.- THROW`, `5.- RETURN`, `6.- PHYSICS`, `7.- COMBAT`, `8.- ANIMATION`, `9.- MATH`, `10.- EVENTS`, `11.- SKYRIM`). The numbering is just a stable sort order for browsing — it is **not** a build/dependency sequence, so don't assume module N depends only on modules < N.
