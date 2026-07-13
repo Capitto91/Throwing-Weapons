@@ -31,10 +31,11 @@ namespace Weapon
 		[[nodiscard]] RE::TESBoundObject* GetActiveWeapon() const noexcept { return weaponState.GetActiveWeapon(); }
 
 		// Llamados desde Throw::TrackProjectile (4.- THROW) al vigilar el
-		// proyectil en vuelo. Todos ignoran la notificación si el arma ya
-		// no está en "lanzada" (p. ej. el jugador ya pulsó recuperar, o una
-		// pantalla de carga resincronizó el estado primero), para no pisar
-		// una transición más reciente.
+		// proyectil en vuelo, o desde Events::ProjectileHitWatcher si el
+		// impacto fue contra un actor. Todos ignoran la notificación si el
+		// arma ya no está en "lanzada" (p. ej. el jugador ya pulsó
+		// recuperar, o una pantalla de carga resincronizó el estado
+		// primero), para no pisar una transición más reciente.
 		void OnProjectileImpact();
 		void OnProjectileMaxRangeReached();
 

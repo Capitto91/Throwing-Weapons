@@ -23,6 +23,19 @@ Build system is **xmake**, not CMake/MSBuild directly (`xmake.lua` at root). `li
 - Formatting: `.clang-format` at the root matches `lib/commonlibsse-ng`'s style (4-space indent, CRLF, no column limit). Run `clang-format -i` on touched files, or format-on-save in your editor.
 - License is GPL-3.0 with a linking exception (see `EXCEPTIONS`) — needed because it links against non-GPL modding libraries (SKSE/CommonLibSSE-NG). Keep that exception intact if licensing files are touched.
 
+## Errores comunes a vigilar (generación por IA)
+
+Este proyecto se desarrolla con asistencia de Claude Code. Los siguientes son patrones de error frecuentes en código nativo generado por IA para este tipo de plugin — revisar activamente cada vez, no asumir que no van a aparecer:
+
+- **APIs inventadas**: no dar por buena la firma de una función/clase de CommonLibSSE-NG de memoria. Verificar contra los headers reales en `lib/commonlibsse-ng` (grep/búsqueda directa) antes de usarla, especialmente si existe en varias forks (Sample, Fudge, NG) con diferencias.
+- **Offsets/direcciones hardcodeadas**: nunca usar direcciones de memoria fijas (`0x140XXXXXX`). Siempre `REL::RelocationID` / `REL::Relocation<>` con Address Library, para no romper compatibilidad SE/AE/VR.
+- **Punteros nulos sin comprobar**: cualquier resultado de búsqueda de formulario/objeto (`TESForm::LookupByID`, casts con `skyrim_cast`, etc.) debe comprobarse antes de usarse. Un `nullptr` sin verificar aquí no lanza excepción manejable, crashea el juego entero.
+- **Hilos y el motor**: no asumir que el motor de Skyrim es thread-safe. Cualquier llamada que toque el juego (formularios, actores, UI) debe ejecutarse en el hilo principal vía `SKSE::GetTaskInterface()->AddTask` salvo que se sepa explícitamente que es segura desde otro hilo (ver también la trampa de `AddTask` reentrante en la sección de THROW más abajo).
+- **Gestión de memoria**: preferir RAII y los wrappers de CommonLibSSE-NG sobre `new`/`delete` manual. Si se instala un hook/trampolín, comprobar que restaura el estado original correctamente y que no colisiona con offsets que puedan estar parcheados por otro mod/librería.
+- **Excepciones cruzando el motor**: el código nativo de Skyrim no espera excepciones de C++ propagándose desde callbacks del motor (eventos, hooks). Si una función puede lanzar (parseo de datos externos, por ejemplo), capturarla localmente en vez de dejar que suba.
+- **Serialización del cosave** (si se implementa guardado de datos vía `SKSE::SerializationInterface`): versionar siempre los registros (`WriteRecord` con número de versión) para poder migrar en el futuro, comprobar el valor de retorno de `Load`/`Write`, y manejar explícitamente el caso de partidas guardadas antiguas sin esos datos.
+- Si no se puede verificar que una función/clase/comportamiento existe tal cual en el código fuente del proyecto o de CommonLibSSE-NG, decirlo explícitamente en vez de asumir que existe — mismo criterio que ya se pide en Workflow para el documento de diseño.
+
 ## Workflow
 
 - Antes de modificar archivos, da un resumen muy breve (1-2 líneas) de qué vas a hacer y por qué.

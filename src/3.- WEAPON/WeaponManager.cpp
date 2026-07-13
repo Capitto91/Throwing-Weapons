@@ -153,10 +153,17 @@ namespace Weapon
 
 		// Proceso inverso al lanzamiento (punto 2 de Mecanica del
 		// arma.txt): la réplica desaparece al recuperar el arma original.
-		// Sin esto, el Projectile nativo (clavado, o todavía en vuelo si
-		// el recall vino por distancia máxima/agua) se quedaba para
-		// siempre en el mundo como un arma fantasma (comprobado en el
-		// juego).
+		// Sin esto, el Projectile nativo (todavía en vuelo, o clavado en
+		// una superficie) se quedaba para siempre en el mundo como un arma
+		// fantasma (comprobado en el juego). No cubre el caso de clavado
+		// en un actor: ahí el handle guardado deja de resolver a nada, y
+		// tampoco se encuentra buscando por RE::Projectile::Manager ni por
+		// radio en el mundo (las dos vías probadas y descartadas, ver
+		// CLAUDE.md) — el motor parece destruir la referencia al embeberse
+		// en el esqueleto y dejar solo geometría 3D reenganchada
+		// directamente al actor, ya no una referencia consultable. Queda
+		// pendiente para RETURN, que tomará el objeto visual directamente
+		// en vez de depender de Kill() sobre una referencia.
 		if (auto projectile = weaponState.GetProjectileHandle().get()) {
 			projectile->Kill();
 		}
