@@ -4,9 +4,12 @@
 #include "7.- COMBAT/DamageManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/GameOffsets.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <SimpleIni.h>
+
+#include <thread>
 
 namespace Combat
 {
@@ -33,6 +36,10 @@ namespace Combat
 			float levelHitPerLevel{ 1.5f };
 			float levelDotBase{ 1.0f };
 			float levelDotPerLevel{ 0.3f };
+
+			// Punto 9: fracción del daño de golpe normal aplicada en un
+			// golpe durante el regreso (0 = sin daño, solo stagger).
+			float returnHitMultiplier{ 0.5f };
 		};
 
 		DamageConfig g_config{};
@@ -70,9 +77,68 @@ namespace Combat
 			// el juego (comprobado). Actor::AsActorValueOwner() es el
 			// accessor de commonlibsse-ng que calcula el offset correcto
 			// según la versión real detectada en tiempo de ejecución.
-			if (auto* avOwner = a_target->AsActorValueOwner()) {
+			auto*       avOwner = a_target->AsActorValueOwner();
+			const float before = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+
+			if (avOwner) {
 				avOwner->DamageActorValue(RE::ActorValue::kHealth, a_amount);
 			}
+
+			// Diagnóstico temporal (ver CHANGELOG): confirmar en el juego
+			// si Actor::HandleHealthDamage (llamado aparte en NotifyHit,
+			// justo después de esto en cada punto de llamada) vuelve a
+			// restar vida por su cuenta o no — sin fuente que lo
+			// documente con certeza. Comparar el "después" de este log
+			// con el "antes"/"después" del de NotifyHit.
+			const float after = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+			logs::info(
+				"Combat::ApplyDamage: \"{}\" vida {:.1f} -> {:.1f} (DamageActorValue, importe pedido {:.1f})",
+				a_target->GetName(), before, after, a_amount);
+		}
+
+		// Actor::HandleHealthDamage + Actor::SetBeenAttacked (probado en
+		// el juego, ver CHANGELOG) no bastan por sí solos para que la IA
+		// reaccione (perseguir, aggro) ni para que un aliado lo tome como
+		// agresión. GameOffsets::DealDamage sí (ver esa declaración para
+		// de dónde sale el ID y por qué solo es segura en SE/AE) — pero
+		// calcula su propio daño a partir del arma que el atacante tenga
+		// equipada en ese instante, y durante todo nuestro ciclo la mano
+		// va vacía (arma real oculta, punto 2), así que ese importe no es
+		// el que queremos (con toda probabilidad, daño de puñetazo). Se
+		// usa aquí solo por su efecto colateral real (el aviso a IA de
+		// combate/crimen), revirtiendo lo que le haya hecho a la vida y
+		// aplicando en su lugar el importe ya calculado por nuestra
+		// configuración de daño (INI, ver ApplyDamage).
+		void NotifyHit(RE::Actor* a_attacker, RE::Actor* a_target, float a_amount)
+		{
+			auto* avOwner = a_target->AsActorValueOwner();
+
+			if (REL::Module::IsVR()) {
+				a_target->SetBeenAttacked(true);
+				a_target->HandleHealthDamage(a_attacker, a_amount);
+				logs::info("Combat::NotifyHit (VR, sin DealDamage verificado): \"{}\" avisado.", a_target->GetName());
+				return;
+			}
+
+			const float before = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+
+			GameOffsets::DealDamage(a_attacker, a_target, nullptr, false);
+
+			const float afterDealDamage = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+			const float vanillaDelta = before - afterDealDamage;
+			if (avOwner && vanillaDelta > 0.0f) {
+				avOwner->RestoreActorValue(RE::ActorValue::kHealth, vanillaDelta);
+			}
+
+			// Diagnóstico (pendiente de confirmar en el juego): si "tras
+			// compensar" no coincide con "antes", el arma equipada en ese
+			// instante sí influye de otra forma no prevista, o
+			// RestoreActorValue no deshace exactamente lo que hizo
+			// DealDamage.
+			const float afterCompensation = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+			logs::info(
+				"Combat::NotifyHit: \"{}\" vida {:.1f} -> {:.1f} (DealDamage, sin usar) -> {:.1f} (compensado, debe = {:.1f})",
+				a_target->GetName(), before, afterDealDamage, afterCompensation, before);
 		}
 	}
 
@@ -95,13 +161,15 @@ namespace Combat
 		g_config.levelHitPerLevel = static_cast<float>(ini.GetDoubleValue("Damage", "LevelHitPerLevel", g_config.levelHitPerLevel));
 		g_config.levelDotBase = static_cast<float>(ini.GetDoubleValue("Damage", "LevelDotBase", g_config.levelDotBase));
 		g_config.levelDotPerLevel = static_cast<float>(ini.GetDoubleValue("Damage", "LevelDotPerLevel", g_config.levelDotPerLevel));
+		g_config.returnHitMultiplier = static_cast<float>(ini.GetDoubleValue("Damage", "ReturnHitMultiplier", g_config.returnHitMultiplier));
 
 		logs::info(
-			"Combat::Init: modo de daño = {} (golpe: {:.1f}, dot: {:.1f} / nivel: base {:.1f}+{:.1f}, dot base {:.1f}+{:.1f})",
+			"Combat::Init: modo de daño = {} (golpe: {:.1f}, dot: {:.1f} / nivel: base {:.1f}+{:.1f}, dot base {:.1f}+{:.1f}), multiplicador golpe en regreso = {:.2f}",
 			g_config.mode == DamageMode::kLevel ? "Level" : "Direct",
 			g_config.directHit, g_config.directDot,
 			g_config.levelHitBase, g_config.levelHitPerLevel,
-			g_config.levelDotBase, g_config.levelDotPerLevel);
+			g_config.levelDotBase, g_config.levelDotPerLevel,
+			g_config.returnHitMultiplier);
 	}
 
 	void BeginEmbeddedEffect(
@@ -116,7 +184,9 @@ namespace Combat
 			return;
 		}
 
-		ApplyDamage(a_target, ComputeHitDamage(a_attacker));
+		const float hitDamage = ComputeHitDamage(a_attacker);
+		ApplyDamage(a_target, hitDamage);
+		NotifyHit(a_attacker, a_target, hitDamage);
 
 		// Quién es inmune (dragones, criaturas concretas...) lo decide
 		// solo la condición del propio efecto en la Creation Kit — no se
@@ -215,7 +285,9 @@ namespace Combat
 			dotElapsed += a_deltaSeconds;
 			if (dotElapsed >= Constants::kEmbeddedDamageInterval) {
 				dotElapsed = 0.0f;
-				ApplyDamage(target.get(), ComputeDotDamage(a_attacker));
+				const float dotDamage = ComputeDotDamage(a_attacker);
+				ApplyDamage(target.get(), dotDamage);
+				NotifyHit(a_attacker, target.get(), dotDamage);
 			}
 
 			return true;
@@ -233,5 +305,53 @@ namespace Combat
 		if (auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell)) {
 			a_target->RemoveSpell(spell);
 		}
+	}
+
+	void ApplyReturnHit(RE::Actor* a_attacker, RE::Actor* a_target)
+	{
+		if (!a_attacker || !a_target) {
+			return;
+		}
+
+		logs::info("Combat::ApplyReturnHit: golpe durante el regreso contra \"{}\".", a_target->GetName());
+
+		// El aviso de golpe (NotifyHit) se dispara siempre, aunque el
+		// daño esté desactivado por INI (returnHitMultiplier == 0): la
+		// reacción del objetivo (perseguir, o que un aliado se lo tome
+		// como agresión) no debe depender de esa opción, solo de que
+		// hubo un golpe de verdad.
+		const float amount = g_config.returnHitMultiplier > 0.0f ? ComputeHitDamage(a_attacker) * g_config.returnHitMultiplier : 0.0f;
+		if (amount > 0.0f) {
+			ApplyDamage(a_target, amount);
+		}
+		NotifyHit(a_attacker, a_target, amount);
+
+		auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kStaggerSpell);
+		if (!spell) {
+			logs::warn(
+				"Combat::ApplyReturnHit: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).",
+				Constants::kStaggerSpell);
+			return;
+		}
+
+		a_target->AddSpell(spell);
+
+		// A diferencia de la parálisis (que dura mientras el arma siga
+		// clavada, y se retira al recuperarla), el empujón de Stagger ya
+		// ha ocurrido en el instante de AddSpell (ActiveEffect::Start) —
+		// solo queda retirar la habilidad para no dejarla colgada en la
+		// lista de hechizos del actor. Un hilo que duerme y reencola en
+		// el hilo principal (mismo patrón que el resto del proyecto, ver
+		// CLAUDE.md), no un bucle de tick: no hace falta repetir nada
+		// mientras tanto.
+		RE::ActorHandle targetHandle(a_target);
+		std::thread([targetHandle, spell]() {
+			std::this_thread::sleep_for(Constants::kStaggerSpellDuration);
+			SKSE::GetTaskInterface()->AddTask([targetHandle, spell]() {
+				if (auto target = targetHandle.get()) {
+					target->RemoveSpell(spell);
+				}
+			});
+		}).detach();
 	}
 }

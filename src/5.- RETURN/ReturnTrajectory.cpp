@@ -7,9 +7,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace Return
 {
+	namespace
+	{
+		// Motor de aleatoriedad propio de este módulo, reutilizado entre
+		// llamadas (no tiene sentido reconstruirlo cada vez) — solo se
+		// invoca desde el hilo principal (BeginReturn), así que no hace
+		// falta protegerlo entre hilos.
+		float RandomLateralFraction()
+		{
+			static std::mt19937                  rng{ std::random_device{}() };
+			std::uniform_real_distribution<float> dist(Constants::kReturnCurveLateralFractionMin, Constants::kReturnCurveLateralFractionMax);
+			return dist(rng);
+		}
+	}
+
 	RE::NiPoint3 GetPlayerRightVector(RE::Actor* a_actor)
 	{
 		if (auto* node = a_actor ? a_actor->Get3D() : nullptr) {
@@ -46,7 +61,7 @@ namespace Return
 		}
 		side = side / sideLength;
 
-		const float offset = std::clamp(distance * Constants::kReturnCurveLateralFraction, Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
+		const float offset = std::clamp(distance * RandomLateralFraction(), Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
 		const auto  midpoint = (a_start + a_end) * 0.5f;
 
 		return midpoint + side * offset;

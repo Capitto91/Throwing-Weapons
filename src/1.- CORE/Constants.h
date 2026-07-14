@@ -39,8 +39,8 @@ namespace Constants
 	// estándar de Havok en Skyrim (documentado en la comunidad de
 	// modding, no medido por nosotros); kThrowInitialSpeed es un punto de
 	// partida redondo pendiente de ajustar en el juego.
-	inline constexpr float kThrowInitialSpeed = 3000.0f; // u/s, placeholder
-	inline constexpr float kThrowGravity = -1071.816f;   // u/s^2, gravedad estándar de Havok en Skyrim
+	inline constexpr float kThrowInitialSpeed = 3000.0f;  // u/s, placeholder
+	inline constexpr float kThrowGravity = -1071.816f;    // u/s^2, gravedad estándar de Havok en Skyrim
 
 	// Radio del barrido en cruz de la colisión en vuelo
 	// (Collision::SweepRaycast): varias muestras cercanas entre sí, en vez
@@ -93,10 +93,17 @@ namespace Constants
 	// Desviación lateral del punto de control de la curva de Bezier
 	// cuadrática del regreso (punto 7: nunca en línea recta), como
 	// fracción de la distancia total, acotada en unidades absolutas.
-	// Reutilizados tal cual.
-	inline constexpr float kReturnCurveLateralFraction = 0.28f;
-	inline constexpr float kReturnCurveMinOffset = 60.0f;
-	inline constexpr float kReturnCurveMaxOffset = 500.0f;
+	// Horquilla en vez de un valor único (ajuste pedido tras probar en
+	// el juego: la curva se veía demasiado amplia y siempre igual) —
+	// Return::ComputeReturnControlPoint sortea un valor uniforme dentro
+	// de este rango en cada regreso, para que varíe de una vez a otra en
+	// vez de ser siempre la misma curva. Rango y topes absolutos
+	// reducidos respecto al valor fijo anterior (0.28 / 60-500) para
+	// cerrar el ángulo general.
+	inline constexpr float kReturnCurveLateralFractionMin = 0.10f;
+	inline constexpr float kReturnCurveLateralFractionMax = 0.18f;
+	inline constexpr float kReturnCurveMinOffset = 40.0f;
+	inline constexpr float kReturnCurveMaxOffset = 260.0f;
 
 	// -- Giro y enderezado (punto 10) --
 	// Velocidad de giro sobre sí misma durante el vuelo y distancia a la
@@ -110,7 +117,7 @@ namespace Constants
 	// lado" en vez de "estirado" hacia la dirección de vuelo durante el
 	// giro. Ajuste empírico específico de este modelo — reverificar contra
 	// las cajas bhkBoxShape del NIF si se cambia de arma soportada.
-	inline constexpr float kModelRollOffset = 1.5707963267948966f; // 90°
+	inline constexpr float kModelRollOffset = 1.5707963267948966f;  // 90°
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation
@@ -157,6 +164,22 @@ namespace Constants
 	// inferencia, se puede acortar con seguridad si se confirma que el
 	// efecto tarda menos en reflejarse).
 	inline constexpr float kImmunityCheckDelay = 0.3f;
+
+	// -- Golpear durante el regreso (punto 9) --
+	// Hechizo propio (Ability, Constant Effect, Self) cuyo unico efecto
+	// (EffectSetting Archetype=Stagger, CAP_ThorMjolnir_MagicEffect_Stagger)
+	// empuja/aturde al actor en el instante en que se concede
+	// (ActiveEffect::Start de RE::StaggerEffect, confirmado que existe
+	// como clase en commonlibsse-ng) -- no hace falta ninguna logica
+	// continua, a diferencia de la paralisis. Se concede con
+	// Actor::AddSpell (no virtual, mismo motivo que
+	// kEmbeddedParalysisSpell) y se retira poco despues
+	// (kStaggerSpellDuration) para no dejarlo colgado en la lista de
+	// hechizos del actor -- el empujon ya ha ocurrido mucho antes de que
+	// expire este margen, no hace falta esperar a que el jugador
+	// recupere el arma como con la paralisis.
+	inline constexpr std::string_view          kStaggerSpell{ "CAP_ThorMjolnir_Ability_ThrowingStagger" };
+	inline constexpr std::chrono::milliseconds kStaggerSpellDuration{ 200 };
 
 	// -- Temblor al clavarse (punto 11) --
 	// Duración de la vibración antes de desprenderse al iniciar el

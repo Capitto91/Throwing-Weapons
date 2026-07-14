@@ -132,8 +132,12 @@ namespace Weapon
 				// inmune o supera la duración máxima (kStuck, ver
 				// Combat::BeginEmbeddedEffect) — ambos casos son "el
 				// ciclo se rinde y recupera solo", nunca ocurren a la vez.
+				// Regreso animado (BeginReturn), no recall instantáneo:
+				// antes de este fix se teletransportaba a la mano de
+				// golpe en vez de volar de vuelta, saltándose la curva
+				// del punto 7 (bug detectado en el juego).
 				if (weaponState.GetState() == State::kThrown || weaponState.GetState() == State::kStuck) {
-					RecallWeapon();
+					BeginReturn();
 				}
 			};
 

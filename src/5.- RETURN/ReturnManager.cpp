@@ -5,9 +5,12 @@
 
 #include "1.- CORE/Constants.h"
 #include "5.- RETURN/ReturnTrajectory.h"
+#include "6.- PHYSICS/CollisionManager.h"
+#include "7.- COMBAT/DamageManager.h"
 #include "9.- MATH/CurveMath.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace Return
 {
@@ -46,7 +49,8 @@ namespace Return
 			"Return::BeginReturn: distancia inicial {:.1f}, aceleración {:.1f}",
 			initialDistance, acceleration);
 
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			const auto previousPos = a_refr.GetPosition();
 			elapsed += a_deltaSeconds;
 
 			// El extremo final de la curva se recalcula cada tick (a
@@ -59,6 +63,25 @@ namespace Return
 			const float t = initialDistance > 0.0f ? std::clamp(traveled / initialDistance, 0.0f, 1.0f) : 1.0f;
 
 			const auto nextPos = Math::EvaluateQuadraticBezier(start, controlPoint, handPos, t);
+
+			// Punto 9: golpear a un enemigo durante el regreso ya no se
+			// queda clavado, el vuelo por la curva continúa igual — solo
+			// se aplica el golpe (stagger + daño reducido, ver
+			// Combat::ApplyReturnHit) y se sigue. Un impacto contra algo
+			// que no sea un actor (pared, suelo...) se ignora sin más: a
+			// diferencia de la ida, el regreso no choca contra el
+			// escenario. Cada actor solo recibe el golpe una vez por
+			// regreso (hitActors), para no repetirlo tick a tick mientras
+			// la réplica pasa cerca de él.
+			const auto hit = Collision::SweepRaycast(previousPos, nextPos, Constants::kThrowCollisionRadius, a_player, &a_refr);
+			if (auto* actor = hit.hit && hit.target ? hit.target->As<RE::Actor>() : nullptr) {
+				RE::ActorHandle actorHandle(actor);
+				if (std::ranges::find(hitActors, actorHandle) == hitActors.end()) {
+					hitActors.push_back(actorHandle);
+					Combat::ApplyReturnHit(a_player, actor);
+				}
+			}
+
 			a_refr.SetPosition(nextPos);
 			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
 

@@ -49,4 +49,12 @@ namespace Combat
 	// recuperar el arma mientras siga clavada en un actor (ver
 	// WeaponManager::RecallWeapon).
 	void EndEmbeddedEffect(RE::Actor* a_target);
+
+	// Punto 9 de Mecanica del arma.txt: la réplica ha golpeado a
+	// a_target durante el regreso (no durante la ida), sin quedarse
+	// clavada. Concede y retira la habilidad de stagger propia
+	// (Constants::kStaggerSpell) y, si está habilitado por INI
+	// ([Damage] ReturnHitMultiplier > 0, ver Init), aplica una fracción
+	// del daño de golpe normal (la mitad por defecto).
+	void ApplyReturnHit(RE::Actor* a_attacker, RE::Actor* a_target);
 }
