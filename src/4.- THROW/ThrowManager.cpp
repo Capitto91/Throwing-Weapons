@@ -58,7 +58,7 @@ namespace Throw
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
 
-			const auto direction = aimPoint - a_origin;
+			const auto  direction = aimPoint - a_origin;
 			const float length = direction.Length();
 			return length > 0.0f ? direction / length : forward;
 		}
@@ -71,8 +71,8 @@ namespace Throw
 			return;
 		}
 
-		const auto origin = GetLaunchOrigin(a_shooter);
-		const auto direction = ComputeAimedDirection(a_shooter, origin);
+		const auto         origin = GetLaunchOrigin(a_shooter);
+		const auto         direction = ComputeAimedDirection(a_shooter, origin);
 		const RE::NiPoint3 velocity0 = direction * Constants::kThrowInitialSpeed;
 
 		Physics::SpawnReplica(a_shooter, a_weapon, origin, [a_shooter, a_weapon, origin, velocity0, callbacks = a_callbacks](RE::ObjectRefHandle a_handle) {
@@ -90,7 +90,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -110,9 +110,9 @@ namespace Throw
 				if (hit.hit) {
 					auto* actor = hit.target ? hit.target->As<RE::Actor>() : nullptr;
 
-					const auto travel = nextPos - previousPos;
+					const auto  travel = nextPos - previousPos;
 					const float travelLength = travel.Length();
-					const auto travelDir = travelLength > 0.0f ? travel / travelLength : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+					const auto  travelDir = travelLength > 0.0f ? travel / travelLength : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
 
 					// El punto del rayo es donde la línea (infinitamente
 					// fina) cruza la superficie golpeada. Contra una
@@ -127,8 +127,8 @@ namespace Throw
 					// del cuerpo, así que en vez de eso se avanza
 					// (comprobado en el juego).
 					const auto stickPoint = actor ?
-					                             hit.point + travelDir * Constants::kActorStickForwardOffset :
-					                             hit.point - travelDir * Constants::kStickEmbedBackoff;
+					                            hit.point + travelDir * Constants::kActorStickForwardOffset :
+					                            hit.point - travelDir * Constants::kStickEmbedBackoff;
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
@@ -143,7 +143,7 @@ namespace Throw
 					// inmune, p. ej. un dragón—). Contra una superficie no
 					// hay nada más que hacer.
 					if (actor) {
-						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall);
+						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall, onTickStarted);
 					} else {
 						onStuck(RE::ActorHandle{});
 					}
@@ -170,6 +170,8 @@ namespace Throw
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
 				return true;
 			});
+
+			callbacks.onTickStarted(token);
 		});
 	}
 }

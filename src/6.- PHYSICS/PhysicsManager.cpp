@@ -105,7 +105,7 @@ namespace Physics
 		a_refr.Update3DPosition(true);
 	}
 
-	void StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback)
+	TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback)
 	{
 		// El callback se guarda en el heap y se comparte por puntero (no se
 		// copia en cada iteración): así, si el propio callback captura
@@ -139,6 +139,15 @@ namespace Physics
 				});
 			}
 		}).detach();
+
+		return active;
+	}
+
+	void CancelTickLoop(const TickToken& a_token)
+	{
+		if (a_token) {
+			a_token->store(false);
+		}
 	}
 
 	void DestroyReplica(RE::ObjectRefHandle a_handle)

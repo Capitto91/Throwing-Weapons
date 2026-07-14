@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "6.- PHYSICS/PhysicsManager.h"
+
 #include <functional>
 
 namespace Throw
@@ -14,6 +16,15 @@ namespace Throw
 		// llegó a crearse o a cargar su 3D). Pensado para que el llamante
 		// guarde el handle y pueda recuperarla más tarde.
 		std::function<void(RE::ObjectRefHandle)> onSpawned;
+
+		// Token del bucle de tick que controla la réplica en cada momento
+		// (vuelo parabólico, o el seguimiento de un actor clavado que lo
+		// sustituye — ver Combat::BeginEmbeddedEffect). El llamante debe
+		// guardar siempre el último token recibido: es lo único que
+		// permite cancelar ese bucle desde fuera (p. ej. al pulsar el
+		// botón de recuperar) sin destruir la réplica, ver
+		// Physics::TickToken.
+		std::function<void(Physics::TickToken)> onTickStarted;
 
 		// Impacto detectado (superficie o actor, punto 6 de Mecanica del
 		// arma.txt): la réplica ya ha dejado de moverse en el punto del

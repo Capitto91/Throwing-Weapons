@@ -58,14 +58,26 @@ namespace Weapon
 		// Throw::LaunchWeapon para que la réplica visual vuele de verdad.
 		void ThrowWeapon();
 
-		// Recuperación instantánea: destruye la réplica en vuelo (si la
-		// hay, ver Physics::DestroyReplica) y reequipa el arma de
-		// inmediato, sin trayectoria de vuelta. 5.- RETURN sustituirá esta
-		// transición por un regreso animado a partir de la Fase 6, dejando
-		// esta función como red de seguridad (pantalla de carga a mitad del
-		// trayecto, sin jugador del que partir, etc.), igual que documenta
-		// CHANGELOG.md de la iteración anterior.
+		// Regreso animado (5.- RETURN, puntos 7-8): cancela el bucle de
+		// tick en marcha (vuelo, o seguimiento de un actor clavado),
+		// libera al objetivo si lo había, y arranca Return::BeginReturn
+		// sobre la réplica ya existente. Cae a RecallWeapon (recuperación
+		// instantánea) si no hay jugador o réplica válida de la que
+		// partir.
+		void BeginReturn();
+
+		// Recuperación instantánea: destruye la réplica (si la hay, ver
+		// Physics::DestroyReplica) y reequipa el arma de inmediato, sin
+		// trayectoria de vuelta. Se mantiene como red de seguridad (cierre
+		// de pantalla de carga a mitad de un regreso ya en marcha, o sin
+		// jugador/réplica del que partir en BeginReturn) — el ciclo normal
+		// de recuperación pasa por BeginReturn.
 		void RecallWeapon();
+
+		// Paso final común a la recuperación instantánea y a la llegada
+		// del regreso animado: destruye la réplica, cancela cualquier
+		// bucle de tick activo y reequipa el arma real.
+		void ReequipAndReset();
 
 		WeaponState weaponState;
 	};

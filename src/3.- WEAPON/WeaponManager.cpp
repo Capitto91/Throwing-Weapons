@@ -4,6 +4,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "4.- THROW/ThrowManager.h"
+#include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 
@@ -32,9 +33,7 @@ namespace Weapon
 			break;
 		case State::kThrown:
 		case State::kStuck:
-			// Recuperación instantánea por ahora. A partir de la Fase 6
-			// esto arrancará un regreso animado (5.- RETURN).
-			RecallWeapon();
+			BeginReturn();
 			break;
 		default:
 			break;
@@ -58,6 +57,7 @@ namespace Weapon
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetActiveReplicaHandle({});
 		weaponState.SetStuckActorHandle({});
+		weaponState.SetActiveTickToken({});
 		weaponState.SetState(State::kInHand);
 	}
 
@@ -66,6 +66,11 @@ namespace Weapon
 		switch (weaponState.GetState()) {
 		case State::kThrown:
 		case State::kStuck:
+		case State::kReturning:
+			// Regreso ya en marcha a mitad de trayecto (p. ej. viaje
+			// rápido mientras el arma volvía): se aborta con la
+			// recuperación instantánea en vez de dejarlo continuar sobre
+			// una réplica que puede haber quedado en una celda distinta.
 			RecallWeapon();
 			break;
 		case State::kAiming:
@@ -108,6 +113,9 @@ namespace Weapon
 			callbacks.onSpawned = [this](RE::ObjectRefHandle a_handle) {
 				weaponState.SetActiveReplicaHandle(a_handle);
 			};
+			callbacks.onTickStarted = [this](Physics::TickToken a_token) {
+				weaponState.SetActiveTickToken(a_token);
+			};
 			callbacks.onStuck = [this](RE::ActorHandle a_actor) {
 				// Comprobado antes de transicionar: el ciclo puede haber
 				// cambiado por otra vía (p. ej. el jugador ya pulsó
@@ -135,6 +143,48 @@ namespace Weapon
 		weaponState.SetState(State::kThrown);
 	}
 
+	void WeaponManager::BeginReturn()
+	{
+		// Punto 6: "cuando se decide recuperar el arma... libera al
+		// objetivo, volviendo al jugador" — se libera de inmediato al
+		// iniciar el regreso, no al llegar a la mano.
+		if (auto actor = weaponState.GetStuckActorHandle().get()) {
+			Combat::EndEmbeddedEffect(actor.get());
+		}
+		weaponState.SetStuckActorHandle({});
+
+		// El botón de recuperar llega desde fuera de cualquier tick en
+		// marcha (a diferencia de la transición ida->clavada, que ocurre
+		// dentro del propio tick y se autodetiene devolviendo false) —
+		// hay que cancelar aquí el bucle que estuviera controlando la
+		// réplica (vuelo, o seguimiento del actor clavado) antes de
+		// arrancar el del regreso, o los dos escribirían su posición cada
+		// tick (ver Physics::TickToken).
+		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
+		weaponState.SetActiveTickToken({});
+
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto  replicaHandle = weaponState.GetActiveReplicaHandle();
+
+		if (!player || !replicaHandle.get()) {
+			logs::warn("WeaponManager::BeginReturn: sin jugador o réplica válida, recuperación instantánea de reserva.");
+			ReequipAndReset();
+			return;
+		}
+
+		weaponState.SetState(State::kReturning);
+
+		Return::ReturnCallbacks callbacks;
+		callbacks.onTickStarted = [this](Physics::TickToken a_token) {
+			weaponState.SetActiveTickToken(a_token);
+		};
+		callbacks.onArrived = [this]() {
+			ReequipAndReset();
+		};
+
+		Return::BeginReturn(player, replicaHandle, std::move(callbacks));
+	}
+
 	void WeaponManager::RecallWeapon()
 	{
 		// Punto 6: si la réplica estaba clavada en un actor, liberarlo
@@ -144,6 +194,14 @@ namespace Weapon
 			Combat::EndEmbeddedEffect(actor.get());
 		}
 		weaponState.SetStuckActorHandle({});
+
+		ReequipAndReset();
+	}
+
+	void WeaponManager::ReequipAndReset()
+	{
+		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
+		weaponState.SetActiveTickToken({});
 
 		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});

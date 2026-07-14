@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "6.- PHYSICS/PhysicsManager.h"
+
 #include <functional>
 
 namespace Combat
@@ -29,12 +31,18 @@ namespace Combat
 	// Constants::kEmbeddedMaxDuration clavada. Si el objetivo puede
 	// paralizarse, llama primero a a_onStuck (con el handle del actor)
 	// para que el llamante registre el ciclo como "clavada".
+	// a_onTickStarted recibe el token del nuevo bucle de seguimiento que
+	// arranca aqui (ver Physics::TickToken): sustituye al bucle de vuelo
+	// de Throw::LaunchWeapon, y el llamante debe quedarse con este token
+	// nuevo para poder cancelarlo mas adelante (p. ej. al pulsar el boton
+	// de recuperar).
 	void BeginEmbeddedEffect(
-		RE::Actor* a_attacker,
-		RE::Actor* a_target,
-		RE::ObjectRefHandle a_replicaHandle,
-		std::function<void(RE::ActorHandle)> a_onStuck,
-		std::function<void()> a_onAutoRecall);
+		RE::Actor*                              a_attacker,
+		RE::Actor*                              a_target,
+		RE::ObjectRefHandle                     a_replicaHandle,
+		std::function<void(RE::ActorHandle)>    a_onStuck,
+		std::function<void()>                   a_onAutoRecall,
+		std::function<void(Physics::TickToken)> a_onTickStarted);
 
 	// Libera al objetivo (punto 6): quita la habilidad de parálisis
 	// concedida por BeginEmbeddedEffect. Debe llamarse siempre al

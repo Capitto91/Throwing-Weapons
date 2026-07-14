@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <memory>
 
 // Primitiva de movimiento manual compartida por la ida (4.- THROW) y la
 // vuelta (5.- RETURN): crea una réplica visual del arma (TESObjectREFR
@@ -23,6 +25,18 @@ namespace Physics
 	// solo si la réplica deja de existir (p. ej. otro código la borró con
 	// DestroyReplica mientras tanto).
 	using TickCallback = std::function<bool(RE::TESObjectREFR&, float)>;
+
+	// Token de cancelacion de un bucle de tick en marcha (ver
+	// StartTickLoop). El propio bucle ya se detiene solo cuando el
+	// callback devuelve false o la replica deja de existir, pero eso solo
+	// cubre el caso de que sea el propio tick quien decide parar. El
+	// regreso (5.- RETURN) necesita lo contrario: al pulsar el boton de
+	// recuperar mientras el arma todavia vuela o sigue clavada en un
+	// actor, hay que detener ese bucle desde fuera (otro punto de la
+	// ejecucion en el hilo principal, no el propio tick) antes de arrancar
+	// el del regreso -- sin este token, los dos bucles escribirian la
+	// posicion de la misma replica cada tick.
+	using TickToken = std::shared_ptr<std::atomic<bool>>;
 
 	// Invocado en el hilo principal cuando la réplica recién creada está
 	// lista para moverse (3D cargado y en modo Havok "keyframed"), o con un
@@ -46,8 +60,15 @@ namespace Physics
 	// Arranca el bucle de tick manual sobre a_handle: un único hilo que
 	// duerme Constants::kTickInterval y reencola en el hilo principal en
 	// bucle (nunca AddTask reentrante desde dentro de sí mismo — congela el
-	// juego, ver CLAUDE.md), llamando a a_callback cada paso.
-	void StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback);
+	// juego, ver CLAUDE.md), llamando a a_callback cada paso. Devuelve el
+	// token de cancelación de este bucle en concreto (ver TickToken); el
+	// llamante es responsable de guardarlo si necesita poder detenerlo
+	// desde fuera más adelante.
+	[[nodiscard]] TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback);
+
+	// Detiene un bucle en marcha desde fuera de sí mismo (ver TickToken).
+	// Sin efecto sobre un token vacío o ya cancelado.
+	void CancelTickLoop(const TickToken& a_token);
 
 	// Borra la réplica (Disable + SetDelete) — paso final común a ida y
 	// vuelta, y forma de cancelar un StartTickLoop en marcha desde fuera:

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "6.- PHYSICS/PhysicsManager.h"
+
 namespace Weapon
 {
 	// Ciclo de vida del arma arrojadiza única (Mecanica del arma.txt,
@@ -49,10 +51,21 @@ namespace Weapon
 		[[nodiscard]] RE::ActorHandle GetStuckActorHandle() const noexcept { return stuckActorHandle; }
 		void                          SetStuckActorHandle(RE::ActorHandle a_handle) noexcept { stuckActorHandle = a_handle; }
 
+		// Token del bucle de tick que controla la réplica en este instante
+		// (vuelo de ida, seguimiento de un actor clavado, o regreso), sea
+		// cual sea el módulo que lo haya arrancado. Es lo único que
+		// permite a WeaponManager cancelar ese bucle desde fuera (p. ej.
+		// al pulsar el botón de recuperar mientras el arma sigue en
+		// marcha) sin tener que destruir la réplica — ver
+		// Physics::TickToken.
+		[[nodiscard]] Physics::TickToken GetActiveTickToken() const noexcept { return activeTickToken; }
+		void                             SetActiveTickToken(Physics::TickToken a_token) noexcept { activeTickToken = std::move(a_token); }
+
 	private:
-		State                state{ State::kInHand };
-		RE::TESBoundObject*  activeWeapon{ nullptr };
-		RE::ObjectRefHandle  activeReplicaHandle;
-		RE::ActorHandle      stuckActorHandle;
+		State               state{ State::kInHand };
+		RE::TESBoundObject* activeWeapon{ nullptr };
+		RE::ObjectRefHandle activeReplicaHandle;
+		RE::ActorHandle     stuckActorHandle;
+		Physics::TickToken  activeTickToken;
 	};
 }

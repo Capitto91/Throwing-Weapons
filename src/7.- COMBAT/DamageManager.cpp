@@ -105,11 +105,12 @@ namespace Combat
 	}
 
 	void BeginEmbeddedEffect(
-		RE::Actor* a_attacker,
-		RE::Actor* a_target,
-		RE::ObjectRefHandle a_replicaHandle,
-		std::function<void(RE::ActorHandle)> a_onStuck,
-		std::function<void()> a_onAutoRecall)
+		RE::Actor*                              a_attacker,
+		RE::Actor*                              a_target,
+		RE::ObjectRefHandle                     a_replicaHandle,
+		std::function<void(RE::ActorHandle)>    a_onStuck,
+		std::function<void()>                   a_onAutoRecall,
+		std::function<void(Physics::TickToken)> a_onTickStarted)
 	{
 		if (!a_attacker || !a_target) {
 			return;
@@ -165,7 +166,7 @@ namespace Combat
 		}
 		RE::ActorHandle targetHandle(a_target);
 
-		Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
 				// El actor ya no existe (p. ej. la celda se ha
@@ -176,8 +177,8 @@ namespace Combat
 
 			auto*      currentNode = target->Get3D();
 			const auto nextPos = currentNode ?
-			                          currentNode->world.translate + currentNode->world.rotate * localOffset :
-			                          target->GetPosition();
+			                         currentNode->world.translate + currentNode->world.rotate * localOffset :
+			                         target->GetPosition();
 			a_refr.SetPosition(nextPos);
 			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
 
@@ -219,6 +220,8 @@ namespace Combat
 
 			return true;
 		});
+
+		a_onTickStarted(token);
 	}
 
 	void EndEmbeddedEffect(RE::Actor* a_target)
