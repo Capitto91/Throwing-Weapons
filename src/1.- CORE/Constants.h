@@ -60,6 +60,15 @@ namespace Constants
 	// del arma, pendiente de ajustar en el juego.
 	inline constexpr float kStickEmbedBackoff = 15.0f;
 
+	// Igual que kStickEmbedBackoff pero al revés: contra un actor, la
+	// capa golpeada (CharController) es una cápsula de colisión más
+	// grande que la malla visual real, muy notable en objetivos pequeños
+	// (lobos, etc.) — retroceder como con una pared deja el arma flotando
+	// todavía más lejos del cuerpo (comprobado en el juego). En vez de
+	// retroceder, se avanza esta distancia a lo largo de la dirección de
+	// vuelo para compensar. Placeholder, pendiente de ajustar en el juego.
+	inline constexpr float kActorStickForwardOffset = 15.0f;
+
 	// Distancia máxima de lanzamiento (punto 5): si no impacta contra
 	// nada, el arma regresa automáticamente. Placeholder de partida (en la
 	// iteración anterior se dobló a 12000 para compensar un hueco visual
@@ -102,6 +111,52 @@ namespace Constants
 	// giro. Ajuste empírico específico de este modelo — reverificar contra
 	// las cajas bhkBoxShape del NIF si se cambia de arma soportada.
 	inline constexpr float kModelRollOffset = 1.5707963267948966f; // 90°
+
+	// -- Impacto en actor (punto 6) --
+	// EditorID del hechizo de parálisis propio (creado en la Creation
+	// Kit, copia del efecto vanilla de Parálisis) que se concede al actor
+	// golpeado mientras el arma siga clavada. Debe crearse como tipo
+	// Ability, con el efecto en modo "Constant Effect" y alcance "Self" —
+	// así, concedido con Actor::AddSpell, se aplica de inmediato y de
+	// forma continua sin necesidad de volver a lanzarlo, y se quita al
+	// instante con Actor::RemoveSpell al recuperar el arma (ver
+	// Combat::EndEmbeddedEffect). Se prefiere a lanzar el hechizo vanilla
+	// real vía MagicCaster::CastSpellImmediate (primer intento,
+	// descartado): esa llamada es virtual, y AddSpell/RemoveSpell no lo
+	// son, además de no depender de refrescar una duración limitada.
+	inline constexpr std::string_view kEmbeddedParalysisSpell{ "CAP_ThorMjolnir_Ability_ThrowingParalysis" };
+
+	// EditorID del propio efecto mágico (EffectSetting) dentro del
+	// hechizo de arriba — no el hechizo en sí. Se usa para comprobar con
+	// MagicTarget::HasMagicEffect si el efecto ha quedado realmente activo
+	// en el objetivo tras concederle la habilidad: AddSpell siempre tiene
+	// éxito aunque la condición del propio efecto (inmune a parálisis,
+	// dragón...) impida que se aplique de verdad, así que hay que
+	// comprobarlo aparte en vez de asumir que funcionó.
+	inline constexpr std::string_view kEmbeddedParalysisEffect{ "CAP_ThorMjolnir_ParalysisAbilityEffect" };
+
+	// Intervalo del daño eléctrico continuo (punto 6) mientras el arma
+	// siga clavada en un actor. Placeholder, pendiente de ajustar en el
+	// juego.
+	inline constexpr float kEmbeddedDamageInterval = 1.5f;
+
+	// Duración máxima clavada en un actor (nerfeo pedido tras las primeras
+	// pruebas: sin esto, dejar el arma clavada mucho tiempo era demasiado
+	// fuerte). Pasado este tiempo, el arma regresa automáticamente aunque
+	// no se pulse el botón.
+	inline constexpr float kEmbeddedMaxDuration = 5.0f;
+
+	// Margen máximo tras conceder la habilidad para confirmar que el
+	// efecto ha quedado activo de verdad (MagicTarget::HasMagicEffect,
+	// comprobado cada tick hasta confirmarse o agotar este margen): el
+	// motor necesita al menos un tick para procesar la habilidad recién
+	// concedida. Si no se confirma dentro de este margen, se interpreta
+	// como objetivo inmune y el arma regresa automáticamente sin esperar
+	// los kEmbeddedMaxDuration completos. Placeholder generoso, pendiente
+	// de ajustar en el juego (al ser una comprobación exacta y no una
+	// inferencia, se puede acortar con seguridad si se confirma que el
+	// efecto tarda menos en reflejarse).
+	inline constexpr float kImmunityCheckDelay = 0.3f;
 
 	// -- Temblor al clavarse (punto 11) --
 	// Duración de la vibración antes de desprenderse al iniciar el

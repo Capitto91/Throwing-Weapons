@@ -5,6 +5,7 @@
 
 #include "4.- THROW/ThrowManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
+#include "7.- COMBAT/DamageManager.h"
 
 namespace Weapon
 {
@@ -56,6 +57,7 @@ namespace Weapon
 		// dentro del mismo proceso.
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetActiveReplicaHandle({});
+		weaponState.SetStuckActorHandle({});
 		weaponState.SetState(State::kInHand);
 	}
 
@@ -106,17 +108,23 @@ namespace Weapon
 			callbacks.onSpawned = [this](RE::ObjectRefHandle a_handle) {
 				weaponState.SetActiveReplicaHandle(a_handle);
 			};
-			callbacks.onStuck = [this]() {
+			callbacks.onStuck = [this](RE::ActorHandle a_actor) {
 				// Comprobado antes de transicionar: el ciclo puede haber
 				// cambiado por otra vía (p. ej. el jugador ya pulsó
 				// recuperar, o una pantalla de carga resincronizó el
 				// estado) antes de que el impacto se detectase.
 				if (weaponState.GetState() == State::kThrown) {
+					weaponState.SetStuckActorHandle(a_actor);
 					weaponState.SetState(State::kStuck);
 				}
 			};
 			callbacks.onAutoRecall = [this]() {
-				if (weaponState.GetState() == State::kThrown) {
+				// Cubre tanto la ida sin impactar (kThrown: distancia
+				// máxima, agua) como el objetivo clavado que resulta
+				// inmune o supera la duración máxima (kStuck, ver
+				// Combat::BeginEmbeddedEffect) — ambos casos son "el
+				// ciclo se rinde y recupera solo", nunca ocurren a la vez.
+				if (weaponState.GetState() == State::kThrown || weaponState.GetState() == State::kStuck) {
 					RecallWeapon();
 				}
 			};
@@ -129,6 +137,14 @@ namespace Weapon
 
 	void WeaponManager::RecallWeapon()
 	{
+		// Punto 6: si la réplica estaba clavada en un actor, liberarlo
+		// (quitar la habilidad de parálisis) antes de olvidar el handle —
+		// ver Combat::EndEmbeddedEffect.
+		if (auto actor = weaponState.GetStuckActorHandle().get()) {
+			Combat::EndEmbeddedEffect(actor.get());
+		}
+		weaponState.SetStuckActorHandle({});
+
 		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
 

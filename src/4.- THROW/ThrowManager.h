@@ -17,10 +17,11 @@ namespace Throw
 
 		// Impacto detectado (superficie o actor, punto 6 de Mecanica del
 		// arma.txt): la réplica ya ha dejado de moverse en el punto del
-		// golpe. El comportamiento específico según lo que se golpeó
-		// (daño, parálisis, cómo engancharse a un actor) llega en la
-		// Fase 5 — por ahora cualquier impacto se trata igual.
-		std::function<void()> onStuck;
+		// golpe. a_actor es un handle válido si el impacto fue contra un
+		// actor (LaunchWeapon ya se ha encargado de aplicar
+		// Combat::BeginEmbeddedEffect en ese caso), inválido si fue contra
+		// una superficie.
+		std::function<void(RE::ActorHandle a_actor)> onStuck;
 
 		// Distancia máxima superada sin impactar, o caída al agua (punto
 		// 5): la réplica sigue existiendo pero ha dejado de moverse,

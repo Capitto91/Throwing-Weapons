@@ -41,9 +41,18 @@ namespace Weapon
 		[[nodiscard]] RE::ObjectRefHandle GetActiveReplicaHandle() const noexcept { return activeReplicaHandle; }
 		void                              SetActiveReplicaHandle(RE::ObjectRefHandle a_handle) noexcept { activeReplicaHandle = a_handle; }
 
+		// Actor en el que quedó clavada la réplica (punto 6), vacío si no
+		// hay ninguno (superficie, o todavía en vuelo). Lo fija el
+		// callback onStuck de Throw::LaunchWeapon; RecallWeapon lo usa
+		// para liberar al objetivo (Combat::EndEmbeddedEffect) antes de
+		// olvidarlo.
+		[[nodiscard]] RE::ActorHandle GetStuckActorHandle() const noexcept { return stuckActorHandle; }
+		void                          SetStuckActorHandle(RE::ActorHandle a_handle) noexcept { stuckActorHandle = a_handle; }
+
 	private:
 		State                state{ State::kInHand };
 		RE::TESBoundObject*  activeWeapon{ nullptr };
 		RE::ObjectRefHandle  activeReplicaHandle;
+		RE::ActorHandle      stuckActorHandle;
 	};
 }

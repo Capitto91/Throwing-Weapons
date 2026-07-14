@@ -6,6 +6,7 @@
 #include "1.- CORE/Constants.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
+#include "7.- COMBAT/DamageManager.h"
 
 namespace Throw
 {
@@ -74,7 +75,7 @@ namespace Throw
 		const auto direction = ComputeAimedDirection(a_shooter, origin);
 		const RE::NiPoint3 velocity0 = direction * Constants::kThrowInitialSpeed;
 
-		Physics::SpawnReplica(a_shooter, a_weapon, origin, [a_shooter, origin, velocity0, callbacks = a_callbacks](RE::ObjectRefHandle a_handle) {
+		Physics::SpawnReplica(a_shooter, a_weapon, origin, [a_shooter, a_weapon, origin, velocity0, callbacks = a_callbacks](RE::ObjectRefHandle a_handle) {
 			callbacks.onSpawned(a_handle);
 
 			if (!a_handle.get()) {
@@ -89,7 +90,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			Physics::StartTickLoop(a_handle, [a_shooter, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -107,22 +108,46 @@ namespace Throw
 				// consulta, ver CLAUDE.md).
 				const auto hit = Collision::SweepRaycast(previousPos, nextPos, Constants::kThrowCollisionRadius, a_shooter, &a_refr);
 				if (hit.hit) {
-					// Retroceder el punto de clavado a lo largo de la
-					// dirección de vuelo: el punto del rayo es donde la
-					// línea (infinitamente fina) cruza la superficie, pero
-					// el origen del modelo puesto justo ahí deja parte de
-					// la malla (con volumen real) hundida dentro de ella
-					// (comprobado en el juego).
+					auto* actor = hit.target ? hit.target->As<RE::Actor>() : nullptr;
+
 					const auto travel = nextPos - previousPos;
 					const float travelLength = travel.Length();
-					const auto stickPoint = travelLength > 0.0f ?
-					                             hit.point - (travel / travelLength) * Constants::kStickEmbedBackoff :
-					                             hit.point;
+					const auto travelDir = travelLength > 0.0f ? travel / travelLength : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+
+					// El punto del rayo es donde la línea (infinitamente
+					// fina) cruza la superficie golpeada. Contra una
+					// superficie normal, el origen del modelo puesto justo
+					// ahí deja parte de la malla del arma (con volumen
+					// real) hundida dentro de ella, así que se retrocede
+					// (comprobado en el juego). Contra un actor es al
+					// revés: la capa golpeada (CharController) es una
+					// cápsula de colisión más grande que la malla visual
+					// real, muy notable en objetivos pequeños — retroceder
+					// igual que con una pared deja el arma flotando lejos
+					// del cuerpo, así que en vez de eso se avanza
+					// (comprobado en el juego).
+					const auto stickPoint = actor ?
+					                             hit.point + travelDir * Constants::kActorStickForwardOffset :
+					                             hit.point - travelDir * Constants::kStickEmbedBackoff;
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
-					onStuck();
+
+					// Punto 6: contra un actor, no basta con detenerse — hay
+					// que aplicar daño/parálisis y seguir su posición
+					// mientras el arma siga clavada
+					// (Combat::BeginEmbeddedEffect arranca su propio bucle
+					// de tick, sustituyendo a este, y decide si llamar a
+					// onStuck —clavada de verdad— o a onAutoRecall —objetivo
+					// inmune, p. ej. un dragón—). Contra una superficie no
+					// hay nada más que hacer.
+					if (actor) {
+						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall);
+					} else {
+						onStuck(RE::ActorHandle{});
+					}
+
 					return false;
 				}
 

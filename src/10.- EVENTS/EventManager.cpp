@@ -5,6 +5,7 @@
 
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
+#include "7.- COMBAT/DamageManager.h"
 
 namespace Events
 {
@@ -131,6 +132,7 @@ namespace Events
 		SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
 		RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
 		RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
+		Combat::Init();
 		logs::info("EventManager inicializado.");
 	}
 }
