@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/GameOffsets.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <SimpleIni.h>
@@ -216,27 +217,34 @@ namespace Combat
 				Constants::kEmbeddedParalysisEffect);
 		}
 
-		// Desplazamiento respecto al actor en el instante del impacto,
+		// Desplazamiento respecto al hueso más cercano al punto de impacto
+		// (ActorUtils::FindNearestBoneName) en el instante del impacto,
 		// guardado en su espacio LOCAL (girado con su rotación de ese
 		// momento) en vez de un vector fijo en espacio del mundo — un
 		// vector fijo se notaba flotando lejos del cuerpo en cuanto el
 		// actor caía por la parálisis (comprobado en el juego): la
 		// orientación cambia por completo al caer, y un desplazamiento en
 		// espacio del mundo no la sigue. Cada tick se reconvierte a
-		// espacio del mundo con la rotación actual del actor (ver más
-		// abajo), así que el arma gira con él en vez de quedarse fija.
-		// Sigue siendo una aproximación sobre el nodo raíz del actor, no
-		// un hueso concreto — no hay API para localizar el hueso más
-		// cercano a un punto, ver CLAUDE.md.
-		auto         replica = a_replicaHandle.get();
-		auto*        targetNode = a_target->Get3D();
-		RE::NiPoint3 localOffset{};
-		if (replica && targetNode) {
-			localOffset = targetNode->world.rotate.Transpose() * (replica->GetPosition() - targetNode->world.translate);
+		// espacio del mundo con la rotación actual de ESE hueso (ver más
+		// abajo), así que el arma sigue el movimiento real del cuerpo
+		// (respiración, tembleque de la parálisis, reacciones de golpe) en
+		// vez de solo el del nodo raíz, que antes se notaba flotando —
+		// comprobado en el juego. Se guarda el *nombre* del hueso, no un
+		// puntero crudo, y se resuelve de nuevo cada tick (ver más abajo),
+		// mismo motivo de cautela que ya había para el nodo raíz: el 3D
+		// podría recargarse. Si no se encuentra ningún hueso (actor sin
+		// 3D), se cae al nodo raíz — mismo comportamiento que antes.
+		auto                    replica = a_replicaHandle.get();
+		const RE::BSFixedString boneName = replica ? ActorUtils::FindNearestBoneName(a_target, replica->GetPosition()) : RE::BSFixedString{};
+		auto*                   rootNode = a_target->Get3D();
+		auto*                   trackedNode = (!boneName.empty() && rootNode) ? rootNode->GetObjectByName(boneName) : rootNode;
+		RE::NiPoint3            localOffset{};
+		if (replica && trackedNode) {
+			localOffset = trackedNode->world.rotate.Transpose() * (replica->GetPosition() - trackedNode->world.translate);
 		}
 		RE::ActorHandle targetHandle(a_target);
 
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
 				// El actor ya no existe (p. ej. la celda se ha
@@ -245,7 +253,11 @@ namespace Combat
 				return false;
 			}
 
-			auto*      currentNode = target->Get3D();
+			auto* currentRoot = target->Get3D();
+			auto* currentNode = (!boneName.empty() && currentRoot) ? currentRoot->GetObjectByName(boneName) : currentRoot;
+			if (!currentNode) {
+				currentNode = currentRoot;
+			}
 			const auto nextPos = currentNode ?
 			                         currentNode->world.translate + currentNode->world.rotate * localOffset :
 			                         target->GetPosition();
