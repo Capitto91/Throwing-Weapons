@@ -105,19 +105,23 @@ namespace Constants
 	inline constexpr float kReturnCurveMinOffset = 40.0f;
 	inline constexpr float kReturnCurveMaxOffset = 260.0f;
 
-	// -- Giro y enderezado (punto 10) --
-	// Velocidad de giro sobre sí misma durante el vuelo y distancia a la
-	// que empieza a enderezarse en vez de seguir girando. Reutilizados
-	// tal cual (calibrados en el juego contra el mismo modelo soportado).
-	inline constexpr float kSpinDegreesPerSecond = 1440.0f;
-	inline constexpr float kReturnStraightenDistance = 250.0f;
+	// -- Giro durante el vuelo (punto 10) --
+	// Nombre del nodo hijo, dedicado solo al giro visual, dentro del NIF
+	// del arma (ver 8.- ANIMATION/WeaponAnimation y CLAUDE.md) — no el nodo
+	// raíz, para no competir con SetAngle/Update3DPosition, que el propio
+	// código reescribe cada tick sobre el nodo raíz para mover la réplica.
+	// Única fuente de verdad compartida con el NIF: debe coincidir exacto
+	// con el nombre que se le dé al nodo en NifSkope.
+	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
 
-	// Corrección de "montaje" del modelo 3D soportado: girado 90° sobre su
-	// propio eje de alabeo (Y, el eje mango→cabeza) para que se vea "de
-	// lado" en vez de "estirado" hacia la dirección de vuelo durante el
-	// giro. Ajuste empírico específico de este modelo — reverificar contra
-	// las cajas bhkBoxShape del NIF si se cambia de arma soportada.
-	inline constexpr float kModelRollOffset = 1.5707963267948966f;  // 90°
+	// Margen de reintentos para encontrar el nodo de giro justo tras crear
+	// la réplica (Animation::StartSpinWhenReady): Physics::SpawnReplica ya
+	// espera a que Get3D() deje de ser nulo, pero eso no garantiza que todo
+	// el subárbol -- incluido el nodo de giro -- haya terminado de cargar
+	// en ese mismo instante. Comprobado en el juego: en muy pocos
+	// lanzamientos el arma salía sin girar por esto. Mismo intervalo de
+	// sondeo que kTickInterval.
+	inline constexpr int kWeaponSpinNodeWaitAttempts = 10;
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation

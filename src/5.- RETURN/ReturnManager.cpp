@@ -7,6 +7,7 @@
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/WeaponAnimation.h"
 #include "9.- MATH/CurveMath.h"
 
 #include <algorithm>
@@ -48,6 +49,10 @@ namespace Return
 		logs::info(
 			"Return::BeginReturn: distancia inicial {:.1f}, aceleración {:.1f}",
 			initialDistance, acceleration);
+
+		// Punto 10: retoma el giro al iniciar el regreso (se había
+		// detenido al clavarse, ver Throw::LaunchWeapon).
+		Animation::StartSpin(*replica);
 
 		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			const auto previousPos = a_refr.GetPosition();

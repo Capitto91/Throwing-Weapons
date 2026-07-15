@@ -7,6 +7,7 @@
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/WeaponAnimation.h"
 
 namespace Throw
 {
@@ -85,6 +86,13 @@ namespace Throw
 
 			logs::info("Throw::LaunchWeapon: réplica lista, iniciando vuelo parabólico.");
 
+			// Punto 10: la réplica empieza a girar en cuanto sale de la
+			// mano (ver 8.- ANIMATION/WeaponAnimation). Con reintentos:
+			// Get3D() ya no es nulo aquí, pero el nodo de giro puede
+			// tardar algún tick más en cargar (comprobado en el juego, en
+			// muy pocos lanzamientos).
+			Animation::StartSpinWhenReady(a_handle);
+
 			// Trayectoria parabólica propia (punto 3): posición(t) =
 			// origen + velocidad0·t + ½·gravedad·t², sin depender de Havok
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
@@ -129,6 +137,9 @@ namespace Throw
 					const auto stickPoint = actor ?
 					                            hit.point + travelDir * Constants::kActorStickForwardOffset :
 					                            hit.point - travelDir * Constants::kStickEmbedBackoff;
+
+					// Punto 10: clavada, deja de girar.
+					Animation::StopSpin(a_refr);
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
