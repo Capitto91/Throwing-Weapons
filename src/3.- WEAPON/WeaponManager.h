@@ -10,6 +10,19 @@ namespace Weapon
 	class WeaponManager
 	{
 	public:
+		// Datos mínimos para reconstruir el ciclo si la partida se guardó a
+		// medias (p. ej. a mitad de un lanzamiento) — ver Events::Init,
+		// registro del cosave. FormID en vez de handles: los handles no
+		// sobreviven a un guardado/carga, los FormID sí (remapeados con
+		// SerializationInterface::ResolveFormID).
+		struct SaveCycleData
+		{
+			bool       cycleActive{ false };
+			RE::FormID weaponFormID{ 0 };
+			RE::FormID replicaFormID{ 0 };
+			RE::FormID stuckActorFormID{ 0 };
+		};
+
 		static WeaponManager* GetSingleton();
 
 		WeaponManager(const WeaponManager&) = delete;
@@ -38,6 +51,22 @@ namespace Weapon
 		// la equipó, la vendió...), así que no se fuerza nada y se deja tal
 		// cual está en el guardado.
 		void ResetToInHand();
+
+		// Para el callback de guardado del cosave: qué persistir del ciclo
+		// actual en este instante.
+		[[nodiscard]] SaveCycleData CaptureSaveData() const;
+
+		// Para kPostLoadGame, en vez de ResetToInHand() a ciegas: si
+		// a_data.cycleActive es true (había un ciclo en marcha cuando se
+		// guardó la partida), recupera el arma real de verdad — libera al
+		// actor clavado si lo había, destruye la réplica que el propio
+		// juego restauró como referencia de mundo normal, y reequipa —
+		// antes de esto, esa réplica quedaba huérfana en el mundo
+		// (activable, duplicando el arma que sigue en el inventario). Con
+		// cycleActive a false (partida antigua sin datos de cosave, o
+		// guardada con el arma ya en mano), se comporta exactamente igual
+		// que ResetToInHand().
+		void RecoverOrReset(const SaveCycleData& a_data);
 
 		// Si el ciclo está en marcha (apuntando o lanzada), recupera el
 		// arma de inmediato (incluye destruir la réplica en vuelo si la

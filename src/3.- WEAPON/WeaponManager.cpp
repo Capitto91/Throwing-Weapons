@@ -61,6 +61,70 @@ namespace Weapon
 		weaponState.SetState(State::kInHand);
 	}
 
+	WeaponManager::SaveCycleData WeaponManager::CaptureSaveData() const
+	{
+		SaveCycleData data;
+		data.cycleActive = weaponState.GetState() == State::kThrown ||
+		                   weaponState.GetState() == State::kStuck ||
+		                   weaponState.GetState() == State::kReturning;
+
+		if (!data.cycleActive) {
+			return data;
+		}
+
+		if (auto* weapon = weaponState.GetActiveWeapon()) {
+			data.weaponFormID = weapon->GetFormID();
+		}
+		if (auto replica = weaponState.GetActiveReplicaHandle().get()) {
+			data.replicaFormID = replica->GetFormID();
+		}
+		if (auto actor = weaponState.GetStuckActorHandle().get()) {
+			data.stuckActorFormID = actor->GetFormID();
+		}
+
+		return data;
+	}
+
+	void WeaponManager::RecoverOrReset(const SaveCycleData& a_data)
+	{
+		if (!a_data.cycleActive) {
+			ResetToInHand();
+			return;
+		}
+
+		logs::info("WeaponManager::RecoverOrReset: la partida se guardó a medias de un ciclo, recuperando el arma real.");
+
+		if (a_data.stuckActorFormID) {
+			auto* actorForm = RE::TESForm::LookupByID(a_data.stuckActorFormID);
+			if (auto* actor = actorForm ? actorForm->As<RE::Actor>() : nullptr) {
+				Combat::EndEmbeddedEffect(actor);
+			}
+		}
+
+		if (a_data.replicaFormID) {
+			auto* replicaForm = RE::TESForm::LookupByID(a_data.replicaFormID);
+			if (auto* replicaRefr = replicaForm ? replicaForm->As<RE::TESObjectREFR>() : nullptr) {
+				Physics::DestroyReplica(RE::ObjectRefHandle(replicaRefr));
+			}
+		}
+
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto* weaponForm = a_data.weaponFormID ? RE::TESForm::LookupByID(a_data.weaponFormID) : nullptr;
+		auto* weapon = weaponForm ? weaponForm->As<RE::TESBoundObject>() : nullptr;
+
+		if (player && weapon) {
+			// Mismo motivo que ReequipAndReset: llamado síncrono aquí falla
+			// en silencio (comprobado en la iteración anterior).
+			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
+				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+			});
+		} else {
+			logs::warn("WeaponManager::RecoverOrReset: el arma guardada ya no se resuelve, no se reequipa nada.");
+		}
+
+		ResetToInHand();
+	}
+
 	void WeaponManager::OnLoadingScreenClosed()
 	{
 		switch (weaponState.GetState()) {
