@@ -8,6 +8,7 @@
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponTrail.h"
 #include "9.- MATH/CurveMath.h"
 
 #include <algorithm>
@@ -54,7 +55,17 @@ namespace Return
 		// detenido al clavarse, ver Throw::LaunchWeapon).
 		Animation::StartSpin(*replica);
 
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		// Estela visual (ver PLAN-trail.md): instancia propia del
+		// regreso, independiente de la de la ida (esa ya se destruyó al
+		// cancelarse su bucle de tick antes de llegar aquí, ver
+		// WeaponManager::BeginReturn). Mismo motivo que en
+		// Throw::LaunchWeapon para el std::shared_ptr, ver WeaponTrail.h.
+		auto trail = std::make_shared<Animation::WeaponTrail>();
+		if (auto* node3D = replica->Get3D()) {
+			trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
+		}
+
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			const auto previousPos = a_refr.GetPosition();
 			elapsed += a_deltaSeconds;
 
@@ -89,6 +100,9 @@ namespace Return
 
 			a_refr.SetPosition(nextPos);
 			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+			if (auto* node3D = a_refr.Get3D()) {
+				trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
+			}
 
 			if ((handPos - nextPos).Length() <= Constants::kReturnArrivalDistance) {
 				logs::info("Return::BeginReturn: la réplica ha llegado a la mano.");

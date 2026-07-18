@@ -8,6 +8,7 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponTrail.h"
 
 namespace Throw
 {
@@ -93,12 +94,28 @@ namespace Throw
 			// muy pocos lanzamientos).
 			Animation::StartSpinWhenReady(a_handle);
 
+			// Estela visual (ver PLAN-trail.md): instancia propia de la
+			// ida, capturada por valor en el bucle de tick con el resto
+			// del estado mutable de este lanzamiento (elapsed) -- no hace
+			// falta un "Stop" explícito, su destructor ya se encarga (ver
+			// WeaponTrail.h). En std::shared_ptr en vez de por valor
+			// directo: Physics::TickCallback es un std::function, que
+			// exige que su objetivo sea copiable, y WeaponTrail
+			// deliberadamente no lo es (ver WeaponTrail.h) -- el
+			// shared_ptr sí es copiable sin duplicar el efecto en sí.
+			auto trail = std::make_shared<Animation::WeaponTrail>();
+			if (auto replica = a_handle.get()) {
+				if (auto* node3D = replica->Get3D()) {
+					trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
+				}
+			}
+
 			// Trayectoria parabólica propia (punto 3): posición(t) =
 			// origen + velocidad0·t + ½·gravedad·t², sin depender de Havok
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -143,6 +160,9 @@ namespace Throw
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
+					if (auto* node3D = a_refr.Get3D()) {
+						trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
+					}
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
 
 					// Punto 6: contra un actor, no basta con detenerse — hay
@@ -179,6 +199,9 @@ namespace Throw
 
 				a_refr.SetPosition(nextPos);
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+				if (auto* node3D = a_refr.Get3D()) {
+					trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
+				}
 				return true;
 			});
 

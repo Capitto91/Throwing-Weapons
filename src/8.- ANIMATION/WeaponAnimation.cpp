@@ -86,4 +86,13 @@ namespace Animation
 			controller->Stop();
 		}
 	}
+
+	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root)
+	{
+		if (auto* spinNode = a_root.GetObjectByName(Constants::kWeaponSpinNodeName)) {
+			return spinNode->world;
+		}
+
+		return a_root.world;
+	}
 }

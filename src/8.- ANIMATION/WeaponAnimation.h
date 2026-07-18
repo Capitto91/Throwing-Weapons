@@ -33,4 +33,17 @@ namespace Animation
 
 	// Detiene el giro si estaba en marcha.
 	void StopSpin(RE::TESObjectREFR& a_refr);
+
+	// Transformación mundial a usar como base para efectos que deben
+	// acompañar el giro visual (p. ej. la estela, ver
+	// 8.- ANIMATION/WeaponTrail): el nodo raíz de la réplica (a_root) no
+	// gira durante el vuelo -- SetAngle nunca cambia, solo se mueve la
+	// posición -- así que su world transform por sí sola no refleja el
+	// giro, que vive solo en el NiTransformController del nodo hijo
+	// Constants::kWeaponSpinNodeName. Devuelve la transformación de ese
+	// nodo si existe (misma posición que el raíz, rotación actualizada
+	// por el propio controlador cada fotograma), o la del raíz tal cual
+	// si el nodo de giro no existe todavía (NIF sin cargar del todo, o
+	// sin la convención de giro).
+	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root);
 }

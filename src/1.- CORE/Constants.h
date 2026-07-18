@@ -12,6 +12,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <string_view>
 
 namespace Constants
@@ -190,4 +191,68 @@ namespace Constants
 	// regreso desde un objetivo clavado. Valor dado explícitamente por
 	// Mecanica del arma.txt (no es un placeholder).
 	inline constexpr float kStickShudderDuration = 0.1f;
+
+	// -- Estela visual durante el vuelo (ver PLAN-trail.md / 8.- ANIMATION/WeaponTrail) --
+	// NIF del efecto de estela, con la misma convención estructural que
+	// espera el código portado de Precision (nodo kTrailRootNodeName con
+	// una cadena de huesos segmento ya modelados). Misma ruta que usa
+	// Precision internamente (Settings::attackTrailMeshPath) -- confirmado
+	// con el usuario, que ha copiado ese NIF/textura tal cual como
+	// placeholder para probar la integración.
+	inline constexpr const char* kTrailEffectPath = "Effects/WeaponTrails/AttackTrail.nif";
+
+	// Nombre del nodo hijo, dentro del NIF de estela, que contiene la
+	// cadena de huesos segmento a reposicionar cada tick. Única fuente de
+	// verdad compartida con el NIF, igual que kWeaponSpinNodeName.
+	inline constexpr std::string_view kTrailRootNodeName{ "TrailRoot" };
+
+	// Tiempo de vida de cada segmento individual de la estela antes de
+	// reciclarse (determina cuánto "rastro" se ve detrás del arma en cada
+	// instante). Mismo valor de partida que Precision
+	// (Settings::fTrailSegmentLifetime), pendiente de ajustar en el juego.
+	inline constexpr float kTrailSegmentLifetime = 0.1f;
+
+	// Cuántos segmentos nuevos de estela se añaden por segundo de vuelo.
+	// Mismo valor de partida que Precision
+	// (Settings::uTrailSegmentsPerSecond), pendiente de ajustar en el
+	// juego.
+	inline constexpr std::uint32_t kTrailSegmentsPerSecond = 120;
+
+	// Color base de la estela (RGBA, 0-1) -- azul eléctrico a petición del
+	// usuario, sustituye al gris neutro que trae Precision por defecto
+	// (Settings::fTrailDefaultBaseColor*).
+	inline constexpr RE::NiColorA kTrailBaseColor{ 0.1f, 0.45f, 1.0f, 1.0f };
+
+	// Multiplicador de brillo aplicado sobre kTrailBaseColor por el
+	// material del shader de efecto (BSEffectShaderMaterial::baseColorScale) --
+	// por encima de 1 satura hacia blanco/da aspecto de brillo (bloom),
+	// buscado aquí para el efecto "eléctrico". Mismo mecanismo que
+	// Precision (Settings::fTrailBaseColorScaleMult, que por defecto deja
+	// en 1 sin ningún brillo extra). Placeholder, pendiente de ajustar en
+	// el juego.
+	inline constexpr float kTrailBaseColorScaleMult = 3.0f;
+
+	// Escala aplicada a cada segmento de la estela. El código nunca la
+	// calculaba a partir de la malla del arma (a diferencia de Precision,
+	// que la deriva del alcance del arma equipada -- descartado al portar,
+	// ver 8.- ANIMATION/WeaponTrail.cpp): sin esto, cada segmento se
+	// quedaba con la escala que trae por defecto el NIF de Precision, sin
+	// ninguna relación con el tamaño real de la malla propia. 1.0 (probado
+	// en el juego) resultó desproporcionado -- Precision nunca usa la
+	// malla a esa escala tal cual, siempre la reduce en proporción al
+	// alcance del arma equipada (longitud * 0.01, típicamente muy por
+	// debajo de 1). Placeholder bajado en consecuencia, sigue pendiente de
+	// ajuste fino en el juego.
+	inline constexpr float kTrailSegmentScale = 0.15f;
+
+	// Punto desde el que "nace" visualmente la estela, expresado en el
+	// espacio local del arma (WeaponTrail lo transforma por la rotación
+	// de la réplica en cada muestra, para que la acompañe si cambia de
+	// orientación) en vez de usar directamente el origen del nodo raíz
+	// (node3D->world) -- en armas de Skyrim el origen suele coincidir con
+	// el punto de agarre/mango, no con el centro visual de la pieza.
+	// Comprobado en NifSkope en el NIF de este arma (un martillo): el
+	// origen cae en la base del mango. Ajustado a ojo en el juego por el
+	// usuario (0 en X/Z, +20 en Y).
+	inline constexpr RE::NiPoint3 kTrailAnchorLocalOffset{ 0.0f, 20.0f, 0.0f };
 }
