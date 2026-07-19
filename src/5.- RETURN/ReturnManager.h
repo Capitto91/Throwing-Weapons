@@ -9,10 +9,10 @@
 
 // Regreso sobre la propia réplica que ya existe desde el lanzamiento (nunca
 // se recrea, a diferencia de una iteración anterior descartada — ver
-// CHANGELOG.md v0.3.2/v0.3.3 y CLAUDE.md): el llamante ya ha cancelado
-// cualquier bucle de tick previo (vuelo, o seguimiento de un actor clavado)
-// antes de invocar BeginReturn, así que la posición actual de la réplica es
-// el punto de partida real del regreso.
+// CHANGELOG.md y CLAUDE.md): el llamante ya ha cancelado cualquier bucle de
+// tick previo (vuelo, o seguimiento de un actor clavado) antes de invocar
+// BeginReturn, así que la posición actual de la réplica es el punto de
+// partida real del regreso.
 
 namespace Return
 {
@@ -35,6 +35,10 @@ namespace Return
 	// única vez, capturando la posición de la mano en este instante; el
 	// extremo final de la curva se sigue actualizando cada tick a la
 	// posición actual de la mano, para no perder de vista al jugador si
-	// se mueve durante el regreso.
+	// se mueve durante el regreso. El giro (punto 10) se sigue calculando
+	// a mano cada tick igual que en la ida (ver
+	// 8.- ANIMATION/WeaponAnimation::TickSpin) -- sin ningún "reanudar"
+	// especial: si la réplica venía de kStuck, el giro simplemente
+	// continúa desde el ángulo en el que se quedó congelada.
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks);
 }

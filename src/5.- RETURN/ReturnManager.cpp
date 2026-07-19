@@ -51,10 +51,6 @@ namespace Return
 			"Return::BeginReturn: distancia inicial {:.1f}, aceleración {:.1f}",
 			initialDistance, acceleration);
 
-		// Punto 10: retoma el giro al iniciar el regreso (se había
-		// detenido al clavarse, ver Throw::LaunchWeapon).
-		Animation::StartSpin(*replica);
-
 		// Estela visual (ver PLAN-trail.md): instancia propia del
 		// regreso, independiente de la de la ida (esa ya se destruyó al
 		// cancelarse su bucle de tick antes de llegar aquí, ver
@@ -68,6 +64,10 @@ namespace Return
 		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			const auto previousPos = a_refr.GetPosition();
 			elapsed += a_deltaSeconds;
+
+			// Punto 10: se calcula y escribe el giro a mano cada tick
+			// (ver Animation::TickSpin), igual que en la ida.
+			Animation::TickSpin(a_refr, elapsed);
 
 			// El extremo final de la curva se recalcula cada tick (a
 			// diferencia del inicio y el punto de control, fijados una

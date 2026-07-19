@@ -87,13 +87,6 @@ namespace Throw
 
 			logs::info("Throw::LaunchWeapon: réplica lista, iniciando vuelo parabólico.");
 
-			// Punto 10: la réplica empieza a girar en cuanto sale de la
-			// mano (ver 8.- ANIMATION/WeaponAnimation). Con reintentos:
-			// Get3D() ya no es nulo aquí, pero el nodo de giro puede
-			// tardar algún tick más en cargar (comprobado en el juego, en
-			// muy pocos lanzamientos).
-			Animation::StartSpinWhenReady(a_handle);
-
 			// Estela visual (ver PLAN-trail.md): instancia propia de la
 			// ida, capturada por valor en el bucle de tick con el resto
 			// del estado mutable de este lanzamiento (elapsed) -- no hace
@@ -118,6 +111,10 @@ namespace Throw
 			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
+
+				// Punto 10: se calcula y escribe el giro a mano cada tick
+				// (ver Animation::TickSpin).
+				Animation::TickSpin(a_refr, elapsed);
 
 				RE::NiPoint3 nextPos = origin + velocity0 * elapsed;
 				nextPos.z += 0.5f * Constants::kThrowGravity * elapsed * elapsed;
@@ -155,8 +152,10 @@ namespace Throw
 					                            hit.point + travelDir * Constants::kActorStickForwardOffset :
 					                            hit.point - travelDir * Constants::kStickEmbedBackoff;
 
-					// Punto 10: clavada, deja de girar.
-					Animation::StopSpin(a_refr);
+					// Punto 10: clavada -- ya no se llama a TickSpin sobre
+					// esta réplica, así que el giro se queda congelado en
+					// el ángulo que tuviera en este instante, sin ninguna
+					// llamada explícita de "parar" (ver WeaponAnimation.h).
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());

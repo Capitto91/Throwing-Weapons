@@ -4,46 +4,45 @@
 #pragma once
 
 // Punto 10 de Mecanica del arma.txt: giro sobre sí misma durante el vuelo.
-// El giro vive horneado en el propio NIF del arma como un
-// NiTransformController "suelto" (sin NiControllerManager/NiControllerSequence
-// de por medio, a diferencia de un primer diseño descartado antes de
-// implementarse) colgado de un nodo hijo dedicado
-// (Constants::kWeaponSpinNodeName) — no del nodo raíz, que el propio
-// código reescribe cada tick (SetAngle/Update3DPosition) para mover la
-// réplica y competiría con el controlador si compartieran nodo. Inactivo
-// por defecto (sin el flag kActive), así que ni la versión equipada ni la
-// tirada en el suelo giran solas; arrancarlo/pararlo por código es
-// puramente visual, no toca el ángulo lógico del TESObjectREFR ni la
-// rotación de Havok.
+// Calculado y escrito directamente por código cada tick sobre el nodo hijo
+// dedicado (Constants::kWeaponSpinNodeName), sin ninguna animación
+// horneada en el NIF ni NiTimeController/NiInterpolator de por medio.
+// Motivo (ver CHANGELOG.md para el historial completo): se probaron tres
+// arquitecturas basadas en NiTimeController (controller suelto,
+// NiControllerManager/NiControllerSequence, y una variante horneada activa
+// desde la carga sin ningún Start() por código) y las tres fallaban de
+// forma intermitente porque el motor no siempre llega a llamar
+// NiTimeController::Update() por su cuenta sobre el controller de una
+// réplica creada en tiempo de ejecución; y llamar a Update() a mano desde
+// fuera del propio recorrido del motor crasheó el juego. Escribir
+// directamente NiAVObject::local.rotate es el mismo tipo de operación que
+// SetPosition/SetAngle, ya usada sin problemas en todo el proyecto -- no
+// depende de ningún método interno del motor, así que el mismo bucle de
+// tick que ya mueve la réplica de forma fiable (ver 4.- THROW/ThrowManager
+// y 5.- RETURN/ReturnManager) es suficiente, sin ningún hook.
 
 namespace Animation
 {
-	// Arranca el NiTransformController del nodo Constants::kWeaponSpinNodeName
-	// de a_refr. Sin efecto (con un aviso en el log) si su NIF todavía no
-	// tiene ese nodo o su controlador.
-	void StartSpin(RE::TESObjectREFR& a_refr);
-
-	// Como StartSpin, pero pensada para el instante justo después de crear
-	// la réplica (Physics::SpawnReplica): Get3D() ya no es nulo en ese
-	// punto, pero eso no garantiza que todo el subárbol -- incluido el
-	// nodo de giro -- haya terminado de cargar. Reintenta unas pocas veces
-	// (Constants::kWeaponSpinNodeWaitAttempts) antes de rendirse, con el
-	// mismo patrón hilo-que-duerme-y-reencola que Physics::SpawnReplica.
-	void StartSpinWhenReady(RE::ObjectRefHandle a_handle);
-
-	// Detiene el giro si estaba en marcha.
-	void StopSpin(RE::TESObjectREFR& a_refr);
+	// Avanza a mano el giro de a_refr: calcula un ángulo a partir de
+	// a_elapsedSeconds (Constants::kSpinAngularSpeed) y lo escribe en la
+	// rotación local del nodo Constants::kWeaponSpinNodeName -- la
+	// posición/escala del nodo no se tocan. Debe llamarse cada tick del
+	// mismo bucle de movimiento manual que ya mueve la réplica, antes de
+	// Physics::SyncHavok (que ya recalcula el árbol de transformaciones
+	// mundiales, incluida la de este nodo hijo). Sin efecto si la réplica
+	// no tiene el nodo todavía (NIF sin cargar del todo) -- en ese caso el
+	// giro empieza a verse en cuanto el nodo aparezca, sin reintentos
+	// explícitos.
+	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds);
 
 	// Transformación mundial a usar como base para efectos que deben
 	// acompañar el giro visual (p. ej. la estela, ver
 	// 8.- ANIMATION/WeaponTrail): el nodo raíz de la réplica (a_root) no
 	// gira durante el vuelo -- SetAngle nunca cambia, solo se mueve la
 	// posición -- así que su world transform por sí sola no refleja el
-	// giro, que vive solo en el NiTransformController del nodo hijo
-	// Constants::kWeaponSpinNodeName. Devuelve la transformación de ese
-	// nodo si existe (misma posición que el raíz, rotación actualizada
-	// por el propio controlador cada fotograma), o la del raíz tal cual
-	// si el nodo de giro no existe todavía (NIF sin cargar del todo, o
-	// sin la convención de giro).
+	// giro, que vive solo en el nodo hijo Constants::kWeaponSpinNodeName.
+	// Devuelve la transformación de ese nodo si existe (misma posición
+	// que el raíz, rotación actualizada por TickSpin cada tick), o la del
+	// raíz tal cual si el nodo de giro no existe todavía.
 	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root);
 }

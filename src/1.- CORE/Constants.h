@@ -115,14 +115,20 @@ namespace Constants
 	// con el nombre que se le dé al nodo en NifSkope.
 	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
 
-	// Margen de reintentos para encontrar el nodo de giro justo tras crear
-	// la réplica (Animation::StartSpinWhenReady): Physics::SpawnReplica ya
-	// espera a que Get3D() deje de ser nulo, pero eso no garantiza que todo
-	// el subárbol -- incluido el nodo de giro -- haya terminado de cargar
-	// en ese mismo instante. Comprobado en el juego: en muy pocos
-	// lanzamientos el arma salía sin girar por esto. Mismo intervalo de
-	// sondeo que kTickInterval.
-	inline constexpr int kWeaponSpinNodeWaitAttempts = 10;
+	// Velocidad angular del giro (radianes/segundo) y eje local sobre el
+	// que gira (ver 8.- ANIMATION/WeaponAnimation::TickSpin). Calculado y
+	// escrito directamente por código cada tick (NiMatrix3::MakeRotation),
+	// sin depender de ninguna animación horneada en el NIF ni de
+	// NiTimeController -- confirmado en el juego que llamar a
+	// NiTimeController::Update() fuera del propio recorrido del motor
+	// puede crashear (ver CHANGELOG.md), así que se evita esa clase
+	// entera de API. Placeholders pendientes de ajustar en el juego: la
+	// velocidad es una vuelta completa cada ~0.5s (a ojo, sin medir), y el
+	// eje asume que el modelo tiene el mango a lo largo del eje Y local
+	// (convención habitual de armas en Skyrim) y por tanto gira mejor
+	// sobre X -- si el giro se ve raro, es el primer valor a revisar.
+	inline constexpr float        kSpinAngularSpeed = 20.0f;  // ~4*pi rad/s
+	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 0.7f };
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation
