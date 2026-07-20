@@ -40,5 +40,13 @@ namespace Return
 	// 8.- ANIMATION/WeaponAnimation::TickSpin) -- sin ningún "reanudar"
 	// especial: si la réplica venía de kStuck, el giro simplemente
 	// continúa desde el ángulo en el que se quedó congelada.
-	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks);
+	//
+	// a_wasStuck (punto 11): si el arma estaba clavada (superficie o
+	// actor, el llamante ya liberó a este último antes de llegar aquí)
+	// justo antes de pulsar recuperar, primero se reproduce un breve
+	// temblor de desprendimiento (Constants::kStickShudderDuration, ver
+	// Animation::TickShudder) sin mover la réplica, y solo al terminar
+	// arranca el movimiento de vuelta descrito arriba. Si venía en vuelo
+	// (kThrown), el movimiento arranca de inmediato, sin temblor.
+	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, bool a_wasStuck, ReturnCallbacks a_callbacks);
 }

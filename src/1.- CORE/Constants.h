@@ -227,9 +227,57 @@ namespace Constants
 
 	// -- Temblor al clavarse (punto 11) --
 	// Duración de la vibración antes de desprenderse al iniciar el
-	// regreso desde un objetivo clavado. Valor dado explícitamente por
-	// Mecanica del arma.txt (no es un placeholder).
-	inline constexpr float kStickShudderDuration = 0.1f;
+	// regreso desde un objetivo clavado. Mecanica del arma.txt da 0,1s
+	// explícitamente, pero a ese valor el usuario no apreciaba el efecto en
+	// el juego (probablemente por el bug de Update3DPosition corregido en
+	// Animation::TickShudder/Return::BeginReturn -- ver CHANGELOG.md, no
+	// por la duración en sí) -- subido a 0,5s a petición expresa para
+	// confirmar visualmente que el temblor ocurre antes de recortarlo de
+	// vuelta hacia el valor del documento.
+	inline constexpr float kStickShudderDuration = 0.5f;
+
+	// Ángulo máximo (radianes) que alcanza la amplitud de la oscilación --
+	// no es un ángulo fijo: la amplitud crece exponencialmente desde cero
+	// hasta este máximo a lo largo del temblor (ver
+	// kStickShudderAmplitudeRampFraction/Animation::TickShudder), a
+	// petición del usuario tras confirmar en el juego que una amplitud
+	// constante se notaba demasiado poco. Simulando el tirón magnético que
+	// la va aflojando de la superficie antes de soltarse del todo. Escrito
+	// sobre el mismo nodo de giro visual que Animation::TickSpin
+	// (Constants::kWeaponSpinNodeName) con el mismo mecanismo
+	// (NiMatrix3::MakeRotation, compuesto sobre la rotación base con la
+	// que se quedó clavada -- ver Animation::TickShudder) -- no toca el
+	// ángulo lógico de TESObjectREFR ni Havok, así que no afecta a la
+	// colisión. 15°, valor dado por el usuario (bajado de 35° -> 20° -> 15°
+	// tras varias rondas de prueba en el juego).
+	inline constexpr float kStickShudderMaxAngle = 0.261799f;  // rad (15°)
+
+	// Fracción de kStickShudderMaxAngle que la envolvente de amplitud
+	// alcanza justo al final de kStickShudderDuration (crecimiento
+	// exponencial, nunca llega al 100% exacto de un máximo asintótico) --
+	// determina la velocidad de la curva de crecimiento en forma cerrada
+	// (ver Animation::TickShudder), no acumulada tick a tick. Placeholder,
+	// pendiente de ajustar en el juego: más cerca de 1 hace que el ángulo
+	// máximo se alcance más tarde (crecimiento más suave), más lejos de 1
+	// lo alcanza antes (crecimiento más brusco).
+	inline constexpr float kStickShudderAmplitudeRampFraction = 0.95f;
+
+	// Frecuencia (Hz) de la oscilación al empezar y al terminar el
+	// temblor -- sube de forma lineal a lo largo de kStickShudderDuration
+	// (chirp de fase continua, misma filosofía de forma cerrada que
+	// Throw::ComputeGravityDrop, no acumulada tick a tick). Bajadas ambas
+	// (6/30 Hz -> 4/20 Hz -> 3/15 Hz) a petición del usuario tras varias
+	// rondas de prueba en el juego, misma proporción entre inicio y fin.
+	inline constexpr float kStickShudderFrequencyStart = 3.0f;  // Hz
+	inline constexpr float kStickShudderFrequencyEnd = 15.0f;   // Hz
+
+	// Eje local (unitario, ver aviso de kSpinAxisLocal sobre
+	// NiMatrix3::MakeRotation) sobre el que oscila el temblor -- distinto
+	// del eje de giro en vuelo (kSpinAxisLocal) a propósito, para que el
+	// tirón se note como un eje de vibración distinto en vez de una mera
+	// versión lenta del giro. Placeholder, pendiente de ajustar en el
+	// juego.
+	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
 
 	// -- Estela visual durante el vuelo (ver PLAN-trail.md / 8.- ANIMATION/WeaponTrail) --
 	// NIF del efecto de estela, con la misma convención estructural que

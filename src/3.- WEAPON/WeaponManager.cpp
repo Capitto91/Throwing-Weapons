@@ -227,6 +227,12 @@ namespace Weapon
 
 	void WeaponManager::BeginReturn()
 	{
+		// Punto 11: si el arma estaba clavada (superficie o actor) en el
+		// instante de pulsar recuperar, el temblor de desprendimiento debe
+		// reproducirse antes del movimiento de vuelta -- capturado antes de
+		// tocar el estado, ver Return::BeginReturn.
+		const bool wasStuck = weaponState.GetState() == State::kStuck;
+
 		// Punto 6: "cuando se decide recuperar el arma... libera al
 		// objetivo, volviendo al jugador" — se libera de inmediato al
 		// iniciar el regreso, no al llegar a la mano.
@@ -264,7 +270,7 @@ namespace Weapon
 			ReequipAndReset();
 		};
 
-		Return::BeginReturn(player, replicaHandle, std::move(callbacks));
+		Return::BeginReturn(player, replicaHandle, wasStuck, std::move(callbacks));
 	}
 
 	void WeaponManager::RecallWeapon()

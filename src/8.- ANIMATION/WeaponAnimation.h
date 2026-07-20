@@ -35,6 +35,33 @@ namespace Animation
 	// explícitos.
 	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds);
 
+	// Punto 11: temblor de desprendimiento antes de iniciar el regreso
+	// desde un objetivo clavado (Constants::kStickShudderDuration,
+	// llamado desde 5.- RETURN/ReturnManager::BeginReturn antes de
+	// arrancar el movimiento de vuelta en sí, nunca durante el vuelo).
+	// Escribe una oscilación de frecuencia creciente (chirp de fase
+	// continua, ver Constants::kStickShudderFrequencyStart/End) y amplitud
+	// creciente (crecimiento exponencial hacia Constants::kStickShudderMaxAngle,
+	// ver Constants::kStickShudderAmplitudeRampFraction) sobre el mismo
+	// nodo de giro visual que TickSpin (Constants::kWeaponSpinNodeName) --
+	// puramente visual, no toca el ángulo lógico de a_refr ni Havok.
+	//
+	// a_baseRotation es la rotación que tenía el nodo de giro en el
+	// instante de quedar clavada (capturada una única vez por el llamante
+	// antes de empezar el temblor, ver Return::BeginReturn) -- la
+	// oscilación se compone *sobre* ella (a_baseRotation * oscilación) en
+	// vez de sustituirla, para que a_elapsedSeconds=0 deje el arma
+	// exactamente en la misma orientación en la que se clavó, sin ningún
+	// salto visual (a diferencia de TickSpin, que sí escribe una rotación
+	// absoluta desde cero: aquí el arma ya viene de un ángulo de vuelo
+	// arbitrario, no del reposo).
+	//
+	// a_elapsedSeconds debe ir de 0 (reposo, sin oscilación) a
+	// Constants::kStickShudderDuration. Mismo comportamiento que TickSpin
+	// si el nodo de giro no existe todavía (sin efecto, sin reintento
+	// explícito).
+	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds);
+
 	// Transformación mundial a usar como base para efectos que deben
 	// acompañar el giro visual (p. ej. la estela, ver
 	// 8.- ANIMATION/WeaponTrail): el nodo raíz de la réplica (a_root) no
