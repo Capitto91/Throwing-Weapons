@@ -124,20 +124,9 @@ namespace Constants
 	// vez de en el medio.
 	inline constexpr float kReturnCurveAnchorFraction = 1.0f / 3.0f;
 
-	// Mejora Kratos #3 (PLAN-mejoras-kratos.md): transición de captura al
-	// llegar de verdad a la mano (Animation::PlayCaptureTransition,
-	// WeaponManager::ReequipAfterCapture) -- desplazamiento local del clon
-	// de la réplica respecto al nodo de la mano mientras dura la
-	// transición. Rotación local sin parametrizar todavía (se deja en
-	// identidad, la más simple posible como punto de partida) -- si hace
-	// falta una rotación fija distinta, añadir aquí. Placeholders, sin
-	// valor de referencia previo -- pendientes de ajustar en el juego.
-	inline constexpr RE::NiPoint3               kCaptureTransitionLocalOffset{ 0.0f, 0.0f, 0.0f };
-	inline constexpr std::chrono::milliseconds kCaptureTransitionDuration{ 300 };
-
 	// Ventana real que se deja activa la variable de animation graph
 	// "SkipEquipAnimation" (mod externo del mismo nombre, ver CLAUDE.md)
-	// antes de desactivarla en WeaponManager::ReequipActiveWeapon --
+	// antes de desactivarla en WeaponManager::ReequipAndReset --
 	// activarla y desactivarla en el mismo tick que EquipObject no bastaba
 	// (confirmado: SetGraphVariableBool sí tenía éxito, pero la animación
 	// seguía reproduciéndose), probablemente porque EquipObject no procesa

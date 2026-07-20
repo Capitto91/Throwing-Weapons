@@ -104,35 +104,15 @@ namespace Weapon
 		void RecallWeapon();
 
 		// Paso final común a la recuperación instantánea y a la llegada
-		// del regreso animado (sin transición de captura, ver
-		// ReequipAfterCapture): destruye la réplica, cancela cualquier
-		// bucle de tick activo y reequipa el arma real.
+		// del regreso animado: destruye la réplica, cancela cualquier
+		// bucle de tick activo y reequipa el arma real (sin animación de
+		// equipar/desenvainar, vía el mod externo SkipEquipAnimation, ver
+		// CLAUDE.md). Sin transición de captura intermedia (probada en el
+		// plan Kratos y retirada: con SkipEquipAnimation el reequipado ya
+		// es limpio e instantáneo por sí solo, y el clon de la transición
+		// se veía en una pose sin calibrar durante su ventana, más
+		// perceptible aún al ser el reequipado real tan rápido).
 		void ReequipAndReset();
-
-		// Mejora Kratos #3 (PLAN-mejoras-kratos.md): variante de
-		// ReequipAndReset para la llegada real del regreso animado
-		// (Return::BeginReturn, callback onArrived) -- clona la réplica
-		// visible y la engancha un instante a la mano
-		// (Animation::PlayCaptureTransition) antes de completar el
-		// reequipado, en vez de cortar en seco. Sin mano o réplica visible
-		// de la que partir, cae en ReequipAndReset sin transición (mismo
-		// comportamiento de siempre). No se usa en RecallWeapon (recall
-		// instantáneo: la réplica puede estar lejísimos, sin ninguna
-		// "captura" real que dramatizar, y se invoca también al cerrar
-		// pantallas de carga).
-		void ReequipAfterCapture();
-
-		// Primera mitad de ReequipAndReset (inmediata): cancela el bucle de
-		// tick activo y destruye la réplica, sin tocar el arma real ni el
-		// estado del ciclo. Separada de ReequipActiveWeapon para que
-		// ReequipAfterCapture pueda insertar la transición de captura entre
-		// ambas sin duplicar la lógica de equipar.
-		void DestroyReplicaKeepWeapon();
-
-		// Segunda mitad de ReequipAndReset (el reequipado en sí, diferido
-		// un tick): reequipa el arma real y limpia el estado del ciclo
-		// (arma activa, vuelta a "en mano").
-		void ReequipActiveWeapon();
 
 		WeaponState weaponState;
 	};

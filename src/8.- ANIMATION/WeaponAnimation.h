@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <functional>
-
 // Punto 10 de Mecanica del arma.txt: giro sobre sí misma durante el vuelo.
 // Calculado y escrito directamente por código cada tick sobre el nodo hijo
 // dedicado (Constants::kWeaponSpinNodeName), sin ninguna animación
@@ -47,18 +45,4 @@ namespace Animation
 	// que el raíz, rotación actualizada por TickSpin cada tick), o la del
 	// raíz tal cual si el nodo de giro no existe todavía.
 	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root);
-
-	// Mejora Kratos #3 (PLAN-mejoras-kratos.md): transición visual breve al
-	// llegar de verdad a la mano durante el regreso (no en un recall
-	// instantáneo, ver WeaponManager::ReequipAfterCapture) -- clona
-	// a_replicaRoot (NiObject::Clone(), nunca construyendo
-	// NiCloningProcess a mano), lo engancha a a_handNode con un offset fijo
-	// (Constants::kCaptureTransitionLocalOffset), y lo desengancha tras
-	// Constants::kCaptureTransitionDuration (mismo patrón
-	// hilo-que-duerme-y-reencola de todo el proyecto), momento en el que
-	// llama a a_onComplete en el hilo principal. Puramente visual: no toca
-	// el TESObjectREFR de la réplica ni su rigidbody de Havok. Si a_handNode
-	// no es un NiNode o el clonado falla, no hace nada visible y llama a
-	// a_onComplete de inmediato -- nunca bloquea el reequipado real.
-	void PlayCaptureTransition(RE::NiAVObject& a_handNode, RE::NiAVObject& a_replicaRoot, std::function<void()> a_onComplete);
 }
