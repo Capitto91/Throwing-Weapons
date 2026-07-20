@@ -135,16 +135,17 @@ namespace Constants
 	inline constexpr RE::NiPoint3               kCaptureTransitionLocalOffset{ 0.0f, 0.0f, 0.0f };
 	inline constexpr std::chrono::milliseconds kCaptureTransitionDuration{ 300 };
 
-	// Retraso real entre completar el reequipado (EquipObject) y pedir el
-	// estado "desenvainada" (Actor::DrawWeaponMagicHands,
-	// WeaponManager::ReequipActiveWeapon) -- pedirlas en el mismo tick
-	// hacía que el arma iniciara la animación de desenvainar y se envainara
-	// sola al instante (reportado por el usuario), probablemente porque el
-	// propio EquipObject todavía no había asentado del todo su efecto.
-	// Mismo patrón hilo-que-duerme-y-reencola de todo el proyecto.
-	// Placeholder, sin valor de referencia previo -- pendiente de ajustar
-	// en el juego.
-	inline constexpr std::chrono::milliseconds kPostEquipDrawDelay{ 100 };
+	// Ventana real que se deja activa la variable de animation graph
+	// "SkipEquipAnimation" (mod externo del mismo nombre, ver CLAUDE.md)
+	// antes de desactivarla en WeaponManager::ReequipActiveWeapon --
+	// activarla y desactivarla en el mismo tick que EquipObject no bastaba
+	// (confirmado: SetGraphVariableBool sí tenía éxito, pero la animación
+	// seguía reproduciéndose), probablemente porque EquipObject no procesa
+	// el equipado de verdad de forma síncrona (ver CLAUDE.md, mismo motivo
+	// por el que ya se difiere un tick). Mismo patrón hilo-que-duerme-y-
+	// reencola de todo el proyecto. Placeholder, sin valor de referencia
+	// previo -- pendiente de ajustar en el juego.
+	inline constexpr std::chrono::milliseconds kSkipEquipAnimationWindow{ 500 };
 
 	// -- Giro durante el vuelo (punto 10) --
 	// Nombre del nodo hijo, dedicado solo al giro visual, dentro del NIF

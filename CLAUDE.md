@@ -18,6 +18,14 @@ Build system is **xmake**, not CMake/MSBuild directly (`xmake.lua` at root). `li
 - Generate a Visual Studio project for debugging: `xmake project -k vsxmake` (output goes to a gitignored `vs*/` dir)
 - No CI is configured; there is no automated test suite (SKSE plugins aren't unit-testable in isolation). Verify changes by building, then deploying the DLL into a Skyrim SE/AE install via a mod manager (MO2) and testing in-game.
 
+## Dependencias externas de mod (en tiempo de juego, no de compilación)
+
+Este plugin depende de mods SKSE externos que el usuario debe tener instalados y cargados — no son dependencias de compilación (no hay headers/DLLs suyos en `lib/`, no se linka contra ellos), son requisitos de mod manager, igual que un asset de la Creation Kit:
+
+- **[SkipEquipAnimation](https://www.nexusmods.com/skyrimspecialedition/mods/120926)** (y su propia dependencia, **BehaviorDataInjector**, confirmada con el usuario): elimina la animación completa de equipar/desenvainar. Se usa para suprimirla justo al reequipar el arma real al final del ciclo (`Weapon::WeaponManager::ReequipActiveWeapon`), evitando el salto de pose no deseado al recuperar el arma arrojadiza.
+  - Integración vía la variable de su propio animation graph `"SkipEquipAnimation"` (bool), la misma API ya usada para el stagger del punto 9 (`Actor::SetGraphVariableBool`/`SetGraphVariableFloat`, `IAnimationGraphManagerHolder`, ver más abajo). Sin API de mensajería SKSE ni interfaz propia que consumir — es puramente una convención de nombre de variable del animation graph.
+  - Si el mod no está instalado, la llamada es inerte (el graph no reconoce el nombre) — no crashea, simplemente no suprime nada. No hay forma de comprobar en tiempo de ejecución si está instalado; documentarlo aquí es la única fuente de verdad de este requisito.
+
 ## Conventions
 
 - Code comments and commit messages: **Spanish**, matching the existing codebase and design notes.

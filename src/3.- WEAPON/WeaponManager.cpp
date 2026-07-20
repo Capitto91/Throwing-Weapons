@@ -8,7 +8,6 @@
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
-#include "8.- ANIMATION/WeaponAnimation.h"
 
 #include <thread>
 
@@ -262,7 +261,7 @@ namespace Weapon
 			weaponState.SetActiveTickToken(a_token);
 		};
 		callbacks.onArrived = [this]() {
-			ReequipAfterCapture();
+			ReequipAndReset();
 		};
 
 		Return::BeginReturn(player, replicaHandle, std::move(callbacks));
@@ -283,45 +282,12 @@ namespace Weapon
 
 	void WeaponManager::ReequipAndReset()
 	{
-		DestroyReplicaKeepWeapon();
-		ReequipActiveWeapon();
-	}
-
-	void WeaponManager::ReequipAfterCapture()
-	{
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto  replica = weaponState.GetActiveReplicaHandle().get();
-		auto* handNode = player ? player->GetNodeByName("WEAPON") : nullptr;
-		auto* replicaRoot = replica ? replica->Get3D() : nullptr;
-
-		if (!handNode || !replicaRoot) {
-			logs::warn("WeaponManager::ReequipAfterCapture: sin mano o réplica visible de la que partir, se omite la transición.");
-			ReequipAndReset();
-			return;
-		}
-
-		// Clonar antes de destruir la réplica (Physics::DestroyReplica
-		// llama a Disable() -- clonar después dejaría un modelo
-		// deshabilitado). PlayCaptureTransition clona de forma síncrona
-		// antes de devolver el control, así que este orden basta.
-		Animation::PlayCaptureTransition(*handNode, *replicaRoot, [this]() {
-			ReequipActiveWeapon();
-		});
-
-		DestroyReplicaKeepWeapon();
-	}
-
-	void WeaponManager::DestroyReplicaKeepWeapon()
-	{
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
 		weaponState.SetActiveTickToken({});
 
 		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
-	}
 
-	void WeaponManager::ReequipActiveWeapon()
-	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* weapon = weaponState.GetActiveWeapon();
 
@@ -332,24 +298,37 @@ namespace Weapon
 			// equipar) pero nunca llegaba a equipar el arma de verdad
 			// (comprobado en la iteración anterior).
 			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
+				// Suprime la animación completa de equipar/desenvainar al
+				// volver el arma a la mano -- vía el mod externo
+				// SkipEquipAnimation (dependencia obligatoria del plugin,
+				// no de compilación: solo un mod que debe estar instalado y
+				// cargado, ver CLAUDE.md). Expone la variable de animation
+				// graph "SkipEquipAnimation" (bool), activable con la misma
+				// API ya verificada en el punto 2 del plan Kratos
+				// (Actor::SetGraphVariableBool, IAnimationGraphManagerHolder).
+				// Sustituye por completo al intento anterior de forzar
+				// Actor::DrawWeaponMagicHands tras un margen fijo (ver
+				// CHANGELOG.md v1.7.6) -- ya no hace falta con la animación
+				// suprimida de raíz.
+				player->SetGraphVariableBool("SkipEquipAnimation", true);
 				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
-			});
 
-			// Pedir "desenvainada" (Actor::DrawWeaponMagicHands) en el
-			// mismo tick que el equipar hacía que el arma iniciara la
-			// animación de desenvainar y se envainara sola al instante
-			// (reportado por el usuario al probar el punto 3 de
-			// PLAN-mejoras-kratos.md) -- se pide aparte, tras
-			// Constants::kPostEquipDrawDelay, para que el equipado se
-			// asiente antes. Mismo patrón hilo-que-duerme-y-reencola de
-			// todo el proyecto -- nunca un AddTask anidado dentro de la
-			// propia tarea de equipar (congela el juego, ver CLAUDE.md).
-			std::thread([player]() {
-				std::this_thread::sleep_for(Constants::kPostEquipDrawDelay);
-				SKSE::GetTaskInterface()->AddTask([player]() {
-					player->DrawWeaponMagicHands(true);
-				});
-			}).detach();
+				// Desactivarla en el mismo tick que EquipObject no bastaba
+				// (confirmado en el juego: la variable sí se activaba, pero
+				// la animación seguía reproduciéndose) -- EquipObject no
+				// procesa el equipado de verdad de forma síncrona (mismo
+				// motivo por el que ya se difiere un tick, ver más arriba),
+				// así que la variable se apagaba antes de que el hook de
+				// SkipEquipAnimation llegara a leerla. Se desactiva aparte,
+				// tras Constants::kSkipEquipAnimationWindow, mismo patrón
+				// hilo-que-duerme-y-reencola de todo el proyecto.
+				std::thread([player]() {
+					std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
+					SKSE::GetTaskInterface()->AddTask([player]() {
+						player->SetGraphVariableBool("SkipEquipAnimation", false);
+					});
+				}).detach();
+			});
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
