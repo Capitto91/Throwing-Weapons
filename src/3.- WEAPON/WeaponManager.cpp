@@ -3,10 +3,14 @@
 
 #include "3.- WEAPON/WeaponManager.h"
 
+#include "1.- CORE/Constants.h"
 #include "4.- THROW/ThrowManager.h"
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/WeaponAnimation.h"
+
+#include <thread>
 
 namespace Weapon
 {
@@ -160,6 +164,17 @@ namespace Weapon
 
 		weaponState.SetActiveWeapon(boundWeapon);
 		weaponState.SetState(State::kAiming);
+
+		// Fuerza el arma a "desenvainada" desde la primera pulsación de G,
+		// sea cual sea el estado previo (envainada en la cintura, o ya
+		// desenvainada) -- decisión tomada con el usuario, no cubierta por
+		// Mecanica del arma.txt (no menciona envainado/desenvainado).
+		// Actor::DrawWeaponMagicHands es directo de Actor (offset 0, sin
+		// riesgo de versión); sin cuerpo documentado en commonlibsse-ng,
+		// así que si llamarla con el arma ya desenvainada resulta no ser
+		// idempotente (blip visual al pulsar G de nuevo), habría que
+		// comprobar antes con player->AsActorState()->IsWeaponDrawn().
+		player->DrawWeaponMagicHands(true);
 	}
 
 	void WeaponManager::ThrowWeapon()
@@ -247,7 +262,7 @@ namespace Weapon
 			weaponState.SetActiveTickToken(a_token);
 		};
 		callbacks.onArrived = [this]() {
-			ReequipAndReset();
+			ReequipAfterCapture();
 		};
 
 		Return::BeginReturn(player, replicaHandle, std::move(callbacks));
@@ -268,12 +283,45 @@ namespace Weapon
 
 	void WeaponManager::ReequipAndReset()
 	{
+		DestroyReplicaKeepWeapon();
+		ReequipActiveWeapon();
+	}
+
+	void WeaponManager::ReequipAfterCapture()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto  replica = weaponState.GetActiveReplicaHandle().get();
+		auto* handNode = player ? player->GetNodeByName("WEAPON") : nullptr;
+		auto* replicaRoot = replica ? replica->Get3D() : nullptr;
+
+		if (!handNode || !replicaRoot) {
+			logs::warn("WeaponManager::ReequipAfterCapture: sin mano o réplica visible de la que partir, se omite la transición.");
+			ReequipAndReset();
+			return;
+		}
+
+		// Clonar antes de destruir la réplica (Physics::DestroyReplica
+		// llama a Disable() -- clonar después dejaría un modelo
+		// deshabilitado). PlayCaptureTransition clona de forma síncrona
+		// antes de devolver el control, así que este orden basta.
+		Animation::PlayCaptureTransition(*handNode, *replicaRoot, [this]() {
+			ReequipActiveWeapon();
+		});
+
+		DestroyReplicaKeepWeapon();
+	}
+
+	void WeaponManager::DestroyReplicaKeepWeapon()
+	{
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
 		weaponState.SetActiveTickToken({});
 
 		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
+	}
 
+	void WeaponManager::ReequipActiveWeapon()
+	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* weapon = weaponState.GetActiveWeapon();
 
@@ -286,6 +334,22 @@ namespace Weapon
 			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
 				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 			});
+
+			// Pedir "desenvainada" (Actor::DrawWeaponMagicHands) en el
+			// mismo tick que el equipar hacía que el arma iniciara la
+			// animación de desenvainar y se envainara sola al instante
+			// (reportado por el usuario al probar el punto 3 de
+			// PLAN-mejoras-kratos.md) -- se pide aparte, tras
+			// Constants::kPostEquipDrawDelay, para que el equipado se
+			// asiente antes. Mismo patrón hilo-que-duerme-y-reencola de
+			// todo el proyecto -- nunca un AddTask anidado dentro de la
+			// propia tarea de equipar (congela el juego, ver CLAUDE.md).
+			std::thread([player]() {
+				std::this_thread::sleep_for(Constants::kPostEquipDrawDelay);
+				SKSE::GetTaskInterface()->AddTask([player]() {
+					player->DrawWeaponMagicHands(true);
+				});
+			}).detach();
 		}
 
 		weaponState.SetActiveWeapon(nullptr);

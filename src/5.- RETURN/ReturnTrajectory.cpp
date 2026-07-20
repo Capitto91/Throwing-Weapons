@@ -34,7 +34,7 @@ namespace Return
 		return { 1.0f, 0.0f, 0.0f };
 	}
 
-	RE::NiPoint3 ComputeReturnControlPoint(const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, const RE::NiPoint3& a_rightVector)
+	RE::NiPoint3 ComputeReturnControlPoint(const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, const RE::NiPoint3& a_rightVector, float a_anchorFraction)
 	{
 		const auto  straight = a_end - a_start;
 		const float distance = straight.Length();
@@ -62,9 +62,9 @@ namespace Return
 		side = side / sideLength;
 
 		const float offset = std::clamp(distance * RandomLateralFraction(), Constants::kReturnCurveMinOffset, Constants::kReturnCurveMaxOffset);
-		const auto  midpoint = (a_start + a_end) * 0.5f;
+		const auto  anchorPoint = a_start + straight * a_anchorFraction;
 
-		return midpoint + side * offset;
+		return anchorPoint + side * offset;
 	}
 
 	float ComputeReturnAcceleration(float a_distance)

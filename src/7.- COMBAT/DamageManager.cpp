@@ -10,8 +10,6 @@
 
 #include <SimpleIni.h>
 
-#include <thread>
-
 namespace Combat
 {
 	namespace
@@ -338,32 +336,27 @@ namespace Combat
 		}
 		NotifyHit(a_attacker, a_target, amount);
 
-		auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kStaggerSpell);
-		if (!spell) {
-			logs::warn(
-				"Combat::ApplyReturnHit: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).",
-				Constants::kStaggerSpell);
-			return;
-		}
-
-		a_target->AddSpell(spell);
-
-		// A diferencia de la parálisis (que dura mientras el arma siga
-		// clavada, y se retira al recuperarla), el empujón de Stagger ya
-		// ha ocurrido en el instante de AddSpell (ActiveEffect::Start) —
-		// solo queda retirar la habilidad para no dejarla colgada en la
-		// lista de hechizos del actor. Un hilo que duerme y reencola en
-		// el hilo principal (mismo patrón que el resto del proyecto, ver
-		// CLAUDE.md), no un bucle de tick: no hace falta repetir nada
-		// mientras tanto.
-		RE::ActorHandle targetHandle(a_target);
-		std::thread([targetHandle, spell]() {
-			std::this_thread::sleep_for(Constants::kStaggerSpellDuration);
-			SKSE::GetTaskInterface()->AddTask([targetHandle, spell]() {
-				if (auto target = targetHandle.get()) {
-					target->RemoveSpell(spell);
-				}
-			});
-		}).detach();
+		// Mejora Kratos #2 (PLAN-mejoras-kratos.md): stagger escrito
+		// directamente en el animation graph del actor golpeado, en vez de
+		// concederle un hechizo propio y retirarlo con un hilo (mecanismo
+		// anterior). SetGraphVariableFloat/NotifyAnimationGraph existen en
+		// IAnimationGraphManagerHolder (verificado,
+		// commonlibsse-ng/include/RE/I/IAnimationGraphManagerHolder.h) y
+		// Actor los hereda a través de TESObjectREFR (primera base de
+		// Actor, offset 0) con IAnimationGraphManagerHolder a offset fijo
+		// 0x38 dentro de TESObjectREFR (sin variación por runtime, a
+		// diferencia de ActorValueOwner/MagicTarget) — llamable
+		// directamente sobre Actor* sin ningún accessor AsX(). Los nombres
+		// "staggerMagnitude"/"staggerDirection" están pre-registrados como
+		// BSFixedString propias del motor (FixedStrings.h), y
+		// "staggerStart" es el evento real que usa KratosCombat
+		// (FenixUtils::stagger, ver PLAN-proyectil-nativo.md) para el mismo
+		// propósito sobre su propia arma.
+		a_target->SetGraphVariableFloat("staggerMagnitude", Constants::kStaggerMagnitude);
+		a_target->SetGraphVariableFloat("staggerDirection", 0.0f);  // placeholder, "de frente" -- sin verificar unidades/rango real
+		a_target->NotifyAnimationGraph("staggerStart");
+		logs::info(
+			"Combat::ApplyReturnHit: stagger vía animation graph, magnitude={:.1f}, direction=0.0.",
+			Constants::kStaggerMagnitude);
 	}
 }

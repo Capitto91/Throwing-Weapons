@@ -64,6 +64,34 @@ namespace Throw
 			const float length = direction.Length();
 			return length > 0.0f ? direction / length : forward;
 		}
+
+		// Mejora Kratos #1 (PLAN-mejoras-kratos.md): rampa lineal de
+		// gravedad (0 -> kThrowGravity durante los primeros
+		// kThrowGravityRampDuration segundos, luego constante) en vez de
+		// gravedad constante desde el instante cero. Forma cerrada
+		// (verificada por doble integración y por diferenciación inversa:
+		// posición, velocidad y aceleración continuas en el empalme), no
+		// acumulada tick a tick -- mismo motivo que el resto de este
+		// archivo (ver comentario en LaunchWeapon).
+		float ComputeGravityDrop(float a_elapsed)
+		{
+			constexpr float rampDuration = Constants::kThrowGravityRampDuration;
+			if constexpr (rampDuration <= 0.0f) {
+				return 0.5f * Constants::kThrowGravity * a_elapsed * a_elapsed;
+			}
+
+			// kThrowGravity ya es negativo; toda la derivación es lineal en
+			// g, así que el signo se propaga solo -- no añadir std::abs
+			// aquí.
+			if (a_elapsed < rampDuration) {
+				return Constants::kThrowGravity * (a_elapsed * a_elapsed * a_elapsed) / (6.0f * rampDuration);
+			}
+
+			const float zAtRampEnd = Constants::kThrowGravity * rampDuration * rampDuration / 6.0f;
+			const float vAtRampEnd = Constants::kThrowGravity * rampDuration / 2.0f;
+			const float t = a_elapsed - rampDuration;
+			return zAtRampEnd + vAtRampEnd * t + 0.5f * Constants::kThrowGravity * t * t;
+		}
 	}
 
 	void LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, LaunchCallbacks a_callbacks)
@@ -108,7 +136,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, trail, loggedFirstGravitySample = false, loggedRampCrossing = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -116,8 +144,25 @@ namespace Throw
 				// (ver Animation::TickSpin).
 				Animation::TickSpin(a_refr, elapsed);
 
+				const float gravityDrop = ComputeGravityDrop(elapsed);
+
+				// Mejora Kratos #1: log de verificación campo a campo (ver
+				// protocolo de testeo en PLAN-mejoras-kratos.md), no en
+				// cada tick -- solo el primer valor (inicio de la rampa) y
+				// el instante en que se cruza kThrowGravityRampDuration
+				// (empalme con la rama de gravedad constante), suficiente
+				// para confirmar la fórmula sin inundar el log.
+				if (!loggedFirstGravitySample) {
+					logs::info("Throw::LaunchWeapon: ComputeGravityDrop primer tick t={:.3f}s -> drop={:.2f}", elapsed, gravityDrop);
+					loggedFirstGravitySample = true;
+				}
+				if (!loggedRampCrossing && elapsed >= Constants::kThrowGravityRampDuration) {
+					logs::info("Throw::LaunchWeapon: ComputeGravityDrop cruce de rampa t={:.3f}s -> drop={:.2f}", elapsed, gravityDrop);
+					loggedRampCrossing = true;
+				}
+
 				RE::NiPoint3 nextPos = origin + velocity0 * elapsed;
-				nextPos.z += 0.5f * Constants::kThrowGravity * elapsed * elapsed;
+				nextPos.z += gravityDrop;
 
 				// Colisión "gruesa" (varios rayos en cruz, ver
 				// Collision::SweepRaycast) desde la posición anterior a la

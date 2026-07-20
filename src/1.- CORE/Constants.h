@@ -43,6 +43,15 @@ namespace Constants
 	inline constexpr float kThrowInitialSpeed = 3000.0f;  // u/s, placeholder
 	inline constexpr float kThrowGravity = -1071.816f;    // u/s^2, gravedad estándar de Havok en Skyrim
 
+	// Mejora Kratos #1 (ver PLAN-mejoras-kratos.md): rampa lineal de
+	// gravedad al salir de la mano (0 -> kThrowGravity durante este tiempo,
+	// luego constante), para que la trayectoria salga más "plana" en vez de
+	// empezar a caer desde el primer instante. Placeholder, sin valor de
+	// referencia previo -- pendiente de ajustar en el juego. <= 0.0f
+	// desactiva la rampa (comportamiento anterior, gravedad constante desde
+	// el instante cero).
+	inline constexpr float kThrowGravityRampDuration = 0.15f;  // s, placeholder
+
 	// Radio del barrido en cruz de la colisión en vuelo
 	// (Collision::SweepRaycast): varias muestras cercanas entre sí, en vez
 	// de un único rayo, detectan de forma más fiable geometría irregular o
@@ -106,6 +115,37 @@ namespace Constants
 	inline constexpr float kReturnCurveMinOffset = 40.0f;
 	inline constexpr float kReturnCurveMaxOffset = 260.0f;
 
+	// Mejora Kratos #4 (PLAN-mejoras-kratos.md), campo 1: fracción de
+	// anclaje del punto de control a lo largo de la línea inicio→mano (no
+	// confundir con kReturnCurveLateralFraction*, que controla la
+	// magnitud del desplazamiento lateral desde ese punto de anclaje, ver
+	// Return::ComputeReturnControlPoint) -- 1/3 en vez del 0.5 implícito
+	// de antes, para que el punto de control quede cerca del origen en
+	// vez de en el medio.
+	inline constexpr float kReturnCurveAnchorFraction = 1.0f / 3.0f;
+
+	// Mejora Kratos #3 (PLAN-mejoras-kratos.md): transición de captura al
+	// llegar de verdad a la mano (Animation::PlayCaptureTransition,
+	// WeaponManager::ReequipAfterCapture) -- desplazamiento local del clon
+	// de la réplica respecto al nodo de la mano mientras dura la
+	// transición. Rotación local sin parametrizar todavía (se deja en
+	// identidad, la más simple posible como punto de partida) -- si hace
+	// falta una rotación fija distinta, añadir aquí. Placeholders, sin
+	// valor de referencia previo -- pendientes de ajustar en el juego.
+	inline constexpr RE::NiPoint3               kCaptureTransitionLocalOffset{ 0.0f, 0.0f, 0.0f };
+	inline constexpr std::chrono::milliseconds kCaptureTransitionDuration{ 300 };
+
+	// Retraso real entre completar el reequipado (EquipObject) y pedir el
+	// estado "desenvainada" (Actor::DrawWeaponMagicHands,
+	// WeaponManager::ReequipActiveWeapon) -- pedirlas en el mismo tick
+	// hacía que el arma iniciara la animación de desenvainar y se envainara
+	// sola al instante (reportado por el usuario), probablemente porque el
+	// propio EquipObject todavía no había asentado del todo su efecto.
+	// Mismo patrón hilo-que-duerme-y-reencola de todo el proyecto.
+	// Placeholder, sin valor de referencia previo -- pendiente de ajustar
+	// en el juego.
+	inline constexpr std::chrono::milliseconds kPostEquipDrawDelay{ 100 };
+
 	// -- Giro durante el vuelo (punto 10) --
 	// Nombre del nodo hijo, dedicado solo al giro visual, dentro del NIF
 	// del arma (ver 8.- ANIMATION/WeaponAnimation y CLAUDE.md) — no el nodo
@@ -127,8 +167,17 @@ namespace Constants
 	// eje asume que el modelo tiene el mango a lo largo del eje Y local
 	// (convención habitual de armas en Skyrim) y por tanto gira mejor
 	// sobre X -- si el giro se ve raro, es el primer valor a revisar.
+	//
+	// kSpinAxisLocal debe ser un vector unitario: NiMatrix3::MakeRotation
+	// (lib/commonlibsse-ng/src/RE/N/NiMatrix3.cpp) implementa la fórmula de
+	// Rodrigues, que asume el eje ya normalizado -- con un eje de longitud
+	// distinta de 1 la matriz resultante deja de ser una rotación pura y
+	// mete un escalado que varía con el ángulo (el arma se ve "aplastada",
+	// casi en 2D, en ciertos puntos del giro; reportado por el usuario).
+	// {0,0,0.7f} (longitud 0.7, bug) corregido a {0,0,1.0f} -- misma
+	// dirección, magnitud unitaria.
 	inline constexpr float        kSpinAngularSpeed = 20.0f;  // ~4*pi rad/s
-	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 0.7f };
+	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 1.0f };
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation
@@ -177,20 +226,14 @@ namespace Constants
 	inline constexpr float kImmunityCheckDelay = 0.3f;
 
 	// -- Golpear durante el regreso (punto 9) --
-	// Hechizo propio (Ability, Constant Effect, Self) cuyo unico efecto
-	// (EffectSetting Archetype=Stagger, CAP_ThorMjolnir_MagicEffect_Stagger)
-	// empuja/aturde al actor en el instante en que se concede
-	// (ActiveEffect::Start de RE::StaggerEffect, confirmado que existe
-	// como clase en commonlibsse-ng) -- no hace falta ninguna logica
-	// continua, a diferencia de la paralisis. Se concede con
-	// Actor::AddSpell (no virtual, mismo motivo que
-	// kEmbeddedParalysisSpell) y se retira poco despues
-	// (kStaggerSpellDuration) para no dejarlo colgado en la lista de
-	// hechizos del actor -- el empujon ya ha ocurrido mucho antes de que
-	// expire este margen, no hace falta esperar a que el jugador
-	// recupere el arma como con la paralisis.
-	inline constexpr std::string_view          kStaggerSpell{ "CAP_ThorMjolnir_Ability_ThrowingStagger" };
-	inline constexpr std::chrono::milliseconds kStaggerSpellDuration{ 200 };
+	// Mejora Kratos #2 (PLAN-mejoras-kratos.md): magnitud del stagger
+	// escrito directamente en el animation graph del actor golpeado
+	// (Combat::ApplyReturnHit, SetGraphVariableFloat("staggerMagnitude", ...)
+	// + NotifyAnimationGraph("staggerStart")), sustituyendo al hechizo
+	// propio (Ability/Constant Effect) que se concedía y retiraba antes.
+	// Placeholder, sin valor de referencia previo -- pendiente de ajustar
+	// en el juego.
+	inline constexpr float kStaggerMagnitude = 1.0f;
 
 	// -- Temblor al clavarse (punto 11) --
 	// Duración de la vibración antes de desprenderse al iniciar el

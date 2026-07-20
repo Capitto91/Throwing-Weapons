@@ -45,7 +45,7 @@ namespace Return
 
 		const float initialDistance = (initialHandPos - start).Length();
 		const float acceleration = ComputeReturnAcceleration(initialDistance);
-		const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player));
+		const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
 		logs::info(
 			"Return::BeginReturn: distancia inicial {:.1f}, aceleración {:.1f}",
@@ -61,7 +61,7 @@ namespace Return
 			trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
 		}
 
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, trail](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, trail, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			const auto previousPos = a_refr.GetPosition();
 			elapsed += a_deltaSeconds;
 
@@ -74,6 +74,26 @@ namespace Return
 			// única vez): así el regreso no pierde de vista al jugador si
 			// se mueve mientras el arma vuela de vuelta.
 			const auto handPos = GetHandPosition(a_player);
+
+			// Mejora Kratos #4, campo 2 (diagnóstico, todavía sin usar en
+			// la curva): antes de confiar en la rotación del hueso "WEAPON"
+			// para el punto de control p2 (sin precedente en este proyecto
+			// de leer la *rotación* de ese hueso, solo su posición), se
+			// registran los tres ejes una vez por regreso para comprobar a
+			// ojo cuál apunta de verdad "hacia fuera de la palma" -- no
+			// asumir que es Y por analogía con la cámara (ver
+			// PLAN-mejoras-kratos.md).
+			if (!loggedHandAxisDiagnostic) {
+				if (auto* handNode = a_player->GetNodeByName("WEAPON")) {
+					const auto vecX = handNode->world.rotate.GetVectorX();
+					const auto vecY = handNode->world.rotate.GetVectorY();
+					const auto vecZ = handNode->world.rotate.GetVectorZ();
+					logs::info(
+						"Return::BeginReturn: diagnóstico ejes hueso mano -- X=({:.2f},{:.2f},{:.2f}) Y=({:.2f},{:.2f},{:.2f}) Z=({:.2f},{:.2f},{:.2f})",
+						vecX.x, vecX.y, vecX.z, vecY.x, vecY.y, vecY.z, vecZ.x, vecZ.y, vecZ.z);
+				}
+				loggedHandAxisDiagnostic = true;
+			}
 
 			const float traveled = ComputeTraveledDistance(acceleration, elapsed);
 			const float t = initialDistance > 0.0f ? std::clamp(traveled / initialDistance, 0.0f, 1.0f) : 1.0f;
