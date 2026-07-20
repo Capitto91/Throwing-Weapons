@@ -65,6 +65,25 @@ namespace Animation
 			return a_weaponTransform.translate + a_weaponTransform.rotate * Constants::kTrailAnchorLocalOffset;
 		}
 
+		// Aparca todos los segmentos de a_trailRootNode en a_parkedTransform
+		// (escala 0, invisibles) -- la orientación no importa a escala 0.
+		// Usada tanto por Start (si el 3D del efecto ya está listo en ese
+		// mismo instante) como por Update (mientras no hay historial
+		// suficiente para interpolar una dirección real), para que los
+		// segmentos nunca lleguen a renderizarse en la pose de fábrica que
+		// trae el NIF.
+		void ParkAllSegments(RE::NiNode& a_trailRootNode, const RE::NiTransform& a_parkedTransform)
+		{
+			auto&      segments = a_trailRootNode.GetChildren();
+			const auto segmentCount = static_cast<std::uint32_t>(segments.size());
+			for (std::uint32_t i = 0; i < segmentCount; ++i) {
+				if (auto& segmentBone = segments[static_cast<std::uint16_t>(i)]) {
+					segmentBone->local = GetLocalTransform(segmentBone.get(), a_parkedTransform);
+					segmentBone->world = a_parkedTransform;
+				}
+			}
+		}
+
 		// Clona el material de brillo del segmento (para no compartir ni
 		// mutar el material original del NIF entre varias estelas activas
 		// a la vez, p. ej. ida y vuelta solapadas) y le aplica el color
@@ -119,8 +138,23 @@ namespace Animation
 			return;
 		}
 
+		RE::NiTransform anchorTransform = a_initialTransform;
+		anchorTransform.translate = ComputeAnchorPosition(a_initialTransform);
+
+		// Nace a escala 0 (invisible) a propósito -- ver Update, que la
+		// restaura a 1 en su primera llamada exitosa. BSTempEffectParticle
+		// carga su 3D en segundo plano de forma asíncrona (igual que
+		// cualquier 3D nuevo), así que intentar "cazar" el instante justo
+		// en que está listo para aparcar los segmentos (intentado antes,
+		// ver CHANGELOG) es una carrera que a veces se gana y a veces no
+		// -- de ahí que el defecto reportado por el usuario fuera
+		// intermitente (a veces claro, a veces apenas, a veces nada).
+		// Naciendo a escala 0 no hay ninguna carrera que ganar: el efecto
+		// es invisible desde el primer fotograma en que llega a
+		// renderizarse, sea cual sea el momento exacto en que su 3D
+		// termine de cargar.
 		particle = RE::NiPointer<RE::BSTempEffectParticle>(
-			RE::BSTempEffectParticle::Spawn(a_cell, kParticleLifetime, Constants::kTrailEffectPath, a_initialTransform.rotate, ComputeAnchorPosition(a_initialTransform), 1.0f, 7, nullptr));
+			RE::BSTempEffectParticle::Spawn(a_cell, kParticleLifetime, Constants::kTrailEffectPath, anchorTransform.rotate, anchorTransform.translate, 0.0f, 7, nullptr));
 
 		if (!particle) {
 			logs::warn("Animation::WeaponTrail::Start: no se pudo crear el efecto '{}'.", Constants::kTrailEffectPath);
@@ -149,6 +183,16 @@ namespace Animation
 
 		fadeNode->GetRuntimeData().currentFade = 1.0f;
 
+		// Restaura la escala del nodo raíz del efecto a 1 (nace a 0, ver
+		// Start) -- a partir de aquí, cada segmento individual controla su
+		// propia visibilidad con su propia escala (0 mientras se aparca,
+		// más abajo). particleObject no tiene padre activo (no es hijo de
+		// ningún nodo que el motor recalcule cada fotograma), así que basta
+		// con escribir local/world directamente, mismo patrón que ya usa
+		// el resto de esta función con los segmentos.
+		particle->particleObject->local.scale = 1.0f;
+		particle->particleObject->world.scale = 1.0f;
+
 		auto* trailRoot = fadeNode->GetObjectByName(Constants::kTrailRootNodeName);
 		auto* trailRootNode = trailRoot ? trailRoot->AsNode() : nullptr;
 		if (!trailRootNode) {
@@ -159,7 +203,23 @@ namespace Animation
 
 		auto&      segments = trailRootNode->GetChildren();
 		const auto segmentCount = static_cast<std::uint32_t>(segments.size());
-		if (segmentCount == 0 || history.size() < 4) {
+		if (segmentCount == 0) {
+			currentTime += a_deltaSeconds;
+			return;
+		}
+
+		// Catmull-Rom necesita 4 muestras para interpolar una dirección real
+		// (ver más abajo) -- hasta entonces no hay suficiente historial, y
+		// sin esto los segmentos se quedaban sin tocar (visibles, en la pose
+		// que trae el NIF de fábrica) durante los primeros ~3 ticks tras
+		// aparecer la réplica: se veían "descuadrados" justo al salir de la
+		// mano (reportado por el usuario). Se aparcan a escala 0 en la
+		// posición actual, igual que el aparcado normal de segmentos sin
+		// usar más abajo -- la orientación no importa a escala 0.
+		if (history.size() < 4) {
+			RE::NiTransform parkedTransform = history.back();
+			parkedTransform.scale = 0.0f;
+			ParkAllSegments(*trailRootNode, parkedTransform);
 			currentTime += a_deltaSeconds;
 			return;
 		}

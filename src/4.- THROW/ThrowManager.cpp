@@ -127,6 +127,22 @@ namespace Throw
 			auto trail = std::make_shared<Animation::WeaponTrail>();
 			if (auto replica = a_handle.get()) {
 				if (auto* node3D = replica->Get3D()) {
+					// Punto 10: TickSpin escribe una rotación absoluta
+					// (MakeRotation(velocidad·elapsed, eje)), no incremental.
+					// Sin esta llamada a elapsed=0 (identidad, ver
+					// NiMatrix3::MakeRotation), el nodo de giro se queda en
+					// la rotación de reposo que trae el NIF de fábrica hasta
+					// el primer tick del bucle, que ya lo salta de golpe a
+					// la rotación absoluta calculada desde cero -- como el
+					// punto de anclaje de la estela depende de esa rotación
+					// (Constants::kTrailAnchorLocalOffset, brazo de 20
+					// unidades), ese salto se colaba en la primera muestra
+					// de su historial (bug reportado por el usuario: la
+					// estela se veía "descuadrada" justo al salir de la
+					// mano, y solo al lanzar -- en el regreso el nodo ya
+					// lleva un rato bajo control de TickSpin, sin ningún
+					// reposo de fábrica que saltar).
+					Animation::TickSpin(*replica, 0.0f);
 					trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
 				}
 			}
