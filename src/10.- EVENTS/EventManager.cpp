@@ -6,6 +6,7 @@
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "12.- AUDIO/SoundResolver.h"
 
 #include <optional>
 
@@ -232,6 +233,12 @@ namespace Events
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
 				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
 				Combat::Init();
+				// Precarga de los Sound Descriptor del arma (ver
+				// 12.- AUDIO/SoundResolver.h): sin esto, el primer
+				// lanzamiento de la partida no se oye -- el recurso de
+				// audio tarda en cargar de forma asíncrona la primera vez
+				// que se solicita (comprobado en el juego).
+				Audio::PrecacheAll();
 				logs::info("Events::OnSKSEMessage: kDataLoaded, EquipGuard/LoadingScreenWatcher registrados y Combat::Init() ejecutado.");
 				break;
 			case SKSE::MessagingInterface::kNewGame:

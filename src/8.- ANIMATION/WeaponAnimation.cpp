@@ -87,13 +87,4 @@ namespace Animation
 		wobble.MakeRotation(angle, Constants::kStickShudderAxisLocal);
 		spinNode->local.rotate = a_baseRotation * wobble;
 	}
-
-	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root)
-	{
-		if (auto* spinNode = a_root.GetObjectByName(Constants::kWeaponSpinNodeName)) {
-			return spinNode->world;
-		}
-
-		return a_root.world;
-	}
 }

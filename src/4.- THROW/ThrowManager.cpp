@@ -4,11 +4,11 @@
 #include "4.- THROW/ThrowManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "12.- AUDIO/FlightSound.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
-#include "8.- ANIMATION/WeaponTrail.h"
 
 namespace Throw
 {
@@ -115,16 +115,12 @@ namespace Throw
 
 			logs::info("Throw::LaunchWeapon: réplica lista, iniciando vuelo parabólico.");
 
-			// Estela visual (ver PLAN-trail.md): instancia propia de la
-			// ida, capturada por valor en el bucle de tick con el resto
-			// del estado mutable de este lanzamiento (elapsed) -- no hace
-			// falta un "Stop" explícito, su destructor ya se encarga (ver
-			// WeaponTrail.h). En std::shared_ptr en vez de por valor
-			// directo: Physics::TickCallback es un std::function, que
-			// exige que su objetivo sea copiable, y WeaponTrail
-			// deliberadamente no lo es (ver WeaponTrail.h) -- el
-			// shared_ptr sí es copiable sin duplicar el efecto en sí.
-			auto trail = std::make_shared<Animation::WeaponTrail>();
+			// Sonido (ver 12.- AUDIO/FlightSound): silbido suelto al soltar
+			// el arma más el loop posicional que la sigue durante todo el
+			// vuelo -- en std::shared_ptr porque Physics::TickCallback es
+			// un std::function, que exige que su objetivo sea copiable, y
+			// FlightSound deliberadamente no lo es (ver FlightSound.h).
+			auto flightSound = std::make_shared<Audio::FlightSound>();
 			if (auto replica = a_handle.get()) {
 				if (auto* node3D = replica->Get3D()) {
 					// Punto 10: TickSpin escribe una rotación absoluta
@@ -133,17 +129,11 @@ namespace Throw
 					// NiMatrix3::MakeRotation), el nodo de giro se queda en
 					// la rotación de reposo que trae el NIF de fábrica hasta
 					// el primer tick del bucle, que ya lo salta de golpe a
-					// la rotación absoluta calculada desde cero -- como el
-					// punto de anclaje de la estela depende de esa rotación
-					// (Constants::kTrailAnchorLocalOffset, brazo de 20
-					// unidades), ese salto se colaba en la primera muestra
-					// de su historial (bug reportado por el usuario: la
-					// estela se veía "descuadrada" justo al salir de la
-					// mano, y solo al lanzar -- en el regreso el nodo ya
-					// lleva un rato bajo control de TickSpin, sin ningún
-					// reposo de fábrica que saltar).
+					// la rotación absoluta calculada desde cero.
 					Animation::TickSpin(*replica, 0.0f);
-					trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
+
+					Audio::PlaySoundOneShot(origin, Constants::kThrowLaunchSoundLocalFormID);
+					flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 				}
 			}
 
@@ -152,7 +142,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, trail, loggedFirstGravitySample = false, loggedRampCrossing = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false, loggedRampCrossing = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -220,9 +210,6 @@ namespace Throw
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
-					if (auto* node3D = a_refr.Get3D()) {
-						trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
-					}
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
 
 					// Punto 6: contra un actor, no basta con detenerse — hay
@@ -259,9 +246,6 @@ namespace Throw
 
 				a_refr.SetPosition(nextPos);
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
-				if (auto* node3D = a_refr.Get3D()) {
-					trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
-				}
 				return true;
 			});
 

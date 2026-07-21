@@ -92,4 +92,17 @@ namespace Return
 		constexpr float n = Constants::kReturnAccelerationExponent;
 		return a_acceleration / (n * (n - 1.0f)) * std::pow(a_elapsedSeconds, n);
 	}
+
+	float ComputeReturnDuration(float a_acceleration, float a_distance)
+	{
+		constexpr float n = Constants::kReturnAccelerationExponent;
+
+		if (a_distance <= 0.0f || a_acceleration <= 0.0f) {
+			return 0.0f;
+		}
+
+		// Despeje directo de ComputeTraveledDistance (d = a/(n·(n-1))·T^n),
+		// mismo criterio de forma cerrada que el resto del módulo.
+		return std::pow(a_distance * n * (n - 1.0f) / a_acceleration, 1.0f / n);
+	}
 }

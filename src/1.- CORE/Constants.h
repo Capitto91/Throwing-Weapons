@@ -110,6 +110,15 @@ namespace Constants
 	// constante, y el regreso se sentía demasiado lento -- este ajuste
 	// compensa esa diferencia sin tocar la forma de la curva (el "más
 	// imán cuanto más cerca" se mantiene, solo más rápido en conjunto).
+	//
+	// ATENCIÓN al tocar esta constante (o kReturnAccelerationExponent/
+	// kReturnMaxDuration más abajo): Return::ComputeReturnDuration predice
+	// la duración total del regreso a partir de estos mismos valores, y esa
+	// predicción es lo que fija el instante en que se dispara el sonido de
+	// atrape con antelación (Constants::kCatchImpactSoundLeadTime,
+	// Return::BeginReturnMovement) para que el golpe grabado en el audio
+	// coincida con la llegada real. Cambiar la velocidad del regreso sin
+	// volver a probar ese sonido en el juego puede desincronizarlo.
 	inline constexpr float kReturnAcceleration = 4500.0f;
 	inline constexpr float kReturnMaxDuration = 2.0f;
 
@@ -320,67 +329,96 @@ namespace Constants
 	// juego.
 	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
 
-	// -- Estela visual durante el vuelo (ver PLAN-trail.md / 8.- ANIMATION/WeaponTrail) --
-	// NIF del efecto de estela, con la misma convención estructural que
-	// espera el código portado de Precision (nodo kTrailRootNodeName con
-	// una cadena de huesos segmento ya modelados). Misma ruta que usa
-	// Precision internamente (Settings::attackTrailMeshPath) -- confirmado
-	// con el usuario, que ha copiado ese NIF/textura tal cual como
-	// placeholder para probar la integración.
-	inline constexpr const char* kTrailEffectPath = "Effects/WeaponTrails/AttackTrail.nif";
+	// -- Sonido de lanzamiento/vuelo/atrape (12.- AUDIO) --
+	// Comprobado en el juego: tres mecanismos distintos de resolución por
+	// EditorID (BSAudioManager::GetSoundHandleByName, TESForm::LookupByEditorID
+	// -- la tabla global de EditorID del motor, tipada y sin tipar -- y
+	// recorrer a mano TESDataHandler::GetFormArray<T>() comparando
+	// GetFormEditorID()) fallan igual para los Sound Marker/Sound Descriptor
+	// de este proyecto, aunque el registro exista, esté guardado y el
+	// plugin esté activo (confirmado: RE::PlaySound, que resuelve por otra
+	// vía interna, sí los reproduce). En vez de insistir con EditorID, se
+	// resuelve por FormID local + nombre de plugin
+	// (RE::TESDataHandler::LookupForm<T>, verificado en TESDataHandler.h,
+	// ver Audio::ResolveSoundDescriptor en 12.- AUDIO/SoundResolver.cpp) --
+	// mecanismo distinto, ya verificado y en uso en este proyecto para
+	// resolver formularios por FormID (WeaponManager::RecoverOrReset). No
+	// vale un FormID absoluto fijo porque este plugin no es un master que
+	// siempre cargue en el índice 0 (a diferencia de Skyrim.esm) -- de ahí
+	// necesitar tanto el nombre del plugin como el FormID *local* (el que
+	// se ve en xEdit sin el byte de índice de carga).
+	inline constexpr std::string_view kSoundPluginName = "ThorMjolnir.esp";
 
-	// Nombre del nodo hijo, dentro del NIF de estela, que contiene la
-	// cadena de huesos segmento a reposicionar cada tick. Única fuente de
-	// verdad compartida con el NIF, igual que kWeaponSpinNodeName.
-	inline constexpr std::string_view kTrailRootNodeName{ "TrailRoot" };
+	// FormID local (visto en xEdit, sin el byte de índice de carga) del
+	// Sound Descriptor/Sound Marker del silbido de lanzamiento -- sonado
+	// tanto al arrojar el arma (Throw::LaunchWeapon) como al iniciar el
+	// tramo de movimiento del regreso (Return::BeginReturnMovement).
+	// Placeholder en 0 pendiente de que el usuario lo mire en xEdit -- si
+	// no resuelve, Audio::PlaySoundOneShot simplemente avisa por log y no
+	// suena nada, mismo criterio defensivo que Constants::kEmbeddedParalysisSpell.
+	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x000000;
 
-	// Tiempo de vida de cada segmento individual de la estela antes de
-	// reciclarse (determina cuánto "rastro" se ve detrás del arma en cada
-	// instante). Mismo valor de partida que Precision
-	// (Settings::fTrailSegmentLifetime), pendiente de ajustar en el juego.
-	inline constexpr float kTrailSegmentLifetime = 0.1f;
+	// FormID local del Sound Descriptor/Sound Marker en bucle mientras el
+	// arma vuela (ida y vuelta) -- el propio Sound Descriptor debe
+	// configurarse como bucle en la Creation Kit, el código
+	// (Audio::FlightSound) solo lo arranca y lo para. Mismo criterio de
+	// placeholder que el anterior.
+	inline constexpr RE::FormID kFlightLoopSoundLocalFormID = 0x000000;
 
-	// Cuántos segmentos nuevos de estela se añaden por segundo de vuelo.
-	// Mismo valor de partida que Precision
-	// (Settings::uTrailSegmentsPerSecond), pendiente de ajustar en el
-	// juego.
-	inline constexpr std::uint32_t kTrailSegmentsPerSecond = 120;
+	// FormID local del Sound Descriptor del golpe de atrape
+	// (CAP_ThorMjolnir_Sound_MjolnirCatch) -- apunta al Descriptor, no al
+	// Sound Marker que lo referencia (CAP_ThorMjolnir_MarkSound_MjolnirCatch,
+	// sin usar aquí, la indirección por el Marker no hace falta teniendo
+	// el FormID del Descriptor). No es el valor "en bruto" que muestra la
+	// Creation Kit (0x00EA61) -- ThorMjolnir.esp tiene el flag ESL activo
+	// (comprobado leyendo el header del propio .esp), así que el
+	// direccionamiento local real en tiempo de ejecución son los 12 bits
+	// bajos de ese valor: confirmado en el juego (Audio::ResolveSoundDescriptor
+	// probó ambos y solo este resolvió). Ver Audio::CatchSound
+	// (12.- AUDIO/CatchSound.cpp) para cómo se usa.
+	inline constexpr RE::FormID kCatchImpactSoundLocalFormID = 0x000A61;
 
-	// Color base de la estela (RGBA, 0-1) -- azul eléctrico a petición del
-	// usuario, sustituye al gris neutro que trae Precision por defecto
-	// (Settings::fTrailDefaultBaseColor*).
-	inline constexpr RE::NiColorA kTrailBaseColor{ 0.1f, 0.45f, 1.0f, 1.0f };
+	// Instante (segundos) dentro del propio archivo de audio en el que cae
+	// el golpe/impacto real del sonido de atrape -- dado por el usuario
+	// (medido a oído/forma de onda). Es el presupuesto de "tiempo de clip"
+	// que Audio::CatchSound tiene disponible antes de tener que haber
+	// llegado al golpe grabado; ver ese archivo para cómo ajusta la
+	// velocidad de reproducción cada tick para que ese presupuesto encaje
+	// siempre en el tiempo real que quede hasta el atrape, sea cual sea la
+	// duración real del regreso (ya no depende de una predicción fija, así
+	// que no hace falta reajustar este valor si cambia la velocidad del
+	// regreso).
+	inline constexpr float kCatchImpactSoundLeadTime = 1.1270f;
 
-	// Multiplicador de brillo aplicado sobre kTrailBaseColor por el
-	// material del shader de efecto (BSEffectShaderMaterial::baseColorScale) --
-	// por encima de 1 satura hacia blanco/da aspecto de brillo (bloom),
-	// buscado aquí para el efecto "eléctrico". Mismo mecanismo que
-	// Precision (Settings::fTrailBaseColorScaleMult, que por defecto deja
-	// en 1 sin ningún brillo extra). Placeholder, pendiente de ajustar en
-	// el juego.
-	inline constexpr float kTrailBaseColorScaleMult = 3.0f;
+	// Límites de la velocidad de reproducción (RE::BSSoundHandle::SetFrequency,
+	// 1.0 = velocidad/tono normal, asumido por convención habitual de
+	// motores de audio -- sin documentar en commonlibsse-ng) que
+	// Audio::CatchSound puede aplicar para comprimir o estirar su preámbulo
+	// y que el golpe grabado siga cayendo justo al atrapar. Acotado para
+	// evitar un tono absurdamente agudo/grave en lanzamientos extremos
+	// (muy cerca o con el jugador alejándose deprisa) -- placeholders,
+	// pendientes de ajustar en el juego.
+	inline constexpr float kCatchSoundMinFrequency = 0.5f;
+	inline constexpr float kCatchSoundMaxFrequency = 3.0f;
 
-	// Escala aplicada a cada segmento de la estela. El código nunca la
-	// calculaba a partir de la malla del arma (a diferencia de Precision,
-	// que la deriva del alcance del arma equipada -- descartado al portar,
-	// ver 8.- ANIMATION/WeaponTrail.cpp): sin esto, cada segmento se
-	// quedaba con la escala que trae por defecto el NIF de Precision, sin
-	// ninguna relación con el tamaño real de la malla propia. 1.0 (probado
-	// en el juego) resultó desproporcionado -- Precision nunca usa la
-	// malla a esa escala tal cual, siempre la reduce en proporción al
-	// alcance del arma equipada (longitud * 0.01, típicamente muy por
-	// debajo de 1). Placeholder bajado en consecuencia, sigue pendiente de
-	// ajuste fino en el juego.
-	inline constexpr float kTrailSegmentScale = 0.15f;
+	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
+	// documentado en commonlibsse-ng (ver BSAudioManager.h). El valor por
+	// defecto del propio header (0x1A) resuelve el handle con éxito
+	// (GetSoundHandle/Play devuelven true) pero no llega a sonar --
+	// confirmado en el juego que el Sound Descriptor en sí está bien (CK:
+	// el propio botón "Play" de Auditioning lo reproduce). Probando 0 en
+	// su lugar -- sin ninguna documentación de qué bit hace qué, es un
+	// ensayo empírico, no una corrección basada en evidencia de código.
+	inline constexpr std::uint32_t kFlightSoundHandleFlags = 0x0;
 
-	// Punto desde el que "nace" visualmente la estela, expresado en el
-	// espacio local del arma (WeaponTrail lo transforma por la rotación
-	// de la réplica en cada muestra, para que la acompañe si cambia de
-	// orientación) en vez de usar directamente el origen del nodo raíz
-	// (node3D->world) -- en armas de Skyrim el origen suele coincidir con
-	// el punto de agarre/mango, no con el centro visual de la pieza.
-	// Comprobado en NifSkope en el NIF de este arma (un martillo): el
-	// origen cae en la base del mango. Ajustado a ojo en el juego por el
-	// usuario (0 en X/Z, +20 en Y).
-	inline constexpr RE::NiPoint3 kTrailAnchorLocalOffset{ 0.0f, 20.0f, 0.0f };
+	// Volumen explícito aplicado a todo RE::BSSoundHandle antes de
+	// Play() (ver 12.- AUDIO/FlightSound.cpp, CatchSound.cpp) -- un
+	// handle recién obtenido de GetSoundHandle no tiene garantizado
+	// arrancar a volumen audible por defecto (sin documentar en
+	// commonlibsse-ng), y RE::PlaySound -- que sí sonaba, confirmando que
+	// el Sound Descriptor en sí está bien -- pasa por una rutina interna
+	// distinta que probablemente sí lo fija. 1.0 = volumen máximo sin
+	// atenuar, antes de cualquier atenuación por distancia/categoría que
+	// aplique el propio motor.
+	inline constexpr float kSoundHandleVolume = 1.0f;
 }

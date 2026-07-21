@@ -67,15 +67,4 @@ namespace Animation
 	// si el nodo de giro no existe todavía (sin efecto, sin reintento
 	// explícito).
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds);
-
-	// Transformación mundial a usar como base para efectos que deben
-	// acompañar el giro visual (p. ej. la estela, ver
-	// 8.- ANIMATION/WeaponTrail): el nodo raíz de la réplica (a_root) no
-	// gira durante el vuelo -- SetAngle nunca cambia, solo se mueve la
-	// posición -- así que su world transform por sí sola no refleja el
-	// giro, que vive solo en el nodo hijo Constants::kWeaponSpinNodeName.
-	// Devuelve la transformación de ese nodo si existe (misma posición
-	// que el raíz, rotación actualizada por TickSpin cada tick), o la del
-	// raíz tal cual si el nodo de giro no existe todavía.
-	RE::NiTransform GetVisualTransform(RE::NiAVObject& a_root);
 }

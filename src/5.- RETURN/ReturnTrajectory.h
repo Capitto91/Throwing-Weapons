@@ -57,4 +57,19 @@ namespace Return
 	// curva está el arma cada tick, dividiendo entre la distancia recta
 	// inicial capturada al empezar el regreso.
 	float ComputeTraveledDistance(float a_acceleration, float a_elapsedSeconds);
+
+	// Inversa de ComputeTraveledDistance: duración prevista (segundos)
+	// hasta que el arma recorra a_distance con el perfil de aceleración
+	// a_acceleration -- T = (a_distance·n·(n-1) / a_acceleration)^(1/n).
+	// Válida tanto si a_acceleration es la de Constants::kReturnAcceleration
+	// por defecto como si viene ya recalculada por
+	// ComputeReturnAcceleration para cumplir kReturnMaxDuration (en ese
+	// caso el resultado es exactamente kReturnMaxDuration, por
+	// construcción del propio recálculo -- verificado algebraicamente, no
+	// solo probado). Usada para predecir con antelación el instante de
+	// llegada y poder adelantar sonidos/efectos que necesiten cuadrar con
+	// ese instante exacto (ver Constants::kCatchImpactSoundLeadTime,
+	// Return::BeginReturnMovement) en vez de solo detectar la llegada
+	// tick a tick.
+	float ComputeReturnDuration(float a_acceleration, float a_distance);
 }

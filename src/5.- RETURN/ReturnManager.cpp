@@ -4,11 +4,12 @@
 #include "5.- RETURN/ReturnManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "12.- AUDIO/CatchSound.h"
+#include "12.- AUDIO/FlightSound.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
-#include "8.- ANIMATION/WeaponTrail.h"
 #include "9.- MATH/CurveMath.h"
 
 #include <algorithm>
@@ -52,21 +53,31 @@ namespace Return
 			const float acceleration = ComputeReturnAcceleration(initialDistance);
 			const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
-			logs::info(
-				"Return::BeginReturnMovement: distancia inicial {:.1f}, aceleración {:.1f}",
-				initialDistance, acceleration);
+			// Duración estimada del regreso, solo para el log -- ya no arma
+			// ningún disparo (ver Audio::CatchSound, que se reajusta cada
+			// tick con la distancia real en vez de una predicción única).
+			const float estimatedDuration = ComputeReturnDuration(acceleration, initialDistance);
 
-			// Estela visual (ver PLAN-trail.md): instancia propia del
-			// regreso, independiente de la de la ida (esa ya se destruyó al
-			// cancelarse su bucle de tick antes de llegar aquí, ver
-			// WeaponManager::BeginReturn). Mismo motivo que en
-			// Throw::LaunchWeapon para el std::shared_ptr, ver WeaponTrail.h.
-			auto trail = std::make_shared<Animation::WeaponTrail>();
+			logs::info(
+				"Return::BeginReturnMovement: distancia inicial {:.1f}, aceleración {:.1f}, duración estimada {:.2f}s",
+				initialDistance, acceleration, estimatedDuration);
+
+			// Sonido (ver 12.- AUDIO/FlightSound): mismo criterio que
+			// Throw::LaunchWeapon -- silbido suelto al iniciar el tramo de
+			// movimiento del regreso más el loop posicional que sigue a la
+			// réplica mientras dura la curva de vuelta.
+			auto flightSound = std::make_shared<Audio::FlightSound>();
+			// Sonido de atrape sincronizado en tiempo real (ver
+			// 12.- AUDIO/CatchSound) -- no tiene ningún "Start" propio, se
+			// arranca solo dentro de su primer Update() cuando el tiempo
+			// restante estimado lo justifique.
+			auto catchSound = std::make_shared<Audio::CatchSound>();
 			if (auto* node3D = replica->Get3D()) {
-				trail->Start(replica->GetParentCell(), Animation::GetVisualTransform(*node3D));
+				Audio::PlaySoundOneShot(start, Constants::kThrowLaunchSoundLocalFormID);
+				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 			}
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, trail, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchSound, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -125,12 +136,25 @@ namespace Return
 
 				a_refr.SetPosition(nextPos);
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
-				if (auto* node3D = a_refr.Get3D()) {
-					trail->Update(Animation::GetVisualTransform(*node3D), a_deltaSeconds);
-				}
 
-				if ((handPos - nextPos).Length() <= Constants::kReturnArrivalDistance) {
+				// Misma distancia arma-mano para las dos cosas que dependen
+				// de ella: el sonido de atrape se reajusta cada tick con
+				// datos reales (ver Audio::CatchSound) en vez de una
+				// predicción hecha una sola vez al principio, así que se ata
+				// a la misma señal que decide la llegada.
+				const float distanceToHand = (handPos - nextPos).Length();
+				catchSound->Update(nextPos, distanceToHand, a_deltaSeconds);
+
+				if (distanceToHand <= Constants::kReturnArrivalDistance) {
 					logs::info("Return::BeginReturnMovement: la réplica ha llegado a la mano.");
+					// Salvaguarda: caso degenerado en el que CatchSound
+					// nunca llegó a arrancar (la velocidad de cierre nunca
+					// fue positiva) -- mejor un golpe suelto sin
+					// sincronizar que ningún sonido.
+					if (!catchSound->HasStarted()) {
+						logs::warn("Return::BeginReturnMovement: CatchSound nunca llegó a arrancar (velocidad de cierre nunca positiva), disparando sonido suelto sin sincronizar.");
+						Audio::PlaySoundOneShot(handPos, Constants::kCatchImpactSoundLocalFormID);
+					}
 					onArrived();
 					return false;
 				}
