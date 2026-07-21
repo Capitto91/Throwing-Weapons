@@ -69,21 +69,27 @@ namespace Return
 
 	float ComputeReturnAcceleration(float a_distance)
 	{
+		constexpr float n = Constants::kReturnAccelerationExponent;
+
 		if (a_distance <= 0.0f) {
 			return Constants::kReturnAcceleration;
 		}
 
-		const float defaultDuration = std::sqrt(2.0f * a_distance / Constants::kReturnAcceleration);
+		// d(T) = a/(n·(n-1))·T^n despejando T, para el coeficiente por
+		// defecto -- generaliza el sqrt(2d/a) anterior (caso n=2).
+		const float defaultDuration = std::pow(a_distance * n * (n - 1.0f) / Constants::kReturnAcceleration, 1.0f / n);
 		if (defaultDuration <= Constants::kReturnMaxDuration) {
 			return Constants::kReturnAcceleration;
 		}
 
-		// d = ½·a·t² despejando a, para el límite kReturnMaxDuration.
-		return 2.0f * a_distance / (Constants::kReturnMaxDuration * Constants::kReturnMaxDuration);
+		// Mismo despeje que arriba pero al revés (a partir de T fijo en
+		// kReturnMaxDuration): a = d·n·(n-1)/T^n.
+		return a_distance * n * (n - 1.0f) / std::pow(Constants::kReturnMaxDuration, n);
 	}
 
 	float ComputeTraveledDistance(float a_acceleration, float a_elapsedSeconds)
 	{
-		return 0.5f * a_acceleration * a_elapsedSeconds * a_elapsedSeconds;
+		constexpr float n = Constants::kReturnAccelerationExponent;
+		return a_acceleration / (n * (n - 1.0f)) * std::pow(a_elapsedSeconds, n);
 	}
 }

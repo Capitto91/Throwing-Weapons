@@ -88,13 +88,39 @@ namespace Constants
 	inline constexpr float kMaxThrowDistance = 6000.0f;
 
 	// -- Regreso (RETURN), puntos 7-8 --
-	// Aceleración de regreso por defecto y límite de duración: el arma
-	// parte con velocidad cero y acelera de forma constante; si a esta
-	// aceleración tardaría más de kReturnMaxDuration en volver desde
-	// donde esté, se aumenta lo necesario para cumplir el límite.
-	// Reutilizados tal cual, ya calibrados en el juego.
-	inline constexpr float kReturnAcceleration = 3000.0f;
+	// Cambio de criterio sobre el punto 8 original de Mecanica del
+	// arma.txt (ya actualizado ahí): decisión tomada con el usuario de que
+	// el regreso ya no acelera de forma constante, sino con una
+	// aceleración *creciente* (perfil d(t) = kReturnAcceleration /
+	// (n·(n-1)) · t^n, ver kReturnAccelerationExponent y
+	// Return::ComputeTraveledDistance) -- simula un tirón magnético cada
+	// vez más fuerte según se acerca a la mano, en vez de un tirón parejo
+	// durante todo el trayecto. Con kReturnAccelerationExponent = 2 esta
+	// fórmula colapsa exactamente en la aceleración constante anterior
+	// (d = ½·a·t²), así que kReturnAcceleration conserva el mismo
+	// significado físico de siempre (el valor de aceleración que se
+	// alcanzaría tras 1s de rampa), solo cambia cómo se llega a él.
+	// kReturnMaxDuration sigue límitando la duración total (contada desde
+	// que se desprende del todo, sin el temblor del punto 11) exactamente
+	// igual que antes -- ver Return::ComputeReturnAcceleration para el
+	// recálculo híbrido si a este ritmo tardaría más. Subido de 3000 a
+	// 4500 a petición del usuario: con el exponente creciente
+	// (kReturnAccelerationExponent > 2) el mismo coeficiente de antes
+	// tarda más en alcanzar velocidad de crucero que con aceleración
+	// constante, y el regreso se sentía demasiado lento -- este ajuste
+	// compensa esa diferencia sin tocar la forma de la curva (el "más
+	// imán cuanto más cerca" se mantiene, solo más rápido en conjunto).
+	inline constexpr float kReturnAcceleration = 4500.0f;
 	inline constexpr float kReturnMaxDuration = 2.0f;
+
+	// Exponente del perfil de aceleración creciente de arriba. 2 recupera
+	// la aceleración constante de siempre; valores mayores hacen que el
+	// arma empiece más despacio y tire cada vez más fuerte cuanto más
+	// cerca está de la mano (más "imán", menos "empujón parejo") -- 3
+	// sería aceleración que crece en línea recta con el tiempo ("jerk"
+	// constante). Placeholder intermedio entre ambos, pendiente de
+	// calibrar en el juego.
+	inline constexpr float kReturnAccelerationExponent = 2.5f;
 
 	// Distancia a la que se considera que el arma ha llegado a la mano del
 	// jugador durante el regreso. Reutilizado tal cual.
@@ -145,16 +171,16 @@ namespace Constants
 	// con el nombre que se le dé al nodo en NifSkope.
 	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
 
-	// Velocidad angular del giro (radianes/segundo) y eje local sobre el
-	// que gira (ver 8.- ANIMATION/WeaponAnimation::TickSpin). Calculado y
-	// escrito directamente por código cada tick (NiMatrix3::MakeRotation),
-	// sin depender de ninguna animación horneada en el NIF ni de
-	// NiTimeController -- confirmado en el juego que llamar a
-	// NiTimeController::Update() fuera del propio recorrido del motor
-	// puede crashear (ver CHANGELOG.md), así que se evita esa clase
-	// entera de API. Placeholders pendientes de ajustar en el juego: la
-	// velocidad es una vuelta completa cada ~0.5s (a ojo, sin medir), y el
-	// eje asume que el modelo tiene el mango a lo largo del eje Y local
+	// Velocidad angular máxima del giro (radianes/segundo) y eje local
+	// sobre el que gira (ver 8.- ANIMATION/WeaponAnimation::TickSpin).
+	// Calculado y escrito directamente por código cada tick
+	// (NiMatrix3::MakeRotation), sin depender de ninguna animación
+	// horneada en el NIF ni de NiTimeController -- confirmado en el juego
+	// que llamar a NiTimeController::Update() fuera del propio recorrido
+	// del motor puede crashear (ver CHANGELOG.md), así que se evita esa
+	// clase entera de API. Placeholders pendientes de ajustar en el juego:
+	// la velocidad es una vuelta completa cada ~0.5s (a ojo, sin medir), y
+	// el eje asume que el modelo tiene el mango a lo largo del eje Y local
 	// (convención habitual de armas en Skyrim) y por tanto gira mejor
 	// sobre X -- si el giro se ve raro, es el primer valor a revisar.
 	//
@@ -168,6 +194,21 @@ namespace Constants
 	// dirección, magnitud unitaria.
 	inline constexpr float        kSpinAngularSpeed = 20.0f;  // ~4*pi rad/s
 	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 1.0f };
+
+	// Duración de la rampa de arranque del giro -- a petición del usuario,
+	// la velocidad angular deja de ser constante desde el primer instante:
+	// sube en línea recta desde 0 hasta kSpinAngularSpeed a lo largo de
+	// esta duración (aceleración angular constante durante la rampa,
+	// después velocidad angular constante) -- mismo patrón de dos tramos
+	// en forma cerrada que Throw::ComputeGravityDrop, un orden de derivada
+	// más abajo (ahí se rampeaba la aceleración lineal, aquí se rampea la
+	// velocidad angular). Se aplica igual en la ida y en la vuelta
+	// (Animation::TickSpin es compartido, ver ThrowManager/ReturnManager),
+	// cada una con su propio "elapsed" desde cero -- el giro arranca
+	// gradual en cada tramo de vuelo por separado. <= 0.0f desactiva la
+	// rampa (velocidad angular constante desde el instante cero, como
+	// antes). Placeholder, pendiente de ajustar en el juego.
+	inline constexpr float kSpinRampDuration = 0.3f;  // s, placeholder
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation

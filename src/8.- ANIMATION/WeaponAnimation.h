@@ -24,9 +24,15 @@
 namespace Animation
 {
 	// Avanza a mano el giro de a_refr: calcula un ángulo a partir de
-	// a_elapsedSeconds (Constants::kSpinAngularSpeed) y lo escribe en la
-	// rotación local del nodo Constants::kWeaponSpinNodeName -- la
-	// posición/escala del nodo no se tocan. Debe llamarse cada tick del
+	// a_elapsedSeconds y lo escribe en la rotación local del nodo
+	// Constants::kWeaponSpinNodeName -- la posición/escala del nodo no se
+	// tocan. La velocidad angular ya no es constante desde el instante
+	// cero (a petición del usuario): sube en línea recta desde 0 hasta
+	// Constants::kSpinAngularSpeed a lo largo de Constants::kSpinRampDuration
+	// (aceleración angular constante durante la rampa, forma cerrada de
+	// dos tramos empalmados en ángulo y velocidad angular -- mismo
+	// criterio que Throw::ComputeGravityDrop, un orden de derivada más
+	// abajo), después constante como antes. Debe llamarse cada tick del
 	// mismo bucle de movimiento manual que ya mueve la réplica, antes de
 	// Physics::SyncHavok (que ya recalcula el árbol de transformaciones
 	// mundiales, incluida la de este nodo hijo). Sin efecto si la réplica

@@ -32,16 +32,29 @@ namespace Return
 	// desvía lateralmente desde ahí -- no confundirlas.
 	RE::NiPoint3 ComputeReturnControlPoint(const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, const RE::NiPoint3& a_rightVector, float a_anchorFraction);
 
-	// Aceleración híbrida (punto 8): Constants::kReturnAcceleration por
-	// defecto, salvo que a esa aceleración se tardara más de
-	// Constants::kReturnMaxDuration en cubrir a_distance partiendo del
-	// reposo — en ese caso se calcula la aceleración mínima necesaria
-	// para cumplir ese límite (d = ½·a·t² despejando a).
+	// Coeficiente de aceleración híbrido (punto 8, cambio de criterio --
+	// ver CLAUDE.md/Constants::kReturnAccelerationExponent): sigue
+	// llamándose "aceleración" por continuidad con el significado físico
+	// del valor (lo que se alcanzaría tras 1s de rampa), pero desde que la
+	// rampa dejó de ser una recta (aceleración constante) para ser una
+	// curva de grado Constants::kReturnAccelerationExponent, este
+	// coeficiente ya no es literalmente la aceleración en todo instante --
+	// ver ComputeTraveledDistance para la fórmula completa. Se usa
+	// Constants::kReturnAcceleration por defecto, salvo que a ese
+	// coeficiente se tardara más de Constants::kReturnMaxDuration en
+	// cubrir a_distance partiendo del reposo — en ese caso se calcula el
+	// mínimo necesario para cumplir ese límite.
 	float ComputeReturnAcceleration(float a_distance);
 
-	// Distancia recorrida tras a_elapsedSeconds acelerando desde el
-	// reposo a a_acceleration constante (½·a·t²). Se usa para saber en
-	// qué punto (0-1) de la curva está el arma cada tick, dividiendo
-	// entre la distancia recta inicial capturada al empezar el regreso.
+	// Distancia recorrida tras a_elapsedSeconds con el perfil de
+	// aceleración creciente del punto 8 (cambio de criterio, ver
+	// Constants::kReturnAccelerationExponent): d(t) = a_acceleration /
+	// (n·(n-1)) · t^n, con n = Constants::kReturnAccelerationExponent --
+	// forma cerrada (no acumulada tick a tick, mismo criterio que
+	// Throw::ComputeGravityDrop), verificada por doble derivación: con
+	// n=2 colapsa exactamente en la fórmula anterior de aceleración
+	// constante (½·a·t²). Se usa para saber en qué punto (0-1) de la
+	// curva está el arma cada tick, dividiendo entre la distancia recta
+	// inicial capturada al empezar el regreso.
 	float ComputeTraveledDistance(float a_acceleration, float a_elapsedSeconds);
 }

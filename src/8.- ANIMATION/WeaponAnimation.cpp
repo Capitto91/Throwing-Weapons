@@ -10,6 +10,35 @@
 
 namespace Animation
 {
+	namespace
+	{
+		// Rampa de arranque del giro (a petición del usuario, velocidad
+		// angular ya no constante desde el instante cero): dos tramos
+		// empalmados en forma cerrada, mismo criterio que
+		// Throw::ComputeGravityDrop pero un orden de derivada más abajo
+		// (ahí se rampeaba la aceleración lineal hasta un máximo, aquí se
+		// rampea la velocidad angular hasta Constants::kSpinAngularSpeed).
+		// Continuo en ángulo y en velocidad angular en el empalme
+		// (t = kSpinRampDuration): verificado por integración directa,
+		// ambas ramas coinciden ahí sin salto.
+		float ComputeSpinAngle(float a_elapsedSeconds)
+		{
+			constexpr float rampDuration = Constants::kSpinRampDuration;
+			if constexpr (rampDuration <= 0.0f) {
+				return Constants::kSpinAngularSpeed * a_elapsedSeconds;
+			}
+
+			if (a_elapsedSeconds < rampDuration) {
+				// ω(t) = (ωmax/rampDuration)·t (aceleración angular
+				// constante) -> ángulo(t) = ½·(ωmax/rampDuration)·t².
+				return Constants::kSpinAngularSpeed * a_elapsedSeconds * a_elapsedSeconds / (2.0f * rampDuration);
+			}
+
+			const float angleAtRampEnd = Constants::kSpinAngularSpeed * rampDuration / 2.0f;
+			return angleAtRampEnd + Constants::kSpinAngularSpeed * (a_elapsedSeconds - rampDuration);
+		}
+	}
+
 	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds)
 	{
 		auto* root = a_refr.Get3D();
@@ -18,7 +47,7 @@ namespace Animation
 			return;
 		}
 
-		spinNode->local.rotate.MakeRotation(Constants::kSpinAngularSpeed * a_elapsedSeconds, Constants::kSpinAxisLocal);
+		spinNode->local.rotate.MakeRotation(ComputeSpinAngle(a_elapsedSeconds), Constants::kSpinAxisLocal);
 	}
 
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds)
