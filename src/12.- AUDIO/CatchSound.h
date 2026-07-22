@@ -1,75 +1,56 @@
-// Sonido de atrape, sincronizado en tiempo real con la llegada real del
-// arma a la mano -- ver Constants.h ("Sonido de lanzamiento/vuelo/atrape")
-// y el plan de rediseño para el porqué de cada decisión. No hay ninguna
-// mecánica del documento de diseño que cubra esto, es pulido audiovisual
-// puro.
+// Los dos sonidos del atrape (arranque anticipado + golpe final
+// garantizado) -- ver Constants.h ("Sonido de atrape, en dos partes") para
+// el porqué del diseño en dos partes. No hay ninguna mecánica del
+// documento de diseño que cubra esto, es pulido audiovisual puro.
+//
+// Reemplaza por completo el diseño anterior de un único sonido con ajuste
+// continuo de velocidad de reproducción (RE::BSSoundHandle::SetFrequency
+// cada tick, ver CHANGELOG.md) -- a petición del usuario, se acepta una
+// pequeña desincronización del arranque a cambio de un diseño mucho más
+// simple: el golpe final ya no depende de ningún cálculo de velocidad de
+// cierre ni de que el arranque haya sonado, se dispara siempre, tal cual,
+// exactamente en el instante real de la llegada.
 
 #pragma once
 
 namespace Audio
 {
-	// A diferencia de PlaySoundOneShot (dispara y olvida), este sonido se
-	// arranca por adelantado y se reajusta cada tick mientras suena, para
-	// que el golpe grabado en el propio audio
-	// (Constants::kCatchImpactSoundLeadTime segundos dentro del clip)
-	// caiga siempre justo en el instante real de la llegada -- sea cual
-	// sea la duración real del regreso (vuelos muy cortos) o si el
-	// jugador se mueve durante el trayecto (cambia el tiempo restante real
-	// respecto a cualquier predicción hecha al principio). En vez de
-	// predecir una vez, mide la velocidad de cierre real tick a tick a
-	// partir de la misma distancia arma-mano que ya decide la llegada
-	// (ver Return::BeginReturnMovement) y ajusta la velocidad de
-	// reproducción (RE::BSSoundHandle::SetFrequency) en consecuencia.
-	//
-	// RAII: RE::BSSoundHandle no se autolibera (~BSSoundHandle() =
-	// default) -- mismo motivo que Audio::FlightSound.
-	class CatchSound
+	// Sin RE::BSSoundHandle como miembro: cada sonido se dispara una sola
+	// vez y se deja sonar por su cuenta (igual que Audio::PlaySoundOneShot
+	// -- el motor sigue reproduciéndolo aunque el handle local que lo
+	// arrancó se destruya al momento), así que esta clase no gestiona
+	// ningún recurso que liberar, no hace falta RAII ni restringir copia/
+	// movimiento.
+	class CatchCue
 	{
 	public:
-		CatchSound() = default;
-		~CatchSound();
+		// a_startDelay: segundos desde este mismo instante (el de la
+		// propia construcción, que coincide con el principio de
+		// Return::BeginReturn -- antes incluso del temblor de
+		// desprendimiento si lo hay) hasta que debe sonar el arranque. Ver
+		// Return::BeginReturn para el cálculo.
+		explicit CatchCue(float a_startDelay) noexcept :
+			startDelay(a_startDelay)
+		{}
 
-		// Solo movible, mismo motivo que Audio::FlightSound: un único
-		// BSSoundHandle en vuelo por instancia.
-		CatchSound(const CatchSound&) = delete;
-		CatchSound& operator=(const CatchSound&) = delete;
-		CatchSound(CatchSound&&) = default;
-		CatchSound& operator=(CatchSound&&) = default;
+		// Llamar cada tick, tanto durante el temblor de desprendimiento
+		// (Return::BeginReturn) como durante el movimiento
+		// (Return::BeginReturnMovement) -- acumula su propio reloj interno
+		// desde que se creó esta instancia, independiente de en cuál de
+		// los dos bucles de tick se llame, así que el retardo cuenta igual
+		// si el arma estaba clavada o no. Dispara el sonido de arranque
+		// una sola vez, en cuanto ese reloj alcanza el retardo; no hace
+		// nada más en las llamadas siguientes.
+		void UpdateStart(const RE::NiPoint3& a_position, float a_deltaSeconds);
 
-		// Debe llamarse cada tick del regreso, con a_position = la
-		// posición actual de la réplica y a_currentDistance = distancia
-		// actual hasta la mano (la misma que ya usa
-		// Return::BeginReturnMovement para decidir la llegada). No hace
-		// nada visible hasta que el tiempo restante estimado cae por
-		// debajo de Constants::kCatchImpactSoundLeadTime; a partir de ahí
-		// arranca el sonido y sigue ajustando su velocidad de
-		// reproducción y posición cada tick hasta que deja de llamarse.
-		void Update(const RE::NiPoint3& a_position, float a_currentDistance, float a_deltaSeconds);
-
-		// true si el sonido ya ha arrancado (ver Update) -- Return::BeginReturnMovement
-		// lo usa como red de seguridad: si nunca llegó a arrancar (caso
-		// degenerado, velocidad de cierre nunca positiva) y la réplica ya
-		// llegó a la mano, dispara un sonido suelto sin sincronizar en vez
-		// de dejar el atrape mudo.
-		[[nodiscard]] bool HasStarted() const noexcept { return started; }
+		// Llamar exactamente una vez, al detectar la llegada real a la
+		// mano (Return::BeginReturnMovement) -- dispara el golpe grabado
+		// siempre, sin condición, haya sonado ya el arranque o no.
+		static void PlayEnd(const RE::NiPoint3& a_position);
 
 	private:
-		RE::BSSoundHandle handle;
-		// Cebado empírico: un segundo BSSoundHandle, sin posición, mantenido
-		// vivo (sin Stop() hasta el destructor) -- en las pruebas en el
-		// juego, "handle" solo llegó a sonar en la configuración que
-		// también tenía este segundo handle vivo en paralelo. Pararlo
-		// inmediatamente después de arrancarlo (probado) volvió a dejar
-		// "handle" mudo. Sin explicación confirmada todavía -- ver
-		// CHANGELOG.md para el historial de depuración.
-		RE::BSSoundHandle primingHandle;
-		bool              started{ false };
-		float             consumedClipTime{ 0.0f };
-
-		// Distancia de la muestra anterior, para medir la velocidad de
-		// cierre por diferencia -- valor negativo usado como centinela de
-		// "todavía no hay muestra anterior" (una distancia real nunca es
-		// negativa).
-		float previousDistance{ -1.0f };
+		float startDelay;
+		float elapsed{ 0.0f };
+		bool  startFired{ false };
 	};
 }

@@ -68,8 +68,7 @@ namespace Return
 	// construcción del propio recálculo -- verificado algebraicamente, no
 	// solo probado). Usada para predecir con antelación el instante de
 	// llegada y poder adelantar sonidos/efectos que necesiten cuadrar con
-	// ese instante exacto (ver Constants::kCatchImpactSoundLeadTime,
-	// Return::BeginReturnMovement) en vez de solo detectar la llegada
-	// tick a tick.
+	// ese instante exacto (ver Constants::kCatchStartSoundLeadTime,
+	// Return::BeginReturn) en vez de solo detectar la llegada tick a tick.
 	float ComputeReturnDuration(float a_acceleration, float a_distance);
 }

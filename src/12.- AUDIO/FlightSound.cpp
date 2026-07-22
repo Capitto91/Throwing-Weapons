@@ -37,9 +37,13 @@ namespace Audio
 		// Volumen explícito antes de FadeInPlay() -- ver
 		// Constants::kSoundHandleVolume. FadeInPlay(0) en vez de Play():
 		// con Play() el BSSoundHandle nunca llegaba a sonar en el juego
-		// pese a reportar éxito (ver Audio::CatchSound::Update, mismo
-		// problema comprobado repetidamente ahí) -- FadeInPlay(0) sí lo
-		// hizo sonar.
+		// pese a reportar éxito. NOTA: para el sonido de atrape
+		// (12.- AUDIO/CatchSound.cpp) FadeInPlay(0) solo no bastó -- hizo
+		// falta además un handle de cebado y una llamada a RE::PlaySound
+		// en paralelo (ver Constants::kFlightSoundHandleFlags para el
+		// detalle). Este silbido de vuelo no se ha probado todavía en el
+		// juego (kFlightLoopSoundLocalFormID sigue en placeholder) -- si
+		// al configurarlo también se queda mudo, aplicar el mismo patrón.
 		const bool volumeSet = handle.SetVolume(Constants::kSoundHandleVolume);
 		const bool played = handle.FadeInPlay(0);
 		logs::info("Audio::FlightSound::Start: SetVolume()={}, FadeInPlay()={}.", volumeSet, played);

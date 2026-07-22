@@ -113,12 +113,14 @@ namespace Constants
 	//
 	// ATENCIÓN al tocar esta constante (o kReturnAccelerationExponent/
 	// kReturnMaxDuration más abajo): Return::ComputeReturnDuration predice
-	// la duración total del regreso a partir de estos mismos valores, y esa
-	// predicción es lo que fija el instante en que se dispara el sonido de
-	// atrape con antelación (Constants::kCatchImpactSoundLeadTime,
-	// Return::BeginReturnMovement) para que el golpe grabado en el audio
-	// coincida con la llegada real. Cambiar la velocidad del regreso sin
-	// volver a probar ese sonido en el juego puede desincronizarlo.
+	// la duración total del regreso a partir de estos mismos valores, y
+	// Return::BeginReturn usa esa predicción, una sola vez al empezar todo
+	// el regreso, para calcular con antelación el instante en que hay que
+	// disparar el sonido de arranque del atrape (Constants::
+	// kCatchStartSoundLeadTime, Audio::CatchCue) -- una pequeña
+	// desincronización de ese arranque es aceptable (decisión del
+	// usuario), pero cambios grandes en la velocidad del regreso sin
+	// volver a probar en el juego pueden notarse.
 	inline constexpr float kReturnAcceleration = 4500.0f;
 	// Subido de 2.0 a 2.3 a petición del usuario, para dar presupuesto de
 	// tiempo extra al suavizado del tramo final (kReturnTailDistance/
@@ -150,10 +152,12 @@ namespace Constants
 	// "de imán" según su propio perfil, pero ese perfil avanza más
 	// despacio en tiempo real en el último tramo, dando la sensación de
 	// desaceleración hacia la mano sin tocar la fórmula física en sí.
-	// Como Audio::CatchSound recalcula su propia velocidad de cierre cada
-	// tick a partir de la distancia real (no de esta predicción), este
-	// suavizado se propaga solo al sonido -- más tiempo real disponible en
-	// el tramo final, menos brusco. Placeholders sin calibrar en el juego.
+	// El golpe final del atrape (Audio::CatchCue::PlayEnd) se dispara
+	// siempre en el instante real detectado de la llegada, así que este
+	// suavizado no lo afecta a él -- lo que sí suaviza es la propia
+	// llegada física (menos brusca visualmente) y da algo más de tiempo
+	// real de sobra antes de ese instante. Placeholders sin calibrar en
+	// el juego.
 	inline constexpr float kReturnTailDistance = 300.0f;
 	inline constexpr float kReturnTailMinRate = 0.35f;
 
@@ -356,23 +360,18 @@ namespace Constants
 	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
 
 	// -- Sonido de lanzamiento/vuelo/atrape (12.- AUDIO) --
-	// Comprobado en el juego: tres mecanismos distintos de resolución por
-	// EditorID (BSAudioManager::GetSoundHandleByName, TESForm::LookupByEditorID
-	// -- la tabla global de EditorID del motor, tipada y sin tipar -- y
-	// recorrer a mano TESDataHandler::GetFormArray<T>() comparando
-	// GetFormEditorID()) fallan igual para los Sound Marker/Sound Descriptor
-	// de este proyecto, aunque el registro exista, esté guardado y el
-	// plugin esté activo (confirmado: RE::PlaySound, que resuelve por otra
-	// vía interna, sí los reproduce). En vez de insistir con EditorID, se
-	// resuelve por FormID local + nombre de plugin
+	// Resolución por FormID local + nombre de plugin
 	// (RE::TESDataHandler::LookupForm<T>, verificado en TESDataHandler.h,
 	// ver Audio::ResolveSoundDescriptor en 12.- AUDIO/SoundResolver.cpp) --
-	// mecanismo distinto, ya verificado y en uso en este proyecto para
-	// resolver formularios por FormID (WeaponManager::RecoverOrReset). No
-	// vale un FormID absoluto fijo porque este plugin no es un master que
-	// siempre cargue en el índice 0 (a diferencia de Skyrim.esm) -- de ahí
-	// necesitar tanto el nombre del plugin como el FormID *local* (el que
-	// se ve en xEdit sin el byte de índice de carga).
+	// TESForm::LookupByEditorID (la tabla global de EditorID del motor) y
+	// BSAudioManager::GetSoundHandleByName no encuentran los Sound Marker/
+	// Sound Descriptor de este proyecto aunque el registro exista, esté
+	// guardado y el plugin esté activo (comprobado en el juego); el FormID
+	// local sí resuelve de forma fiable. No vale un FormID absoluto fijo
+	// porque este plugin no es un master que siempre cargue en el índice 0
+	// (a diferencia de Skyrim.esm) -- de ahí necesitar tanto el nombre del
+	// plugin como el FormID *local* (el que se ve en xEdit sin el byte de
+	// índice de carga).
 	inline constexpr std::string_view kSoundPluginName = "ThorMjolnir.esp";
 
 	// FormID local (visto en xEdit, sin el byte de índice de carga) del
@@ -391,60 +390,74 @@ namespace Constants
 	// placeholder que el anterior.
 	inline constexpr RE::FormID kFlightLoopSoundLocalFormID = 0x000000;
 
-	// FormID local del Sound Descriptor del golpe de atrape
-	// (CAP_ThorMjolnir_Sound_MjolnirCatch) -- apunta al Descriptor, no al
-	// Sound Marker que lo referencia (CAP_ThorMjolnir_MarkSound_MjolnirCatch,
-	// sin usar aquí, la indirección por el Marker no hace falta teniendo
-	// el FormID del Descriptor). No es el valor "en bruto" que muestra la
-	// Creation Kit (0x00EA61) -- ThorMjolnir.esp tiene el flag ESL activo
-	// (comprobado leyendo el header del propio .esp), así que el
-	// direccionamiento local real en tiempo de ejecución son los 12 bits
-	// bajos de ese valor: confirmado en el juego (Audio::ResolveSoundDescriptor
-	// probó ambos y solo este resolvió). Ver Audio::CatchSound
-	// (12.- AUDIO/CatchSound.cpp) para cómo se usa.
-	inline constexpr RE::FormID kCatchImpactSoundLocalFormID = 0x000A61;
+	// -- Sonido de atrape, en dos partes (12.- AUDIO/CatchSound) --
+	// Rediseño completo a petición del usuario, sustituyendo por completo
+	// el diseño anterior de un único sonido con ajuste continuo de
+	// velocidad de reproducción (Audio::CatchSound + RE::BSSoundHandle::
+	// SetFrequency cada tick, ver CHANGELOG.md para el porqué se abandonó):
+	// en vez de estirar/comprimir un único clip para que su golpe grabado
+	// caiga siempre justo en el instante de la llegada, el sonido se
+	// divide en dos Sound Descriptor independientes --
+	// CAP_ThorMjolnir_Sound_MjolnirCatch_Start (arranque, sonado con
+	// antelación; una pequeña desincronización de este arranque es
+	// aceptable, nunca perfecta) y CAP_ThorMjolnir_Sound_MjolnirCatch_End
+	// (golpe final, disparado siempre exactamente en el instante real
+	// detectado de la llegada, sin depender de ningún cálculo ni de que el
+	// arranque haya sonado). Ver Audio::CatchCue
+	// (12.- AUDIO/CatchSound.h/.cpp).
+	//
+	// FormID local de cada Sound Descriptor, dados por el usuario tal cual
+	// los muestra xEdit (byte de índice de carga "01" ya excluido). Sin
+	// enmascarar a 12 bits a propósito -- ThorMjolnir.esp tiene el flag
+	// ESL activo, así que Audio::ResolveSoundDescriptor reintenta solo con
+	// esa máscara si el valor en bruto no resuelve (ver ese archivo); se
+	// deja así en vez de hardcodear ya el valor enmascarado porque, a
+	// diferencia de kCatchStartSoundLocalFormID (mismo registro que el
+	// antiguo sonido de atrape único, ya confirmado en el juego que
+	// 0x00EA61 enmascara a 0x000A61), kCatchEndSoundLocalFormID es un
+	// registro nuevo sin confirmar todavía.
+	inline constexpr RE::FormID kCatchStartSoundLocalFormID = 0x00EA61;
+	inline constexpr RE::FormID kCatchEndSoundLocalFormID = 0x00F527;
 
-	// Instante (segundos) dentro del propio archivo de audio en el que cae
-	// el golpe/impacto real del sonido de atrape -- dado por el usuario
-	// (medido a oído/forma de onda). Es el presupuesto de "tiempo de clip"
-	// que Audio::CatchSound tiene disponible antes de tener que haber
-	// llegado al golpe grabado; ver ese archivo para cómo ajusta la
-	// velocidad de reproducción cada tick para que ese presupuesto encaje
-	// siempre en el tiempo real que quede hasta el atrape, sea cual sea la
-	// duración real del regreso (ya no depende de una predicción fija, así
-	// que no hace falta reajustar este valor si cambia la velocidad del
-	// regreso).
-	inline constexpr float kCatchImpactSoundLeadTime = 1.1270f;
+	// EditorID de cada Sound Descriptor -- no un std::string_view como
+	// kSoundPluginName porque RE::PlaySound(const char*) exige una cadena
+	// terminada en nulo (ver el porqué de esta llamada en el comentario de
+	// kFlightSoundHandleFlags más abajo).
+	inline constexpr const char* kCatchStartSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_Start";
+	inline constexpr const char* kCatchEndSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_End";
 
-	// Límites de la velocidad de reproducción (RE::BSSoundHandle::SetFrequency,
-	// 1.0 = velocidad/tono normal, asumido por convención habitual de
-	// motores de audio -- sin documentar en commonlibsse-ng) que
-	// Audio::CatchSound puede aplicar para comprimir o estirar su preámbulo
-	// y que el golpe grabado siga cayendo justo al atrapar. Acotado para
-	// evitar un tono absurdamente agudo/grave en lanzamientos extremos
-	// (muy cerca o con el jugador alejándose deprisa) -- placeholders,
-	// pendientes de ajustar en el juego.
-	inline constexpr float kCatchSoundMinFrequency = 0.5f;
-	inline constexpr float kCatchSoundMaxFrequency = 3.0f;
+	// Segundos antes del instante real de llegada en los que debe sonar el
+	// arranque -- dado por el usuario (medido a oído). Return::BeginReturn
+	// calcula, una sola vez al empezar todo el regreso -- temblor de
+	// desprendimiento incluido si el arma estaba clavada
+	// (Constants::kStickShudderDuration, tenido en cuenta explícitamente a
+	// petición del usuario, no solo el tramo de movimiento) -- el retardo
+	// desde ese instante hasta que toca disparar el arranque; ver
+	// Audio::CatchCue::UpdateStart.
+	inline constexpr float kCatchStartSoundLeadTime = 1.066f;
 
 	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
-	// documentado en commonlibsse-ng (ver BSAudioManager.h). El valor por
-	// defecto del propio header (0x1A) resuelve el handle con éxito
-	// (GetSoundHandle/Play devuelven true) pero no llega a sonar --
-	// confirmado en el juego que el Sound Descriptor en sí está bien (CK:
-	// el propio botón "Play" de Auditioning lo reproduce). Probando 0 en
-	// su lugar -- sin ninguna documentación de qué bit hace qué, es un
-	// ensayo empírico, no una corrección basada en evidencia de código.
+	// documentado en commonlibsse-ng (ver BSAudioManager.h), 0 sin más
+	// justificación que ser el valor neutro (probado también el 0x1A por
+	// defecto del propio header, sin diferencia observada). El propio
+	// GetSoundHandle/BSSoundHandle::Play() nunca llegaron a sonar en el
+	// juego pese a reportar éxito en cada paso, por muchas combinaciones
+	// de a_flags/posición/volumen/Output Model que se probaran -- lo que
+	// sí funciona, confirmado repetidas veces (ver Audio::CatchCue), es
+	// combinar tres cosas a la vez: un RE::BSSoundHandle "de cebado" sin
+	// posición dejado sonar por su cuenta (nunca detenido con Stop()),
+	// RE::PlaySound(editorID) en el mismo instante, y el
+	// RE::BSSoundHandle real arrancado con FadeInPlay(0) en vez de Play().
+	// Sin explicación firme de por qué -- documentado como comportamiento
+	// empírico confirmado, no como diagnóstico pendiente de limpiar.
 	inline constexpr std::uint32_t kFlightSoundHandleFlags = 0x0;
 
 	// Volumen explícito aplicado a todo RE::BSSoundHandle antes de
-	// Play() (ver 12.- AUDIO/FlightSound.cpp, CatchSound.cpp) -- un
+	// FadeInPlay() (ver 12.- AUDIO/FlightSound.cpp, CatchSound.cpp) -- un
 	// handle recién obtenido de GetSoundHandle no tiene garantizado
 	// arrancar a volumen audible por defecto (sin documentar en
-	// commonlibsse-ng), y RE::PlaySound -- que sí sonaba, confirmando que
-	// el Sound Descriptor en sí está bien -- pasa por una rutina interna
-	// distinta que probablemente sí lo fija. 1.0 = volumen máximo sin
-	// atenuar, antes de cualquier atenuación por distancia/categoría que
-	// aplique el propio motor.
+	// commonlibsse-ng). 1.0 = volumen máximo sin atenuar, antes de
+	// cualquier atenuación por distancia/categoría que aplique el propio
+	// motor.
 	inline constexpr float kSoundHandleVolume = 1.0f;
 }

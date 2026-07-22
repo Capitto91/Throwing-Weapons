@@ -8,7 +8,7 @@ namespace Audio
 {
 	// Resuelve el RE::BGSSoundDescriptorForm identificado por
 	// a_localFormID dentro del plugin a_modName -- usado tanto por
-	// Audio::FlightSound/PlaySoundOneShot como por Audio::CatchSound.
+	// Audio::FlightSound/PlaySoundOneShot como por Audio::CatchCue.
 	//
 	// Prueba primero RE::TESDataHandler::LookupForm<RE::BGSSoundDescriptorForm>
 	// directamente; si a_localFormID resulta ser el de un Sound Marker
@@ -19,9 +19,10 @@ namespace Audio
 	// aviso en el log) si no resuelve como ninguno de los dos.
 	RE::BGSSoundDescriptorForm* ResolveSoundDescriptor(RE::FormID a_localFormID);
 
-	// Precarga en caché los tres Sound Descriptor del arma (lanzamiento/
-	// vuelo/atrape, ver Constants.h) -- llamar una vez en
-	// Events::OnSKSEMessage(kDataLoaded), antes del primer lanzamiento.
+	// Precarga en caché los cuatro Sound Descriptor del arma (lanzamiento,
+	// vuelo, arranque y golpe final del atrape, ver Constants.h) -- llamar
+	// una vez en Events::OnSKSEMessage(kDataLoaded), antes del primer
+	// lanzamiento.
 	//
 	// Motivo (comprobado en el juego): el primer acceso a un recurso de
 	// audio nunca antes solicitado tarda en cargar de forma asíncrona --

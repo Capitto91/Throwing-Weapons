@@ -37,7 +37,7 @@ namespace Return
 		// insertarse antes sin duplicar esta lógica: se invoca tal cual al
 		// terminar el temblor si la réplica venía clavada, o de inmediato
 		// si venía en vuelo.
-		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks)
+		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks, std::shared_ptr<Audio::CatchCue> a_catchCue)
 		{
 			auto replica = a_replicaHandle.get();
 			if (!a_player || !replica) {
@@ -53,9 +53,10 @@ namespace Return
 			const float acceleration = ComputeReturnAcceleration(initialDistance);
 			const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
-			// Duración estimada del regreso, solo para el log -- ya no arma
-			// ningún disparo (ver Audio::CatchSound, que se reajusta cada
-			// tick con la distancia real en vez de una predicción única).
+			// Duración estimada del regreso -- para el log, y también la
+			// que ya usó Return::BeginReturn (antes de esta llamada) para
+			// calcular el retardo del sonido de arranque del atrape
+			// (a_catchCue, ver Audio::CatchCue).
 			const float estimatedDuration = ComputeReturnDuration(acceleration, initialDistance);
 
 			logs::info(
@@ -67,17 +68,12 @@ namespace Return
 			// movimiento del regreso más el loop posicional que sigue a la
 			// réplica mientras dura la curva de vuelta.
 			auto flightSound = std::make_shared<Audio::FlightSound>();
-			// Sonido de atrape sincronizado en tiempo real (ver
-			// 12.- AUDIO/CatchSound) -- no tiene ningún "Start" propio, se
-			// arranca solo dentro de su primer Update() cuando el tiempo
-			// restante estimado lo justifique.
-			auto catchSound = std::make_shared<Audio::CatchSound>();
 			if (auto* node3D = replica->Get3D()) {
 				Audio::PlaySoundOneShot(start, Constants::kThrowLaunchSoundLocalFormID);
 				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 			}
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchSound, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -152,24 +148,19 @@ namespace Return
 				a_refr.SetPosition(nextPos);
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
 
-				// Misma distancia arma-mano para las dos cosas que dependen
-				// de ella: el sonido de atrape se reajusta cada tick con
-				// datos reales (ver Audio::CatchSound) en vez de una
-				// predicción hecha una sola vez al principio, así que se ata
-				// a la misma señal que decide la llegada.
-				const float distanceToHand = (handPos - nextPos).Length();
-				catchSound->Update(nextPos, distanceToHand, a_deltaSeconds);
+				// Sonido de arranque del atrape (ver Audio::CatchCue): su
+				// reloj interno ya viene contando desde Return::BeginReturn
+				// (temblor incluido si lo hubo), así que aquí solo hay que
+				// seguir alimentándolo con el tiempo de este tick.
+				catchCue->UpdateStart(nextPos, a_deltaSeconds);
 
+				const float distanceToHand = (handPos - nextPos).Length();
 				if (distanceToHand <= Constants::kReturnArrivalDistance) {
 					logs::info("Return::BeginReturnMovement: la réplica ha llegado a la mano.");
-					// Salvaguarda: caso degenerado en el que CatchSound
-					// nunca llegó a arrancar (la velocidad de cierre nunca
-					// fue positiva) -- mejor un golpe suelto sin
-					// sincronizar que ningún sonido.
-					if (!catchSound->HasStarted()) {
-						logs::warn("Return::BeginReturnMovement: CatchSound nunca llegó a arrancar (velocidad de cierre nunca positiva), disparando sonido suelto sin sincronizar.");
-						Audio::PlaySoundOneShot(handPos, Constants::kCatchImpactSoundLocalFormID);
-					}
+					// Golpe final del atrape: siempre, sin condición (ver
+					// Audio::CatchCue::PlayEnd), no depende de que el
+					// arranque haya llegado a sonar.
+					Audio::CatchCue::PlayEnd(handPos);
 					onArrived();
 					return false;
 				}
@@ -183,14 +174,35 @@ namespace Return
 
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, bool a_wasStuck, ReturnCallbacks a_callbacks)
 	{
-		if (!a_player || !a_replicaHandle.get()) {
+		auto replica = a_replicaHandle.get();
+		if (!a_player || !replica) {
 			logs::warn("Return::BeginReturn: sin jugador o réplica válida, se aborta el regreso.");
 			a_callbacks.onArrived();
 			return;
 		}
 
+		// Retardo del sonido de arranque del atrape (Audio::CatchCue),
+		// calculado una única vez aquí -- antes incluso del temblor de
+		// desprendimiento si lo hay -- para que su reloj interno cuente
+		// ese temblor (Constants::kStickShudderDuration) además del
+		// tramo de movimiento, tal como pidió el usuario. Misma distancia/
+		// aceleración/duración prevista que recalculará luego
+		// BeginReturnMovement para la curva real -- duplicado a propósito
+		// (esta es solo una estimación para el sonido, no necesita
+		// compartir estado con el cálculo de la trayectoria real).
+		const float initialDistanceForCue = (GetHandPosition(a_player) - replica->GetPosition()).Length();
+		const float accelerationForCue = ComputeReturnAcceleration(initialDistanceForCue);
+		const float predictedMovementDuration = ComputeReturnDuration(accelerationForCue, initialDistanceForCue);
+		const float shudderDuration = a_wasStuck ? Constants::kStickShudderDuration : 0.0f;
+		// std::max evitado a propósito: Windows.h define max como macro
+		// (mismo problema ya documentado en el proyecto para std::min en
+		// WeaponTrail.cpp), así que un ternario aquí en su lugar.
+		const float rawStartDelay = shudderDuration + predictedMovementDuration - Constants::kCatchStartSoundLeadTime;
+		const float startDelay = rawStartDelay > 0.0f ? rawStartDelay : 0.0f;
+		auto catchCue = std::make_shared<Audio::CatchCue>(startDelay);
+
 		if (!a_wasStuck) {
-			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks));
+			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks), catchCue);
 			return;
 		}
 
@@ -212,21 +224,24 @@ namespace Return
 		// desde cero, que producía un salto visual perceptible al empezar
 		// el temblor (reportado por el usuario como "cambia de posición").
 		RE::NiMatrix3 baseRotation;
-		if (auto replica = a_replicaHandle.get()) {
-			if (auto* root = replica->Get3D()) {
-				if (auto* spinNode = root->GetObjectByName(Constants::kWeaponSpinNodeName)) {
-					baseRotation = spinNode->local.rotate;
-				}
+		if (auto* root = replica->Get3D()) {
+			if (auto* spinNode = root->GetObjectByName(Constants::kWeaponSpinNodeName)) {
+				baseRotation = spinNode->local.rotate;
 			}
 		}
 
 		logs::info("Return::BeginReturn: arma clavada, temblor de desprendimiento ({:.2f}s) antes de regresar.", Constants::kStickShudderDuration);
 
-		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			elapsed += a_deltaSeconds;
 
+			// El arma no se mueve durante el temblor, pero el reloj del
+			// sonido de arranque (Audio::CatchCue) sigue contando -- ver
+			// Return::BeginReturn para el porqué.
+			catchCue->UpdateStart(a_refr.GetPosition(), a_deltaSeconds);
+
 			if (elapsed >= Constants::kStickShudderDuration) {
-				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks));
+				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue));
 				return false;
 			}
 

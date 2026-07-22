@@ -69,7 +69,7 @@ namespace Audio
 			return;
 		}
 
-		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kFlightLoopSoundLocalFormID, Constants::kCatchImpactSoundLocalFormID }) {
+		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kFlightLoopSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID }) {
 			if (auto* descriptor = ResolveSoundDescriptor(localFormID)) {
 				audioManager->PrecacheDescriptor(descriptor, 0);
 				logs::info("Audio::PrecacheAll: precacheado FormID local 0x{:06X}.", localFormID);
