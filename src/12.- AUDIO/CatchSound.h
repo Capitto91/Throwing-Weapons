@@ -55,11 +55,14 @@ namespace Audio
 
 	private:
 		RE::BSSoundHandle handle;
-		// Diagnóstico temporal (ver CatchSound.cpp): handle gemelo sin
-		// posición/volumen, mantenido vivo (no se detiene en el mismo
-		// tick) para poder observar su IsPlaying()/GetDuration() en ticks
-		// posteriores, no solo en el instante de Play().
-		RE::BSSoundHandle diagnosticHandle;
+		// Cebado empírico: un segundo BSSoundHandle, sin posición, mantenido
+		// vivo (sin Stop() hasta el destructor) -- en las pruebas en el
+		// juego, "handle" solo llegó a sonar en la configuración que
+		// también tenía este segundo handle vivo en paralelo. Pararlo
+		// inmediatamente después de arrancarlo (probado) volvió a dejar
+		// "handle" mudo. Sin explicación confirmada todavía -- ver
+		// CHANGELOG.md para el historial de depuración.
+		RE::BSSoundHandle primingHandle;
 		bool              started{ false };
 		float             consumedClipTime{ 0.0f };
 

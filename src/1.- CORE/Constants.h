@@ -120,7 +120,13 @@ namespace Constants
 	// coincida con la llegada real. Cambiar la velocidad del regreso sin
 	// volver a probar ese sonido en el juego puede desincronizarlo.
 	inline constexpr float kReturnAcceleration = 4500.0f;
-	inline constexpr float kReturnMaxDuration = 2.0f;
+	// Subido de 2.0 a 2.3 a petición del usuario, para dar presupuesto de
+	// tiempo extra al suavizado del tramo final (kReturnTailDistance/
+	// kReturnTailMinRate más abajo) sin acortar el resto del recorrido --
+	// ese suavizado alarga la duración real un poco más allá de lo que
+	// predice Return::ComputeReturnDuration (que no lo conoce, ver esa
+	// función), así que este límite necesitaba margen de sobra.
+	inline constexpr float kReturnMaxDuration = 2.3f;
 
 	// Exponente del perfil de aceleración creciente de arriba. 2 recupera
 	// la aceleración constante de siempre; valores mayores hacen que el
@@ -130,6 +136,26 @@ namespace Constants
 	// constante). Placeholder intermedio entre ambos, pendiente de
 	// calibrar en el juego.
 	inline constexpr float kReturnAccelerationExponent = 2.5f;
+
+	// Suavizado del tramo final de llegada (a petición del usuario, para
+	// que el golpe/sonido de atrape no sea abrupto) -- NO invierte el
+	// perfil de aceleración creciente del punto 8 (seguiría contradiciendo
+	// el documento de diseño), solo lo atenúa en el último tramo: una vez
+	// la distancia a la mano cae por debajo de kReturnTailDistance, el
+	// tiempo que avanza Return::BeginReturnMovement hacia
+	// Return::ComputeTraveledDistance se escala por un factor que baja
+	// suavemente (curva suave tipo smoothstep, no un corte lineal brusco)
+	// de 1.0 (velocidad de tiempo normal, fuera del tramo final) a
+	// kReturnTailMinRate (justo al llegar) -- el arma sigue acelerando
+	// "de imán" según su propio perfil, pero ese perfil avanza más
+	// despacio en tiempo real en el último tramo, dando la sensación de
+	// desaceleración hacia la mano sin tocar la fórmula física en sí.
+	// Como Audio::CatchSound recalcula su propia velocidad de cierre cada
+	// tick a partir de la distancia real (no de esta predicción), este
+	// suavizado se propaga solo al sonido -- más tiempo real disponible en
+	// el tramo final, menos brusco. Placeholders sin calibrar en el juego.
+	inline constexpr float kReturnTailDistance = 300.0f;
+	inline constexpr float kReturnTailMinRate = 0.35f;
 
 	// Distancia a la que se considera que el arma ha llegado a la mano del
 	// jugador durante el regreso. Reutilizado tal cual.

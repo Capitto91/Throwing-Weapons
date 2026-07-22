@@ -34,10 +34,15 @@ namespace Audio
 		}
 
 		handle.SetObjectToFollow(a_node);
-		// Volumen explícito antes de Play() -- ver Constants::kSoundHandleVolume.
+		// Volumen explícito antes de FadeInPlay() -- ver
+		// Constants::kSoundHandleVolume. FadeInPlay(0) en vez de Play():
+		// con Play() el BSSoundHandle nunca llegaba a sonar en el juego
+		// pese a reportar éxito (ver Audio::CatchSound::Update, mismo
+		// problema comprobado repetidamente ahí) -- FadeInPlay(0) sí lo
+		// hizo sonar.
 		const bool volumeSet = handle.SetVolume(Constants::kSoundHandleVolume);
-		const bool played = handle.Play();
-		logs::info("Audio::FlightSound::Start: SetVolume()={}, Play()={}.", volumeSet, played);
+		const bool played = handle.FadeInPlay(0);
+		logs::info("Audio::FlightSound::Start: SetVolume()={}, FadeInPlay()={}.", volumeSet, played);
 	}
 
 	void PlaySoundOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID)
@@ -56,9 +61,11 @@ namespace Audio
 		}
 
 		handle.SetPosition(a_position);
-		// Volumen explícito antes de Play() -- ver Constants::kSoundHandleVolume.
+		// Volumen explícito antes de FadeInPlay() -- ver
+		// Constants::kSoundHandleVolume. FadeInPlay(0) en vez de Play(),
+		// mismo motivo que en FlightSound::Start más arriba.
 		const bool volumeSet = handle.SetVolume(Constants::kSoundHandleVolume);
-		const bool played = handle.Play();
-		logs::info("Audio::PlaySoundOneShot: SetVolume()={}, Play()={}.", volumeSet, played);
+		const bool played = handle.FadeInPlay(0);
+		logs::info("Audio::PlaySoundOneShot: SetVolume()={}, FadeInPlay()={}.", volumeSet, played);
 	}
 }

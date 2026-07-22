@@ -77,7 +77,7 @@ namespace Return
 				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 			}
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchSound, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchSound, loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -111,7 +111,22 @@ namespace Return
 					loggedHandAxisDiagnostic = true;
 				}
 
-				const float traveled = ComputeTraveledDistance(acceleration, elapsed);
+				// Suavizado del tramo final (ver Constants::kReturnTailDistance):
+				// el tiempo "de progreso" que alimenta a
+				// ComputeTraveledDistance avanza más despacio que el tiempo
+				// real cuanto más cerca está la réplica de la mano -- el
+				// perfil de aceleración creciente del punto 8 no cambia de
+				// forma, solo se recorre más lento en tiempo real en el
+				// último tramo. Se mide con la distancia del tick anterior
+				// (previousPos), no de nextPos (todavía sin calcular), igual
+				// que ya hace Collision::SweepRaycast unas líneas más abajo.
+				const float previousDistanceToHand = (handPos - previousPos).Length();
+				const float tailBlend = Constants::kReturnTailDistance > 0.0f ? std::clamp(previousDistanceToHand / Constants::kReturnTailDistance, 0.0f, 1.0f) : 1.0f;
+				const float smoothTailBlend = tailBlend * tailBlend * (3.0f - 2.0f * tailBlend);
+				const float timeRate = Constants::kReturnTailMinRate + (1.0f - Constants::kReturnTailMinRate) * smoothTailBlend;
+				progressElapsed += a_deltaSeconds * timeRate;
+
+				const float traveled = ComputeTraveledDistance(acceleration, progressElapsed);
 				const float t = initialDistance > 0.0f ? std::clamp(traveled / initialDistance, 0.0f, 1.0f) : 1.0f;
 
 				const auto nextPos = Math::EvaluateQuadraticBezier(start, controlPoint, handPos, t);
