@@ -1,5 +1,6 @@
 # dot folders
 .cache/
+.claude/
 .idea/
 .vs/
 .vscode/
@@ -8,6 +9,7 @@
 # folders
 build/
 vs*/
+_reference/
 
 # files
 *.zip

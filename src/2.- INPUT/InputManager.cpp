@@ -109,4 +109,9 @@ namespace Input
 
 		return RE::BSEventNotifyControl::kContinue;
 	}
+
+	void SetMovementLocked(bool a_locked)
+	{
+		RE::ControlMap::GetSingleton()->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, !a_locked, true);
+	}
 }

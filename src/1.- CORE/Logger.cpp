@@ -8,6 +8,6 @@ namespace Logger
 	void Init()
 	{
 		logs::init();
-		logs::info("Throwing Weapons: logger inicializado.");
+		logs::info("ThorMjolnir: logger inicializado.");
 	}
 }

@@ -4,10 +4,13 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "2.- INPUT/InputManager.h"
 #include "4.- THROW/ThrowManager.h"
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/WeaponAnimation.h"
+#include "10.- EVENTS/EventManager.h"
 
 #include <thread>
 
@@ -46,7 +49,7 @@ namespace Weapon
 	void WeaponManager::OnAimButtonUp()
 	{
 		if (weaponState.GetState() == State::kAiming) {
-			ThrowWeapon();
+			BeginThrowAnimation();
 		}
 	}
 
@@ -62,6 +65,14 @@ namespace Weapon
 		weaponState.SetStuckActorHandle({});
 		weaponState.SetActiveTickToken({});
 		weaponState.SetState(State::kInHand);
+
+		// Por si el estado anterior era kThrowing (partida guardada/cargada
+		// a mitad de esa ventana, dentro de la misma sesión del proceso):
+		// sin esto, el movimiento se quedaría bloqueado para siempre. Llamar
+		// aquí sin comprobar el estado previo es seguro -- desbloquear un
+		// movimiento que ya estaba desbloqueado es un no-op inofensivo (ver
+		// Input::SetMovementLocked).
+		Input::SetMovementLocked(false);
 	}
 
 	WeaponManager::SaveCycleData WeaponManager::CaptureSaveData() const
@@ -146,6 +157,21 @@ namespace Weapon
 			// perdió durante la carga.
 			weaponState.SetState(State::kInHand);
 			break;
+		case State::kThrowing:
+			// El arma tampoco ha llegado a desequiparse todavía en este
+			// estado (eso solo pasa en ThrowWeapon, al recibir la anotación
+			// de liberación) -- mismo caso que kAiming, pero además hay que
+			// apagar la graph variable, o el submod de OAR se quedaría
+			// sustituyendo el ataque ligero indefinidamente, y desbloquear
+			// el movimiento (ver BeginThrowAnimation) o se quedaría
+			// bloqueado para siempre.
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Animation::SetThrowTrigger(*player, false);
+				Animation::SetAnimationDriven(*player, false);
+			}
+			Input::SetMovementLocked(false);
+			weaponState.SetState(State::kInHand);
+			break;
 		default:
 			break;
 		}
@@ -160,6 +186,12 @@ namespace Weapon
 		if (!boundWeapon) {
 			return;
 		}
+
+		// Registro perezoso del sink de liberación de Lanzar (ver
+		// EventManager.h): garantiza que ya está enganchado antes de que
+		// pueda hacer falta, sin depender de kNewGame/kPostLoadGame -- que
+		// `coc` desde la consola del menú principal se salta por completo.
+		Events::EnsureAnimationSinksRegistered();
 
 		weaponState.SetActiveWeapon(boundWeapon);
 		weaponState.SetState(State::kAiming);
@@ -176,16 +208,122 @@ namespace Weapon
 		player->DrawWeaponMagicHands(true);
 	}
 
+	void WeaponManager::BeginThrowAnimation()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+
+		weaponState.SetState(State::kThrowing);
+
+		// Bloquea el movimiento mientras dura la animación de Lanzar:
+		// atacar mientras te mueves (incluso si empiezas a moverte a mitad
+		// del clip, no solo al dispararlo) escala automáticamente a un
+		// power attack direccional vanilla (1HM_AttackPowerFwd/Bwd/Left/
+		// Right) -- un clip que el submod de OAR no sustituye, así que se ve
+		// y aplica daño como un ataque real en vez de reproducir Throw.hkx.
+		// Comprobado en el juego con el Animation Event Log de OAR (ver
+		// _reference/PLAN-OAR.md): moverse antes de la anotación de
+		// liberación, "Pie.MjolnirThrow" nunca llega. Desbloqueado en
+		// OnThrowReleaseAnimationEvent (cubre tanto la anotación real como
+		// la red de seguridad, ver más abajo) y en los caminos de
+		// recuperación (OnLoadingScreenClosed/ResetToInHand).
+		Input::SetMovementLocked(true);
+
+		// Prueba (ver Constants::kAnimationDrivenGraphVariable): variable
+		// vanilla, no propia -- a ver si evita que el motor decida "power
+		// attack direccional" cuando el jugador ya llevaba movimiento al
+		// soltar el botón, que Input::SetMovementLocked por sí solo no
+		// evita (bloquea input *nuevo*, no el momentum ya acumulado).
+		Animation::SetAnimationDriven(*player, true);
+
+		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): la graph variable
+		// gatea el submod de OAR que sustituye Constants::kThrowAnimationEvent
+		// (un evento vanilla ya existente, ninguno nuevo) por Throw.hkx.
+		Animation::SetThrowTrigger(*player, true);
+		const bool notifyOk = player->NotifyAnimationGraph(Constants::kThrowAnimationEvent);
+
+		// Log temporal de diagnóstico (retirar una vez confirmado en el
+		// juego el ciclo real, ver _reference/PLAN-OAR.md Fase 3): confirma
+		// que la escritura de la graph variable se lee de vuelta como se
+		// espera, y si NotifyAnimationGraph reporta éxito, antes de disparar
+		// el evento.
+		float readBack = -1.0f;
+		player->GetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, readBack);
+		logs::info("WeaponManager::BeginThrowAnimation: graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+			Constants::kThrowTriggerGraphVariable, readBack, Constants::kThrowAnimationEvent, notifyOk);
+
+		// Red de seguridad: el lanzamiento físico debe ocurrir siempre, tenga
+		// o no confirmación de la anotación real (decisión del usuario,
+		// 2026-07-29) -- lo que se sigue depurando es solo la sincronía
+		// visual con la animación, nunca a costa de dejar el arma inutilizable
+		// si esa sincronía falla. Mismo patrón hilo-que-duerme-y-reencola del
+		// resto del proyecto; OnThrowReleaseAnimationEvent ya comprueba el
+		// estado, así que llamarla de más aquí si la anotación real llegó
+		// antes es inofensivo (no-op).
+		std::thread([this]() {
+			std::this_thread::sleep_for(Constants::kThrowReleaseFallbackWindow);
+			SKSE::GetTaskInterface()->AddTask([this]() {
+				if (weaponState.GetState() == State::kThrowing) {
+					logs::info("WeaponManager: red de seguridad disparada -- la anotación de liberación nunca llegó.");
+				}
+				OnThrowReleaseAnimationEvent();
+			});
+		}).detach();
+	}
+
+	void WeaponManager::OnThrowReleaseAnimationEvent()
+	{
+		if (weaponState.GetState() != State::kThrowing) {
+			return;
+		}
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			Animation::SetThrowTrigger(*player, false);
+			Animation::SetAnimationDriven(*player, false);
+		}
+		Input::SetMovementLocked(false);
+
+		ThrowWeapon();
+	}
+
 	void WeaponManager::ThrowWeapon()
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* weapon = weaponState.GetActiveWeapon();
 
 		if (player && weapon) {
+			// El arma real se oculta primero, no se desequipa todavía:
+			// llamar a UnequipObject en este mismo instante corta Throw.hkx
+			// a mitad y salta a la pose de desarmado -- comprobado en el
+			// juego, ver Constants::kThrowReleaseVisualHoldDuration. La
+			// réplica (creada más abajo) toma el relevo visual de inmediato,
+			// así que ocultar basta para el punto 2 ("el arma original se
+			// vuelve invisible"); el desequipado real ("...y se desactiva",
+			// necesario para el punto 4: puños libres) se difiere.
+			Animation::SetEquippedWeaponHidden(*player, true);
+
 			// Sin cola y aplicación inmediata: un desequipar encolado podía
 			// perderse en silencio si se dispara desde un evento de carga
-			// (comprobado en la iteración anterior).
-			RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+			// (comprobado en la iteración anterior). Diferido el margen de
+			// arriba en vez de hacerlo aquí mismo, por el motivo ya
+			// explicado. Comprueba el estado al despertar por si el ciclo ya se
+			// completó y reinició del todo antes de que venza el margen
+			// (arma ya de vuelta en la mano, o una aiming/throwing nueva en
+			// marcha) -- en cualquiera de esos casos este desequipado ya
+			// quedaría obsoleto y no debe tocar el arma de un ciclo
+			// distinto.
+			std::thread([this, player, weapon]() {
+				std::this_thread::sleep_for(Constants::kThrowReleaseVisualHoldDuration);
+				SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
+					const auto state = weaponState.GetState();
+					if (state != State::kThrown && state != State::kStuck && state != State::kReturning) {
+						return;
+					}
+					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+				});
+			}).detach();
 
 			Throw::LaunchCallbacks callbacks;
 			callbacks.onSpawned = [this](RE::ObjectRefHandle a_handle) {

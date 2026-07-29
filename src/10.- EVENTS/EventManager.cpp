@@ -3,6 +3,7 @@
 
 #include "10.- EVENTS/EventManager.h"
 
+#include "1.- CORE/Constants.h"
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
@@ -36,7 +37,7 @@ namespace Events
 		// Identificador del bloque de este plugin dentro del cosave (para
 		// SetUniqueID) y del registro concreto del ciclo dentro de ese
 		// bloque (para OpenRecord) — dos cosas distintas.
-		constexpr std::uint32_t kPluginUniqueID = Fnv1aHash32("Capitto91::Throwing Weapons::cosave");
+		constexpr std::uint32_t kPluginUniqueID = Fnv1aHash32("Capitto91::ThorMjolnir::cosave");
 		constexpr std::uint32_t kCycleRecordType = static_cast<std::uint32_t>('CYCL');
 		constexpr std::uint32_t kCycleRecordVersion = 1;
 
@@ -193,6 +194,43 @@ namespace Events
 			~LoadingScreenWatcher() override = default;
 		};
 
+		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): detecta la anotación
+		// de liberación de Lanzar (Payload Interpreter, tag siempre "Pie" --
+		// el contenido real va en payload, ver CLAUDE.md) mientras se
+		// reproduce Throw.hkx vía Open Animation Replacer, y dispara el
+		// lanzamiento físico real en ese instante en vez de al soltar el
+		// botón. Confirmado en el juego de punta a punta (2026-07-29): el
+		// sink recibe la anotación real y sincroniza correctamente con
+		// varios ciclos completos de lanzar/recuperar.
+		class ThrowReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
+		{
+		public:
+			static ThrowReleaseWatcher* GetSingleton()
+			{
+				static ThrowReleaseWatcher singleton;
+				return &singleton;
+			}
+
+			ThrowReleaseWatcher(const ThrowReleaseWatcher&) = delete;
+			ThrowReleaseWatcher(ThrowReleaseWatcher&&) = delete;
+			ThrowReleaseWatcher& operator=(const ThrowReleaseWatcher&) = delete;
+			ThrowReleaseWatcher& operator=(ThrowReleaseWatcher&&) = delete;
+
+		protected:
+			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
+			{
+				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kThrowReleasePayload) {
+					Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
+				}
+
+				return RE::BSEventNotifyControl::kContinue;
+			}
+
+		private:
+			ThrowReleaseWatcher() = default;
+			~ThrowReleaseWatcher() override = default;
+		};
+
 		void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
 		{
 			switch (a_message->type) {
@@ -275,5 +313,19 @@ namespace Events
 		// fiable.
 		SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
 		logs::info("EventManager inicializado (a la espera de kInputLoaded/kDataLoaded).");
+	}
+
+	void EnsureAnimationSinksRegistered()
+	{
+		static bool registered = false;
+		if (registered) {
+			return;
+		}
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			player->AddAnimationGraphEventSink(ThrowReleaseWatcher::GetSingleton());
+			registered = true;
+			logs::info("Events::EnsureAnimationSinksRegistered: ThrowReleaseWatcher registrado.");
+		}
 	}
 }
