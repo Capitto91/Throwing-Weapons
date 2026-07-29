@@ -25,9 +25,22 @@ namespace Weapon
 	void WeaponManager::OnAimButtonDown()
 	{
 		switch (weaponState.GetState()) {
-		case State::kInHand:
+		case State::kInHand: {
+			// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el
+			// arma envainada: la primera pulsación solo desenvaina, no
+			// empieza a apuntar -- hace falta una segunda pulsación ya con
+			// el arma desenvainada. Sin esto, el arma salía disparada sin
+			// llegar a reproducir Throw.hkx: el propio desenvainado (que
+			// tiene su propia animación, con tiempo real) todavía no había
+			// terminado en el instante en que se disparaba attackStart.
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (player && !player->AsActorState()->IsWeaponDrawn()) {
+				player->DrawWeaponMagicHands(true);
+				break;
+			}
 			BeginAiming();
 			break;
+		}
 		case State::kAiming:
 			// Solo se puede recibir una pulsación nueva estando ya
 			// "apuntando" si nos perdimos el botón de soltar anterior (p.ej.
@@ -196,16 +209,14 @@ namespace Weapon
 		weaponState.SetActiveWeapon(boundWeapon);
 		weaponState.SetState(State::kAiming);
 
-		// Fuerza el arma a "desenvainada" desde la primera pulsación de G,
-		// sea cual sea el estado previo (envainada en la cintura, o ya
-		// desenvainada) -- decisión tomada con el usuario, no cubierta por
-		// Mecanica del arma.txt (no menciona envainado/desenvainado).
-		// Actor::DrawWeaponMagicHands es directo de Actor (offset 0, sin
-		// riesgo de versión); sin cuerpo documentado en commonlibsse-ng,
-		// así que si llamarla con el arma ya desenvainada resulta no ser
-		// idempotente (blip visual al pulsar G de nuevo), habría que
-		// comprobar antes con player->AsActorState()->IsWeaponDrawn().
-		player->DrawWeaponMagicHands(true);
+		// El arma ya se desenvainó antes de llegar aquí -- ver
+		// OnAimButtonDown, que ahora exige una pulsación previa dedicada
+		// solo a desenvainar (igual que el ataque cuerpo a cuerpo vanilla
+		// con el arma envainada) antes de empezar a apuntar de verdad. No
+		// se llama a DrawWeaponMagicHands aquí para no arriesgar el blip
+		// visual de llamarla con el arma ya desenvainada (no hay garantía
+		// de que sea idempotente, sin cuerpo documentado en
+		// commonlibsse-ng).
 	}
 
 	void WeaponManager::BeginThrowAnimation()
