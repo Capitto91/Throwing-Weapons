@@ -81,11 +81,14 @@ namespace Weapon
 
 		// Por si el estado anterior era kThrowing (partida guardada/cargada
 		// a mitad de esa ventana, dentro de la misma sesión del proceso):
-		// sin esto, el movimiento se quedaría bloqueado para siempre. Llamar
-		// aquí sin comprobar el estado previo es seguro -- desbloquear un
-		// movimiento que ya estaba desbloqueado es un no-op inofensivo (ver
-		// Input::SetMovementLocked).
+		// sin esto, el movimiento/la graph variable se quedarían activos
+		// para siempre. Llamar aquí sin comprobar el estado previo es
+		// seguro -- desactivar algo que ya estaba desactivado es un no-op
+		// inofensivo (ver Input::SetMovementLocked/Animation::SetAnimationDriven).
 		Input::SetMovementLocked(false);
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			Animation::SetAnimationDriven(*player, false);
+		}
 	}
 
 	WeaponManager::SaveCycleData WeaponManager::CaptureSaveData() const
@@ -292,10 +295,15 @@ namespace Weapon
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetThrowTrigger(*player, false);
-			Animation::SetAnimationDriven(*player, false);
 		}
-		Input::SetMovementLocked(false);
 
+		// Input::SetMovementLocked/Animation::SetAnimationDriven NO se
+		// desactivan aquí todavía -- desactivarlos en este mismo instante,
+		// con el jugador todavía moviéndose, producía un tirón visual
+		// brusco (comprobado en el juego con el Animation Event Log: el
+		// personaje pasaba de golpe de la pose animada al reasumir el
+		// control de movimiento real a mitad de zancada). Se desactivan
+		// junto con el desequipado real, ver ThrowWeapon.
 		ThrowWeapon();
 	}
 
@@ -333,6 +341,12 @@ namespace Weapon
 						return;
 					}
 					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+
+					// Desactivados aquí, junto con el desequipado real, no
+					// en OnThrowReleaseAnimationEvent -- ver el comentario
+					// de allí.
+					Animation::SetAnimationDriven(*player, false);
+					Input::SetMovementLocked(false);
 				});
 			}).detach();
 
