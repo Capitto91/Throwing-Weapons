@@ -8,6 +8,7 @@
 # folders
 build/
 vs*/
+_reference/
 
 # files
 *.zip

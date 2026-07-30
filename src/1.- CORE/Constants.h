@@ -23,7 +23,7 @@ namespace Constants
 
 	// Ruta del archivo de configuración de controles, relativa a la carpeta
 	// de instalación del juego.
-	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThrowingWeapons.ini";
+	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 
 	// Intervalo real de sondeo del bucle de movimiento manual (ida y
 	// vuelta comparten la misma primitiva, ver CLAUDE.md "patrón de

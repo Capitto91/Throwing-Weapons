@@ -10,7 +10,7 @@
 namespace Combat
 {
 	// Carga la configuración de daño desde el INI
-	// (Data/SKSE/Plugins/ThrowingWeapons.ini, sección [Damage]): modo
+	// (Data/SKSE/Plugins/ThorMjolnir.ini, sección [Damage]): modo
 	// (Direct/Level) y sus parámetros. Debe llamarse una única vez al
 	// arrancar (ver Events::Init).
 	void Init();

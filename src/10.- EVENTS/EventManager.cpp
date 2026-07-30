@@ -36,7 +36,7 @@ namespace Events
 		// Identificador del bloque de este plugin dentro del cosave (para
 		// SetUniqueID) y del registro concreto del ciclo dentro de ese
 		// bloque (para OpenRecord) — dos cosas distintas.
-		constexpr std::uint32_t kPluginUniqueID = Fnv1aHash32("Capitto91::Throwing Weapons::cosave");
+		constexpr std::uint32_t kPluginUniqueID = Fnv1aHash32("Capitto91::ThorMjolnir::cosave");
 		constexpr std::uint32_t kCycleRecordType = static_cast<std::uint32_t>('CYCL');
 		constexpr std::uint32_t kCycleRecordVersion = 1;
 
