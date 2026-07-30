@@ -40,4 +40,17 @@ namespace Input
 
 		AimBinding aimBinding{};
 	};
+
+	// Bloquea/desbloquea el movimiento del jugador (RE::ControlMap, no una
+	// graph variable propia) -- usado por WeaponManager durante
+	// State::kThrowing para evitar el power attack direccional vanilla
+	// (moverse mientras se ataca escala automáticamente a
+	// 1HM_AttackPowerFwd/Bwd/Left/Right, un clip que el submod de OAR de
+	// Lanzar no sustituye, así que se ve y se comporta como un ataque real
+	// en vez de Throw.hkx -- comprobado en el juego con el Animation Event
+	// Log de OAR, ver _reference/PLAN-OAR.md). a_storeState=true en la
+	// llamada real (ver InputManager.cpp) para que el bloqueo/desbloqueo
+	// componga bien si algún otro sistema también togglea el movimiento a
+	// la vez, en vez de pisarse.
+	void SetMovementLocked(bool a_locked);
 }

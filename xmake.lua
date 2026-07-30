@@ -19,11 +19,16 @@ add_requires("simpleini")
 --
 -- Nombre del target (no el del proyecto, fijado arriba con set_project) --
 -- la regla commonlibsse-ng.plugin calcula installdir como
--- XSE_TES5_MODS_PATH/<nombre del target> (ver lib/commonlibsse-ng/xmake.lua).
--- "ThorMjolnir" para que el DLL/INI compilados caigan en la misma carpeta de
--- mod que el resto del mod real (nif/sonidos/ESP, gestionados fuera de este
--- repo) en vez de en una carpeta separada -- decisión del usuario, solo
--- afecta al despliegue, no a cómo se organiza el código fuente en este repo.
+-- XSE_TES5_MODS_PATH/<nombre del target> (ver
+-- lib/commonlibsse-ng/xmake.lua). "ThorMjolnir" en vez de "Throwing-Weapons"
+-- para que el DLL/INI compilados caigan en la misma carpeta de mod que el
+-- resto del mod real (nif/sonidos/ESP, gestionados fuera de este repo) en
+-- vez de en una carpeta separada -- decisión del usuario, solo afecta al
+-- despliegue, no a cómo se organiza el código fuente en este repo. Probado
+-- un after_config(...) propio para sobrescribir installdir sin renombrar el
+-- target -- descartado: xmake solo invoca after_config de *reglas*
+-- (config_target en modules/private/utils/target.lua), no del target en sí,
+-- así que nunca llegaba a ejecutarse.
 target("ThorMjolnir")
     add_rules("commonlibsse-ng.plugin", {
         name = "ThorMjolnir",

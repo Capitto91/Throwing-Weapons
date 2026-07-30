@@ -18,6 +18,9 @@ namespace Weapon
 	{
 		kInHand,    // Equipada normalmente en la mano derecha.
 		kAiming,    // Botón pulsado, apuntando antes de soltar.
+		kThrowing,  // Botón soltado: reproduciendo Throw.hkx (vía OAR), arma
+		            // todavía físicamente en la mano hasta que llega la
+		            // anotación de liberación (Fase 3, _reference/PLAN-OAR.md).
 		kThrown,    // Lanzada: fuera de la mano.
 		kStuck,     // Clavada en un enemigo o superficie.
 		kReturning  // Volviendo hacia el jugador.

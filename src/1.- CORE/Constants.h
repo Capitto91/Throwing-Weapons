@@ -25,6 +25,69 @@ namespace Constants
 	// de instalación del juego.
 	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 
+	// -- Lanzar: sustitución de animación vía Open Animation Replacer (Fase 3,
+	// ver _reference/PLAN-OAR.md) --
+
+	// Graph variable propia que gatea, en el submod de OAR, la sustitución
+	// del ataque ligero de pie por Throw.hkx -- puesta a true justo antes de
+	// disparar kThrowAnimationEvent, a false en cuanto llega la anotación de
+	// liberación (o si el ciclo se aborta por otra vía, p. ej. una pantalla
+	// de carga). Prefijada con el nombre del proyecto por el mismo motivo
+	// que "SkipEquipAnimation" en CLAUDE.md: las graph variables son un
+	// espacio de nombres global por actor, no aislado por mod.
+	inline constexpr const char* kThrowTriggerGraphVariable = "ThorMjolnir_ThrowTrigger";
+
+	// Variable vanilla (no inventada por el plugin, ya existe en la tabla de
+	// variables de 1hm_behavior.hkx -- no necesita BehaviorDataInjector).
+	// Prueba (2026-07-29, ver _reference/PLAN-OAR.md): activada durante
+	// State::kThrowing junto con Input::SetMovementLocked, a ver si evita
+	// que el motor interprete el ataque como power attack direccional
+	// cuando el jugador ya llevaba movimiento/momentum en el instante de
+	// soltar el botón (el bloqueo de input nuevo por sí solo no lo evita,
+	// comprobado en el juego con el Animation Event Log de OAR).
+	inline constexpr const char* kAnimationDrivenGraphVariable = "bAnimationDriven";
+
+	// Evento vanilla ya existente en 1hm_behavior.hkx (no uno nuevo) que el
+	// submod de OAR intercepta para sustituir el clip por Throw.hkx cuando
+	// kThrowTriggerGraphVariable está activa -- ver _reference/PLAN-OAR.md.
+	inline constexpr const char* kThrowAnimationEvent = "attackStart";
+
+	// Payload Interpreter (dependencia externa, ver CLAUDE.md): el tag real
+	// que llega a RE::BSAnimationGraphEvent es siempre "PIE" -- el contenido
+	// útil vive en el campo payload, no en el tag combinado.
+	// Ojo, minúsculas tras la P: confirmado en el juego (Animation Event Log
+	// de OAR) que el evento real que dispara Payload Interpreter es "Pie",
+	// no "PIE" -- BSFixedString::operator== compara contenido exacto, sin
+	// normalizar mayúsculas/minúsculas.
+	inline constexpr const char* kPayloadInterpreterTag = "Pie";
+	inline constexpr const char* kThrowReleasePayload = "MjolnirThrow";
+
+	// Red de seguridad: si kThrowReleasePayload nunca llega (OAR/Payload
+	// Interpreter desinstalado, o el ataque se interrumpe por algún motivo),
+	// el arma se lanza igualmente pasado este margen en vez de quedarse
+	// atascada en State::kThrowing para siempre -- el lanzamiento físico
+	// debe ocurrir siempre, la sincronía visual es best-effort (decisión del
+	// usuario, 2026-07-29). Mayor que el instante de liberación real (0.8s)
+	// pero sin llegar a la duración completa del clip.
+	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
+
+	// Cuánto sigue reproduciéndose Throw.hkx, visualmente, tras la anotación
+	// de liberación -- comprobado en el juego: desequipar el arma real
+	// (RE::ActorEquipManager::UnequipObject) en ese mismo instante corta el
+	// clip a mitad y salta a la pose de desarmado, porque el motor reevalúa
+	// el estado de combate en cuanto cambia el arma equipada, sin importar
+	// que el clip sea MODE_SINGLE_PLAY (attackStop, que llega casi a la vez
+	// que la propia anotación de liberación, está horneado en el grafo a un
+	// tiempo fijo -- no señala el final visual real del clip sustituido,
+	// mismo motivo por el que HitFrame ignora qué archivo se está
+	// reproduciendo de verdad, ver CLAUDE.md). En vez de desequipar en el
+	// acto, WeaponManager::ThrowWeapon oculta el arma real
+	// (Animation::SetEquippedWeaponHidden) para que la réplica tome el
+	// relevo visual de inmediato, y difiere el desequipado real este margen.
+	// Placeholder, pendiente de ajustar en el juego contra la duración real
+	// de Throw.hkx tras el fotograma de liberación.
+	inline constexpr std::chrono::milliseconds kThrowReleaseVisualHoldDuration{ 400 };
+
 	// Intervalo real de sondeo del bucle de movimiento manual (ida y
 	// vuelta comparten la misma primitiva, ver CLAUDE.md "patrón de
 	// control manual") — ~60 ticks/segundo, mismo valor usado para el

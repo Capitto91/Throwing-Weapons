@@ -87,4 +87,41 @@ namespace Animation
 		wobble.MakeRotation(angle, Constants::kStickShudderAxisLocal);
 		spinNode->local.rotate = a_baseRotation * wobble;
 	}
+
+	void SetThrowTrigger(RE::Actor& a_actor, bool a_active)
+	{
+		// Float, no Bool -- la condición CompareValues montada en el editor
+		// de OAR (ver _reference/PLAN-OAR.md) compara esta graph variable
+		// como Float contra 1.0f, para no arriesgar un desajuste de tipo.
+		a_actor.SetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+	}
+
+	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)
+	{
+		a_actor.SetGraphVariableBool(Constants::kAnimationDrivenGraphVariable, a_active);
+	}
+
+	void SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden)
+	{
+		// "WEAPON" es el hueso de enganche del esqueleto, no la malla del
+		// arma en sí -- confirmado con log de diagnóstico (ver
+		// _reference/PLAN-OAR.md): tiene un único hijo, un BSFadeNode, que
+		// es la malla real. Poner kHidden en el propio "WEAPON" no ocultaba
+		// nada visualmente (comprobado en el juego, dos intentos: primero
+		// SetAppCulled, luego kHidden en este mismo nodo) -- el pipeline de
+		// renderizado del arma equipada no respeta kHidden heredado del
+		// padre de esta forma. Hay que ponerlo en el propio BSFadeNode.
+		auto* weaponNode = a_actor.GetNodeByName("WEAPON");
+		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
+		if (!asNode || asNode->GetChildren().empty()) {
+			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"WEAPON\" no encontrado o sin hijos.");
+			return;
+		}
+
+		for (auto& child : asNode->GetChildren()) {
+			if (child) {
+				child->GetFlags().set(a_hidden, RE::NiAVObject::Flag::kHidden);
+			}
+		}
+	}
 }

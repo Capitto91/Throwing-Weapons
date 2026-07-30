@@ -74,6 +74,15 @@ namespace Weapon
 		// (puerta, viaje rápido...).
 		void OnLoadingScreenClosed();
 
+		// Llamado desde el event sink de Events::ThrowReleaseWatcher al
+		// recibir la anotación de liberación (Constants::kThrowReleasePayload,
+		// vía Payload Interpreter) mientras se reproduce Throw.hkx -- o desde
+		// la red de seguridad por tiempo si esa anotación nunca llega (ver
+		// Constants::kThrowReleaseFallbackWindow). Sin efecto si el estado ya
+		// cambió por otra vía (p. ej. una pantalla de carga) antes de que
+		// llegara.
+		void OnThrowReleaseAnimationEvent();
+
 	private:
 		WeaponManager() = default;
 		~WeaponManager() = default;
@@ -82,9 +91,20 @@ namespace Weapon
 		// "apuntando".
 		void BeginAiming();
 
+		// Pasa a "lanzando": activa la graph variable que gatea el submod de
+		// OAR (Animation::SetThrowTrigger) y dispara el evento vanilla que
+		// reproduce Throw.hkx en su lugar (Constants::kThrowAnimationEvent) --
+		// el lanzamiento físico real no ocurre aquí, ver
+		// OnThrowReleaseAnimationEvent. Arranca también la red de seguridad
+		// por tiempo (Constants::kThrowReleaseFallbackWindow) por si la
+		// anotación nunca llega.
+		void BeginThrowAnimation();
+
 		// Desequipa el arma activa (queda oculta y el jugador pasa a
 		// combate desarmado), pasa a estado "lanzada" y arranca
 		// Throw::LaunchWeapon para que la réplica visual vuele de verdad.
+		// Llamado desde OnThrowReleaseAnimationEvent, nunca directamente
+		// desde OnAimButtonUp -- ver BeginThrowAnimation.
 		void ThrowWeapon();
 
 		// Regreso animado (5.- RETURN, puntos 7-8): cancela el bucle de

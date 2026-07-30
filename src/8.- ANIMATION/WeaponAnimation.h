@@ -67,4 +67,28 @@ namespace Animation
 	// si el nodo de giro no existe todavía (sin efecto, sin reintento
 	// explícito).
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds);
+
+	// Fase 3 del plan OAR (_reference/PLAN-OAR.md): activa/desactiva
+	// Constants::kThrowTriggerGraphVariable en a_actor. Envuelta aquí (en vez
+	// de llamar SetGraphVariableBool directo desde WeaponManager) para que
+	// el nombre de la variable viva en un solo sitio, mismo motivo que
+	// TickSpin/TickShudder.
+	void SetThrowTrigger(RE::Actor& a_actor, bool a_active);
+
+	// Prueba (ver _reference/PLAN-OAR.md, 2026-07-29): activa/desactiva
+	// Constants::kAnimationDrivenGraphVariable, una graph variable vanilla
+	// (no propia), junto con SetThrowTrigger durante State::kThrowing --
+	// a ver si evita la escalada a power attack direccional cuando el
+	// jugador ya llevaba movimiento al soltar el botón.
+	void SetAnimationDriven(RE::Actor& a_actor, bool a_active);
+
+	// Oculta (o vuelve a mostrar) el nodo visual "WEAPON" del arma
+	// actualmente equipada en a_actor -- mismo nodo ya usado como origen del
+	// lanzamiento (4.- THROW/ThrowManager) y orientación de llegada del
+	// regreso (5.- RETURN/ReturnManager). Usado por
+	// WeaponManager::ThrowWeapon para que el arma real desaparezca en el
+	// instante exacto de la liberación sin desequiparla todavía (ver
+	// Constants::kThrowReleaseVisualHoldDuration). Sin efecto si el nodo no
+	// existe (arma sin 3D cargado).
+	void SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
 }
