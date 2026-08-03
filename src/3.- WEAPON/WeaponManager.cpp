@@ -11,6 +11,7 @@
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "10.- EVENTS/EventManager.h"
+#include "12.- AUDIO/SoundResolver.h"
 
 #include <thread>
 
@@ -50,10 +51,6 @@ namespace Weapon
 			weaponState.SetState(State::kInHand);
 			BeginAiming();
 			break;
-		case State::kThrown:
-		case State::kStuck:
-			BeginReturn();
-			break;
 		default:
 			break;
 		}
@@ -61,8 +58,25 @@ namespace Weapon
 
 	void WeaponManager::OnAimButtonUp()
 	{
-		if (weaponState.GetState() == State::kAiming) {
+		switch (weaponState.GetState()) {
+		case State::kAiming:
 			BeginThrowAnimation();
+			break;
+		case State::kThrown:
+		case State::kStuck:
+			// Disparado al soltar, no al pulsar -- mismo motivo que Lanzar:
+			// disparar attackStart mientras el botón todavía está pulsado
+			// escalaba a un power attack vanilla real (confirmado en el
+			// juego con el Animation Event Log de OAR: PowerAttack_Start_end
+			// en vez de la secuencia del ataque ligero, incluso con el
+			// personaje quieto -- no era el mismo bug de movimiento ya
+			// resuelto para Lanzar en v1.9.16). Al soltar, el botón ya no
+			// está pulsado en el instante exacto de NotifyAnimationGraph, así
+			// que no hay ambigüedad que resolver.
+			BeginCallAnimation();
+			break;
+		default:
+			break;
 		}
 	}
 
@@ -88,6 +102,10 @@ namespace Weapon
 		Input::SetMovementLocked(false);
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetAnimationDriven(*player, false);
+			Animation::SetThrowTrigger(*player, false);
+			Animation::SetCallTrigger(*player, false);
+			Animation::SetCatchTrigger(*player, false);
+			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 		}
 	}
 
@@ -96,7 +114,9 @@ namespace Weapon
 		SaveCycleData data;
 		data.cycleActive = weaponState.GetState() == State::kThrown ||
 		                   weaponState.GetState() == State::kStuck ||
-		                   weaponState.GetState() == State::kReturning;
+		                   weaponState.GetState() == State::kCalling ||
+		                   weaponState.GetState() == State::kReturning ||
+		                   weaponState.GetState() == State::kCatching;
 
 		if (!data.cycleActive) {
 			return data;
@@ -188,6 +208,32 @@ namespace Weapon
 			Input::SetMovementLocked(false);
 			weaponState.SetState(State::kInHand);
 			break;
+		case State::kCalling:
+			// A diferencia de kThrowing, el arma sigue fuera de la mano
+			// aquí (mismo estado físico que kThrown/kStuck, solo con el
+			// gesto de Llamada reproduciéndose encima) -- RecallWeapon,
+			// no un simple cambio de estado, o la réplica se quedaría
+			// huérfana en el mundo.
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Animation::SetCallTrigger(*player, false);
+				Animation::SetAnimationDriven(*player, false);
+			}
+			Input::SetMovementLocked(false);
+			RecallWeapon();
+			break;
+		case State::kCatching:
+			// Igual que kCalling: la réplica sigue en el mundo, el
+			// reequipado real todavía no ha pasado (eso solo ocurre en
+			// OnCatchReleaseAnimationEvent) -- RecallWeapon para no dejarla
+			// huérfana, además de deshacer la graph variable a mano.
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Animation::SetCatchTrigger(*player, false);
+				Animation::SetAnimationDriven(*player, false);
+				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+			}
+			Input::SetMovementLocked(false);
+			RecallWeapon();
+			break;
 		default:
 			break;
 		}
@@ -196,7 +242,20 @@ namespace Weapon
 	void WeaponManager::BeginAiming()
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto* weapon = player ? player->GetEquippedObject(false) : nullptr;
+		if (!player) {
+			return;
+		}
+
+		// Decisión no cubierta por Mecanica del arma.txt (no menciona el
+		// sigilo): no se puede empezar a apuntar/lanzar estando agachado --
+		// a petición del usuario. Comprobado aquí (no en OnAimButtonDown)
+		// para que aplique igual desde la primera pulsación que desde la
+		// resincronización de kAiming.
+		if (player->AsActorState()->IsSneaking()) {
+			return;
+		}
+
+		auto* weapon = player->GetEquippedObject(false);
 		auto* boundWeapon = weapon ? weapon->As<RE::TESBoundObject>() : nullptr;
 
 		if (!boundWeapon) {
@@ -253,10 +312,10 @@ namespace Weapon
 		Animation::SetAnimationDriven(*player, true);
 
 		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): la graph variable
-		// gatea el submod de OAR que sustituye Constants::kThrowAnimationEvent
+		// gatea el submod de OAR que sustituye Constants::kLightAttackAnimationEvent
 		// (un evento vanilla ya existente, ninguno nuevo) por Throw.hkx.
 		Animation::SetThrowTrigger(*player, true);
-		const bool notifyOk = player->NotifyAnimationGraph(Constants::kThrowAnimationEvent);
+		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
 
 		// Log temporal de diagnóstico (retirar una vez confirmado en el
 		// juego el ciclo real, ver _reference/PLAN-OAR.md Fase 3): confirma
@@ -266,7 +325,7 @@ namespace Weapon
 		float readBack = -1.0f;
 		player->GetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, readBack);
 		logs::info("WeaponManager::BeginThrowAnimation: graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
-			Constants::kThrowTriggerGraphVariable, readBack, Constants::kThrowAnimationEvent, notifyOk);
+			Constants::kThrowTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
 
 		// Red de seguridad: el lanzamiento físico debe ocurrir siempre, tenga
 		// o no confirmación de la anotación real (decisión del usuario,
@@ -305,6 +364,233 @@ namespace Weapon
 		// control de movimiento real a mitad de zancada). Se desactivan
 		// junto con el desequipado real, ver ThrowWeapon.
 		ThrowWeapon();
+	}
+
+	void WeaponManager::BeginCallAnimation()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+
+		// Capturado antes de cambiar de estado -- BeginReturn ya no puede
+		// leerlo de weaponState.GetState() una vez aquí es kCalling, no
+		// kStuck.
+		wasStuckBeforeCalling = weaponState.GetState() == State::kStuck;
+		weaponState.SetState(State::kCalling);
+
+		// Mismo motivo que en BeginThrowAnimation: evitar que moverse
+		// durante el gesto de Llamada escale a un power attack direccional
+		// vanilla en vez de reproducir Call.hkx.
+		Input::SetMovementLocked(true);
+		Animation::SetAnimationDriven(*player, true);
+
+		// Experimento (sustituye al arma señuelo -- EquipGestureWeapon/
+		// UnequipGestureWeapon quedan definidas más abajo sin usar, de
+		// reserva si esto no funciona, ver CHANGELOG v1.10.15): escribe
+		// directamente iRightHandType al valor de "arma de una mano", sin
+		// pasar por RE::ActorEquipManager en absoluto -- si el grafo respeta
+		// el valor, el cambio de rama de combate es instantáneo y no hay
+		// nada que equipar ni ocultar (el arma real nunca se toca).
+		const std::int32_t previousRightHandType = [player]() {
+			std::int32_t value = 0;
+			player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, value);
+			return value;
+		}();
+		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
+
+		Animation::SetCallTrigger(*player, true);
+		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
+
+		std::int32_t readBackInt = -1;
+		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
+		float readBack = -1.0f;
+		player->GetGraphVariableFloat(Constants::kCallTriggerGraphVariable, readBack);
+		logs::info("WeaponManager::BeginCallAnimation: '{}' puesto a {} (era {}), releído como {} -- graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
+			Constants::kCallTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
+
+		// Red de seguridad: el regreso físico debe empezar siempre, tenga o
+		// no confirmación de la anotación real -- mismo criterio que
+		// BeginThrowAnimation.
+		std::thread([this]() {
+			std::this_thread::sleep_for(Constants::kCallReleaseFallbackWindow);
+			SKSE::GetTaskInterface()->AddTask([this]() {
+				if (weaponState.GetState() == State::kCalling) {
+					logs::info("WeaponManager: red de seguridad de Llamada disparada -- la anotación de liberación nunca llegó.");
+				}
+				OnCallReleaseAnimationEvent();
+			});
+		}).detach();
+	}
+
+	void WeaponManager::OnCallReleaseAnimationEvent()
+	{
+		if (weaponState.GetState() != State::kCalling) {
+			return;
+		}
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			Animation::SetCallTrigger(*player, false);
+			Animation::SetAnimationDriven(*player, false);
+
+			// Vuelve iRightHandType a 0 (desarmado) -- el jugador nunca ha
+			// dejado de estar genuinamente desarmado (el arma real sigue sin
+			// equipar todo este rato), esto solo revierte el valor de la
+			// graph variable que se puso a mano en BeginCallAnimation.
+			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+
+			// El sonido del chasquido ya no depende de un SoundPlay vanilla
+			// (descartado, ver Constants::kCallReleasePayload) -- se dispara
+			// aquí mismo, en el mismo instante que el regreso físico real.
+			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
+		}
+		Input::SetMovementLocked(false);
+
+		BeginReturn(wasStuckBeforeCalling);
+	}
+
+	void WeaponManager::BeginCatchAnimation()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			// Sin jugador no hay a quién reequipar de todas formas --
+			// ReequipAndReset ya comprueba lo mismo y no hace nada si no hay
+			// jugador/arma, así que llamarla es un fallback seguro.
+			ReequipAndReset();
+			return;
+		}
+
+		weaponState.SetState(State::kCatching);
+
+		// Mismo motivo que en BeginCallAnimation: evitar que moverse durante
+		// el gesto de Atrape escale a un power attack direccional vanilla en
+		// vez de reproducir Catch.hkx.
+		Input::SetMovementLocked(true);
+		Animation::SetAnimationDriven(*player, true);
+
+		// Mismo mecanismo confirmado en Llamada (ver BeginCallAnimation):
+		// escribe iRightHandType directamente, sin pasar por
+		// RE::ActorEquipManager -- el arma real todavía no se ha reequipado
+		// en este punto (eso lo hace OnCatchReleaseAnimationEvent).
+		const std::int32_t previousRightHandType = [player]() {
+			std::int32_t value = 0;
+			player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, value);
+			return value;
+		}();
+		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
+
+		Animation::SetCatchTrigger(*player, true);
+		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
+
+		std::int32_t readBackInt = -1;
+		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
+		float readBack = -1.0f;
+		player->GetGraphVariableFloat(Constants::kCatchTriggerGraphVariable, readBack);
+		logs::info("WeaponManager::BeginCatchAnimation: '{}' puesto a {} (era {}), releído como {} -- graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
+			Constants::kCatchTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
+
+		// Red de seguridad: el reequipado real debe ocurrir siempre, tenga o
+		// no confirmación de la anotación real -- mismo criterio que
+		// BeginThrowAnimation/BeginCallAnimation.
+		std::thread([this]() {
+			std::this_thread::sleep_for(Constants::kCatchReleaseFallbackWindow);
+			SKSE::GetTaskInterface()->AddTask([this]() {
+				if (weaponState.GetState() == State::kCatching) {
+					logs::info("WeaponManager: red de seguridad de Atrape disparada -- la anotación de liberación nunca llegó.");
+				}
+				OnCatchReleaseAnimationEvent();
+			});
+		}).detach();
+	}
+
+	void WeaponManager::OnCatchReleaseAnimationEvent()
+	{
+		if (weaponState.GetState() != State::kCatching) {
+			return;
+		}
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			Animation::SetCatchTrigger(*player, false);
+			Animation::SetAnimationDriven(*player, false);
+
+			// Vuelve iRightHandType a 0 -- ReequipAndReset (más abajo) va a
+			// reequipar el arma real de verdad ahora mismo, que es quien de
+			// verdad determina la rama de combate a partir de este instante;
+			// este valor a mano ya no hace falta.
+			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+		}
+		Input::SetMovementLocked(false);
+
+		ReequipAndReset();
+	}
+
+	void WeaponManager::EquipGestureWeapon()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto* weapon = weaponState.GetActiveWeapon();
+		if (!player || !weapon) {
+			return;
+		}
+
+		// Mientras dure el equipado (hasta que se apague más abajo),
+		// Events::EquipGuard no debe deshacerlo -- ve el estado como
+		// != kInHand, igual que cualquier otro equipado ajeno al ciclo.
+		suppressEquipGuard = true;
+
+		// Mismo truco que ReequipAndReset (SkipEquipAnimation, mod externo,
+		// ver CLAUDE.md) para que este reequipado no dispare la animación de
+		// desenvainado real -- aquí interesa aún más que en ReequipAndReset,
+		// el gesto entero dura solo un par de segundos.
+		player->SetGraphVariableBool("SkipEquipAnimation", true);
+		RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+		logs::info("WeaponManager::EquipGestureWeapon: EquipObject llamado (arma señuelo, FormID 0x{:08X}), suppressEquipGuard/SkipEquipAnimation activos.", weapon->GetFormID());
+
+		// No se oculta aquí todavía -- comprobado en el juego que
+		// EquipObject no deja el equipado (ni la selección de rama de
+		// combate) listo en este mismo instante: ocultar y disparar
+		// attackStart justo aquí seguía reproduciendo el ataque desarmado
+		// con el arma real visible. El llamante (BeginCallAnimation) espera
+		// antes de ocultar y disparar el evento.
+
+		// EquipObject no procesa el equipado de verdad de forma síncrona
+		// (mismo motivo ya documentado en ReequipAndReset) -- apagar
+		// SkipEquipAnimation/suppressEquipGuard en el mismo instante dejaría
+		// pasar la animación real o el TESEquipEvent real sin suprimir. Se
+		// desactivan aparte, tras Constants::kSkipEquipAnimationWindow,
+		// mismo patrón hilo-que-duerme-y-reencola de todo el proyecto.
+		std::thread([this, player]() {
+			std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
+			SKSE::GetTaskInterface()->AddTask([this, player]() {
+				player->SetGraphVariableBool("SkipEquipAnimation", false);
+				suppressEquipGuard = false;
+				logs::info("WeaponManager::EquipGestureWeapon: ventana cumplida, SkipEquipAnimation/suppressEquipGuard desactivados.");
+			});
+		}).detach();
+	}
+
+	void WeaponManager::UnequipGestureWeapon()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		auto* weapon = weaponState.GetActiveWeapon();
+		if (!player || !weapon) {
+			return;
+		}
+
+		// No hace falta suprimir EquipGuard aquí -- solo reacciona a
+		// TESEquipEvent con a_event->equipped == true, nunca a un
+		// desequipado.
+		player->SetGraphVariableBool("SkipEquipAnimation", true);
+		RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+		logs::info("WeaponManager::UnequipGestureWeapon: UnequipObject llamado (arma señuelo), vuelta a desarmado genuino.");
+
+		std::thread([player]() {
+			std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
+			SKSE::GetTaskInterface()->AddTask([player]() {
+				player->SetGraphVariableBool("SkipEquipAnimation", false);
+			});
+		}).detach();
 	}
 
 	void WeaponManager::ThrowWeapon()
@@ -378,7 +664,7 @@ namespace Weapon
 				// golpe en vez de volar de vuelta, saltándose la curva
 				// del punto 7 (bug detectado en el juego).
 				if (weaponState.GetState() == State::kThrown || weaponState.GetState() == State::kStuck) {
-					BeginReturn();
+					BeginReturn(weaponState.GetState() == State::kStuck);
 				}
 			};
 
@@ -388,14 +674,8 @@ namespace Weapon
 		weaponState.SetState(State::kThrown);
 	}
 
-	void WeaponManager::BeginReturn()
+	void WeaponManager::BeginReturn(bool a_wasStuck)
 	{
-		// Punto 11: si el arma estaba clavada (superficie o actor) en el
-		// instante de pulsar recuperar, el temblor de desprendimiento debe
-		// reproducirse antes del movimiento de vuelta -- capturado antes de
-		// tocar el estado, ver Return::BeginReturn.
-		const bool wasStuck = weaponState.GetState() == State::kStuck;
-
 		// Punto 6: "cuando se decide recuperar el arma... libera al
 		// objetivo, volviendo al jugador" — se libera de inmediato al
 		// iniciar el regreso, no al llegar a la mano.
@@ -430,10 +710,10 @@ namespace Weapon
 			weaponState.SetActiveTickToken(a_token);
 		};
 		callbacks.onArrived = [this]() {
-			ReequipAndReset();
+			BeginCatchAnimation();
 		};
 
-		Return::BeginReturn(player, replicaHandle, wasStuck, std::move(callbacks));
+		Return::BeginReturn(player, replicaHandle, a_wasStuck, std::move(callbacks));
 	}
 
 	void WeaponManager::RecallWeapon()

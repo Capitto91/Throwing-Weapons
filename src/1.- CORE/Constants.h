@@ -30,7 +30,7 @@ namespace Constants
 
 	// Graph variable propia que gatea, en el submod de OAR, la sustitución
 	// del ataque ligero de pie por Throw.hkx -- puesta a true justo antes de
-	// disparar kThrowAnimationEvent, a false en cuanto llega la anotación de
+	// disparar kLightAttackAnimationEvent, a false en cuanto llega la anotación de
 	// liberación (o si el ciclo se aborta por otra vía, p. ej. una pantalla
 	// de carga). Prefijada con el nombre del proyecto por el mismo motivo
 	// que "SkipEquipAnimation" en CLAUDE.md: las graph variables son un
@@ -44,13 +44,17 @@ namespace Constants
 	// que el motor interprete el ataque como power attack direccional
 	// cuando el jugador ya llevaba movimiento/momentum en el instante de
 	// soltar el botón (el bloqueo de input nuevo por sí solo no lo evita,
-	// comprobado en el juego con el Animation Event Log de OAR).
+	// comprobado en el juego con el Animation Event Log de OAR). Reutilizada
+	// tal cual durante State::kCalling, mismo motivo.
 	inline constexpr const char* kAnimationDrivenGraphVariable = "bAnimationDriven";
 
 	// Evento vanilla ya existente en 1hm_behavior.hkx (no uno nuevo) que el
-	// submod de OAR intercepta para sustituir el clip por Throw.hkx cuando
-	// kThrowTriggerGraphVariable está activa -- ver _reference/PLAN-OAR.md.
-	inline constexpr const char* kThrowAnimationEvent = "attackStart";
+	// submod de OAR intercepta para sustituir el ataque ligero de pie por el
+	// clip que corresponda -- Throw.hkx (kThrowTriggerGraphVariable) o
+	// Call.hkx (kCallTriggerGraphVariable) según cuál de las dos esté activa
+	// en cada momento (nunca las dos a la vez, el propio WeaponManager las
+	// gestiona como mutuamente excluyentes). Ver _reference/PLAN-OAR.md.
+	inline constexpr const char* kLightAttackAnimationEvent = "attackStart";
 
 	// Payload Interpreter (dependencia externa, ver CLAUDE.md): el tag real
 	// que llega a RE::BSAnimationGraphEvent es siempre "PIE" -- el contenido
@@ -70,6 +74,94 @@ namespace Constants
 	// usuario, 2026-07-29). Mayor que el instante de liberación real (0.8s)
 	// pero sin llegar a la duración completa del clip.
 	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
+
+	// -- Llamada: sustitución de animación vía Open Animation Replacer,
+	// mismo patrón que Lanzar --
+
+	// Graph variable propia que gatea, en el submod de OAR, la sustitución
+	// del mismo ataque ligero de pie por Call.hkx -- declarada como kFloat
+	// en Data/SKSE/Plugins/BehaviorDataInjector/ThorMjolnir_BDI.json, mismo
+	// motivo que kThrowTriggerGraphVariable.
+	inline constexpr const char* kCallTriggerGraphVariable = "ThorMjolnir_CallTrigger";
+
+	// Experimento (sustituye al arma señuelo/EquipGestureWeapon, rechazado
+	// por el usuario: ~500ms de espera visible con el arma real equipada en
+	// pose de cuerpo a cuerpo mientras tanto). "iRightHandType" es una
+	// graph variable vanilla (Int, no propia, no necesita
+	// BehaviorDataInjector) que decide qué rama de combate usa el grafo
+	// según el tipo de arma en la mano derecha -- confirmada como variable
+	// real documentada públicamente por la comunidad de modding (usada por
+	// el propio motor para elegir el set de animaciones), aunque su mapeo
+	// exacto de valores no está confirmado con certeza en fuentes públicas.
+	// La idea: escribirla directamente a un valor de "arma de una mano" sin
+	// pasar por RE::ActorEquipManager en absoluto -- si el grafo respeta el
+	// valor sin más, el cambio de rama sería instantáneo y sin equipar nada
+	// de verdad (nunca visible, nada que "asentar").
+	inline constexpr const char* kRightHandTypeGraphVariable = "iRightHandType";
+
+	// Valor confirmado en el juego (log de diagnóstico en
+	// WeaponManager::BeginThrowAnimation, con el arma real en mano): esta
+	// partida en concreto lee iRightHandType = 3, no el 1 que se probó
+	// primero por analogía con RE::Actor::GetEquippedItemType() (espada a
+	// una mano) -- el ataque ligero básico parece rutear igual por
+	// 1HM_AttackRight sea cual sea el subtipo de arma a una mano (probado
+	// en el juego con el valor 1 antes de corregirlo), pero se deja el
+	// valor real confirmado en vez de depender de esa coincidencia.
+	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
+
+	// Mismo mecanismo que Lanzar (Payload Interpreter, tag "Pie" siempre +
+	// payload separado, ver kPayloadInterpreterTag/kThrowReleasePayload):
+	// primer intento con un evento SoundPlay vanilla nativo descartado (no
+	// llegaba a dispararse, Call.hkx reproducía la animación vanilla en su
+	// lugar en vez de la sustituida por OAR -- sin confirmar todavía si el
+	// motivo era el propio SoundPlay o la sustitución de OAR en sí). Vuelve
+	// a la misma anotación PIE.<payload> ya probada y confirmada con Lanzar.
+	inline constexpr const char* kCallReleasePayload = "ThorMjolnirCall";
+
+	// Red de seguridad análoga a kThrowReleaseFallbackWindow, por si
+	// kCallReleasePayload nunca llega -- mismos motivos (OAR/Payload
+	// Interpreter desinstalado, o el ataque se interrumpe). Constante propia
+	// (no reutiliza kThrowReleaseFallbackWindow) porque Call.hkx no tiene por
+	// qué durar lo mismo que Throw.hkx hasta el chasquido -- placeholder, sin
+	// calibrar en el juego.
+	inline constexpr std::chrono::milliseconds kCallReleaseFallbackWindow{ 1500 };
+
+	// Sonido del chasquido de dedos, disparado desde el propio código (ya no
+	// vía SoundPlay vanilla) en el mismo instante que kCallReleasePayload --
+	// FormID local dado por el usuario desde xEdit (0x01011579, el byte alto
+	// 01 es el índice de carga del plugin en su partida, no parte del FormID
+	// local). "MarkSound" en el EditorID sugiere un Sound Marker
+	// (RE::TESSound), no un Sound Descriptor directo -- Audio::ResolveSoundDescriptor
+	// ya resuelve ambos tipos indistintamente (ver SoundResolver.h). Se
+	// reutiliza Audio::PlayReliableOneShot (movido de CatchSound.cpp a
+	// SoundResolver.h/.cpp para compartirlo) en vez del más simple
+	// Audio::PlaySoundOneShot -- este último nunca se ha confirmado fiable en
+	// el juego, mientras que el mecanismo triple de PlayReliableOneShot sí
+	// (ver Constants::kFlightSoundHandleFlags).
+	inline constexpr RE::FormID kCallReleaseSoundLocalFormID = 0x011579;
+	inline constexpr const char* kCallReleaseSoundEditorID = "CAP_ThorMjolnir_MarkSound_FingerSnap";
+
+	// -- Atrape: sustitución de animación vía Open Animation Replacer,
+	// mismo patrón que Llamada (iRightHandType directo, sin arma señuelo,
+	// ver CHANGELOG v1.10.16/v1.10.17) --
+
+	// Graph variable propia que gatea, en el submod de OAR, la sustitución
+	// del mismo ataque ligero de pie por Catch.hkx -- ya declarada como
+	// kFloat en Data/SKSE/Plugins/BehaviorDataInjector/ThorMjolnir_BDI.json
+	// (mismo motivo que kThrowTriggerGraphVariable/kCallTriggerGraphVariable).
+	inline constexpr const char* kCatchTriggerGraphVariable = "ThorMjolnir_CatchTrigger";
+
+	// A diferencia de kCallReleasePayload (que tuvo que probarse con un
+	// SoundPlay vanilla primero, ver CHANGELOG), Catch.hkx ya llevaba esta
+	// anotación PIE.<payload> horneada desde el principio (confirmado con
+	// `strings` sobre el propio .hkx) -- mismo mecanismo de Payload
+	// Interpreter que Lanzar/Llamada (tag "Pie" siempre, ver
+	// kPayloadInterpreterTag).
+	inline constexpr const char* kCatchReleasePayload = "ThorMjolnirCatch";
+
+	// Red de seguridad análoga a kCallReleaseFallbackWindow -- placeholder,
+	// sin calibrar en el juego.
+	inline constexpr std::chrono::milliseconds kCatchReleaseFallbackWindow{ 1500 };
 
 	// Cuánto sigue reproduciéndose Throw.hkx, visualmente, tras la anotación
 	// de liberación -- comprobado en el juego: desequipar el arma real
@@ -435,7 +527,15 @@ namespace Constants
 	// (a diferencia de Skyrim.esm) -- de ahí necesitar tanto el nombre del
 	// plugin como el FormID *local* (el que se ve en xEdit sin el byte de
 	// índice de carga).
-	inline constexpr std::string_view kSoundPluginName = "ThorMjolnir.esp";
+	//
+	// "ThorMjolnirOAR.esp", no "ThorMjolnir.esp" -- exclusivo de esta rama
+	// (oar): la copia del mod para probar OAR en paralelo a "behavior" quedó
+	// con el ESP renombrado (misma carpeta de mod duplicada, ver
+	// D:\Modlists\SME\mods\ThorMjolnir_OAR\ThorMjolnirOAR.esp), así que
+	// RE::TESDataHandler::LookupForm fallaba en silencio para *todos* los
+	// FormID (incluidos los ya confirmados funcionando antes) -- el nombre
+	// de plugin no coincidía con ninguno realmente activo en la partida.
+	inline constexpr std::string_view kSoundPluginName = "ThorMjolnirOAR.esp";
 
 	// FormID local (visto en xEdit, sin el byte de índice de carga) del
 	// Sound Descriptor/Sound Marker del silbido de lanzamiento -- sonado

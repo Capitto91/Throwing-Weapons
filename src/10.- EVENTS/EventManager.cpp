@@ -134,6 +134,14 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
+				if (Weapon::WeaponManager::GetSingleton()->IsEquipGuardSuppressed()) {
+					// Equipado propio (arma señuelo de Llamada/Atrape, ver
+					// WeaponManager::EquipGestureWeapon) -- no deshacerlo,
+					// a diferencia de cualquier otro equipado ajeno al ciclo.
+					logs::info("Events::EquipGuard: equipado permitido (suprimido por WeaponManager, arma señuelo).");
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
 				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
 				if (auto* boundObject = form ? form->As<RE::TESBoundObject>() : nullptr) {
 					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, boundObject);
@@ -231,6 +239,76 @@ namespace Events
 			~ThrowReleaseWatcher() override = default;
 		};
 
+		// Mismo patrón que ThrowReleaseWatcher, para Llamada: misma anotación
+		// de Payload Interpreter (tag "Pie" + payload separado), distinto
+		// payload (Constants::kCallReleasePayload). Un intento anterior con
+		// un evento SoundPlay vanilla nativo se descartó -- Call.hkx no
+		// llegaba a sustituir la animación vanilla (sin aislar todavía si el
+		// motivo era el propio SoundPlay o la sustitución de OAR), así que se
+		// vuelve al mecanismo ya confirmado con Lanzar.
+		class CallReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
+		{
+		public:
+			static CallReleaseWatcher* GetSingleton()
+			{
+				static CallReleaseWatcher singleton;
+				return &singleton;
+			}
+
+			CallReleaseWatcher(const CallReleaseWatcher&) = delete;
+			CallReleaseWatcher(CallReleaseWatcher&&) = delete;
+			CallReleaseWatcher& operator=(const CallReleaseWatcher&) = delete;
+			CallReleaseWatcher& operator=(CallReleaseWatcher&&) = delete;
+
+		protected:
+			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
+			{
+				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kCallReleasePayload) {
+					Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
+				}
+
+				return RE::BSEventNotifyControl::kContinue;
+			}
+
+		private:
+			CallReleaseWatcher() = default;
+			~CallReleaseWatcher() override = default;
+		};
+
+		// Mismo patrón que CallReleaseWatcher, para Atrape: misma anotación
+		// de Payload Interpreter, payload propio (Constants::kCatchReleasePayload).
+		// A diferencia de Lanzar/Llamada, Catch.hkx ya llevaba esta anotación
+		// horneada desde el principio (confirmado con `strings` sobre el
+		// propio .hkx), no hizo falta ningún intento previo con SoundPlay.
+		class CatchReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
+		{
+		public:
+			static CatchReleaseWatcher* GetSingleton()
+			{
+				static CatchReleaseWatcher singleton;
+				return &singleton;
+			}
+
+			CatchReleaseWatcher(const CatchReleaseWatcher&) = delete;
+			CatchReleaseWatcher(CatchReleaseWatcher&&) = delete;
+			CatchReleaseWatcher& operator=(const CatchReleaseWatcher&) = delete;
+			CatchReleaseWatcher& operator=(CatchReleaseWatcher&&) = delete;
+
+		protected:
+			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
+			{
+				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kCatchReleasePayload) {
+					Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent();
+				}
+
+				return RE::BSEventNotifyControl::kContinue;
+			}
+
+		private:
+			CatchReleaseWatcher() = default;
+			~CatchReleaseWatcher() override = default;
+		};
+
 		void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
 		{
 			switch (a_message->type) {
@@ -324,8 +402,10 @@ namespace Events
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			player->AddAnimationGraphEventSink(ThrowReleaseWatcher::GetSingleton());
+			player->AddAnimationGraphEventSink(CallReleaseWatcher::GetSingleton());
+			player->AddAnimationGraphEventSink(CatchReleaseWatcher::GetSingleton());
 			registered = true;
-			logs::info("Events::EnsureAnimationSinksRegistered: ThrowReleaseWatcher registrado.");
+			logs::info("Events::EnsureAnimationSinksRegistered: ThrowReleaseWatcher/CallReleaseWatcher/CatchReleaseWatcher registrados.");
 		}
 	}
 }

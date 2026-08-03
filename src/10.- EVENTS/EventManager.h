@@ -11,8 +11,9 @@ namespace Events
 	// desde Plugin::Init().
 	void Init();
 
-	// Registra Events::ThrowReleaseWatcher sobre el jugador si todavía no se
-	// ha hecho (idempotente, seguro llamar varias veces). Se llama de forma
+	// Registra Events::ThrowReleaseWatcher/CallReleaseWatcher sobre el
+	// jugador si todavía no se ha hecho (idempotente, seguro llamar varias
+	// veces). Se llama de forma
 	// perezosa desde WeaponManager::BeginAiming en vez de depender de
 	// kNewGame/kPostLoadGame -- ninguno de los dos se dispara al entrar a la
 	// partida vía `coc` desde la consola del menú principal (confirmado en

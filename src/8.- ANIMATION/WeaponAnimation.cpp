@@ -96,12 +96,22 @@ namespace Animation
 		a_actor.SetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, a_active ? 1.0f : 0.0f);
 	}
 
+	void SetCallTrigger(RE::Actor& a_actor, bool a_active)
+	{
+		a_actor.SetGraphVariableFloat(Constants::kCallTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+	}
+
+	void SetCatchTrigger(RE::Actor& a_actor, bool a_active)
+	{
+		a_actor.SetGraphVariableFloat(Constants::kCatchTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+	}
+
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)
 	{
 		a_actor.SetGraphVariableBool(Constants::kAnimationDrivenGraphVariable, a_active);
 	}
 
-	void SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden)
+	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden)
 	{
 		// "WEAPON" es el hueso de enganche del esqueleto, no la malla del
 		// arma en sí -- confirmado con log de diagnóstico (ver
@@ -115,7 +125,7 @@ namespace Animation
 		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
 		if (!asNode || asNode->GetChildren().empty()) {
 			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"WEAPON\" no encontrado o sin hijos.");
-			return;
+			return false;
 		}
 
 		for (auto& child : asNode->GetChildren()) {
@@ -123,5 +133,7 @@ namespace Animation
 				child->GetFlags().set(a_hidden, RE::NiAVObject::Flag::kHidden);
 			}
 		}
+
+		return true;
 	}
 }

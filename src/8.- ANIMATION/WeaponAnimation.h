@@ -75,6 +75,14 @@ namespace Animation
 	// TickSpin/TickShudder.
 	void SetThrowTrigger(RE::Actor& a_actor, bool a_active);
 
+	// Mismo patrón que SetThrowTrigger, para Llamada: activa/desactiva
+	// Constants::kCallTriggerGraphVariable en a_actor.
+	void SetCallTrigger(RE::Actor& a_actor, bool a_active);
+
+	// Mismo patrón que SetThrowTrigger/SetCallTrigger, para Atrape: activa/
+	// desactiva Constants::kCatchTriggerGraphVariable en a_actor.
+	void SetCatchTrigger(RE::Actor& a_actor, bool a_active);
+
 	// Prueba (ver _reference/PLAN-OAR.md, 2026-07-29): activa/desactiva
 	// Constants::kAnimationDrivenGraphVariable, una graph variable vanilla
 	// (no propia), junto con SetThrowTrigger durante State::kThrowing --
@@ -88,7 +96,10 @@ namespace Animation
 	// regreso (5.- RETURN/ReturnManager). Usado por
 	// WeaponManager::ThrowWeapon para que el arma real desaparezca en el
 	// instante exacto de la liberación sin desequiparla todavía (ver
-	// Constants::kThrowReleaseVisualHoldDuration). Sin efecto si el nodo no
-	// existe (arma sin 3D cargado).
-	void SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
+	// Constants::kThrowReleaseVisualHoldDuration). Devuelve false (sin
+	// tocar nada) si el nodo no existe o no tiene hijos todavía -- caso real
+	// tras un EquipObject muy reciente (ver
+	// WeaponManager::PollGestureWeaponReady), no solo "arma sin 3D cargado"
+	// en general.
+	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
 }

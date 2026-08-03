@@ -83,6 +83,33 @@ namespace Weapon
 		// llegara.
 		void OnThrowReleaseAnimationEvent();
 
+		// Mismo patrón que OnThrowReleaseAnimationEvent, para Llamada:
+		// llamado desde Events::CallReleaseWatcher al recibir la anotación de
+		// liberación (Constants::kCallReleasePayload, vía Payload Interpreter,
+		// mismo tag "Pie" que Lanzar) mientras se reproduce Call.hkx -- o
+		// desde la red de seguridad por tiempo si esa anotación nunca llega
+		// (ver Constants::kCallReleaseFallbackWindow). También dispara el
+		// sonido del chasquido (Audio::PlayReliableOneShot). Sin efecto si el
+		// estado ya cambió por otra vía antes de que llegara.
+		void OnCallReleaseAnimationEvent();
+
+		// Mismo patrón que OnCallReleaseAnimationEvent, para Atrape: llamado
+		// desde Events::CatchReleaseWatcher al recibir la anotación de
+		// liberación (Constants::kCatchReleasePayload, ya horneada en
+		// Catch.hkx desde el principio) mientras se reproduce Catch.hkx -- o
+		// desde la red de seguridad por tiempo si esa anotación nunca llega
+		// (Constants::kCatchReleaseFallbackWindow). A diferencia de
+		// OnCallReleaseAnimationEvent (que arranca BeginReturn), aquí el
+		// regreso físico ya ha terminado -- lo que sigue es el reequipado
+		// real (ReequipAndReset). Sin efecto si el estado ya cambió por otra
+		// vía antes de que llegara.
+		void OnCatchReleaseAnimationEvent();
+
+		// Consultado por Events::EquipGuard: si true, no debe deshacer el
+		// último equipado del jugador aunque el estado no sea kInHand -- ver
+		// EquipGestureWeapon.
+		[[nodiscard]] bool IsEquipGuardSuppressed() const noexcept { return suppressEquipGuard; }
+
 	private:
 		WeaponManager() = default;
 		~WeaponManager() = default;
@@ -93,7 +120,7 @@ namespace Weapon
 
 		// Pasa a "lanzando": activa la graph variable que gatea el submod de
 		// OAR (Animation::SetThrowTrigger) y dispara el evento vanilla que
-		// reproduce Throw.hkx en su lugar (Constants::kThrowAnimationEvent) --
+		// reproduce Throw.hkx en su lugar (Constants::kLightAttackAnimationEvent) --
 		// el lanzamiento físico real no ocurre aquí, ver
 		// OnThrowReleaseAnimationEvent. Arranca también la red de seguridad
 		// por tiempo (Constants::kThrowReleaseFallbackWindow) por si la
@@ -107,13 +134,78 @@ namespace Weapon
 		// desde OnAimButtonUp -- ver BeginThrowAnimation.
 		void ThrowWeapon();
 
+		// Pasa a "llamando": escribe directamente
+		// Constants::kRightHandTypeGraphVariable (graph variable vanilla,
+		// Int) al valor de "arma de una mano" (Constants::kRightHandTypeOneHanded),
+		// sin pasar por RE::ActorEquipManager en absoluto -- experimento que
+		// sustituye al arma señuelo (EquipGestureWeapon, ver más abajo,
+		// rechazado por el usuario: ~500ms de espera visible con el arma
+		// real en pose de cuerpo a cuerpo mientras tanto, ver CHANGELOG
+		// v1.10.11 a v1.10.15). Si el grafo respeta el valor, el cambio de
+		// rama de combate es instantáneo y el arma real nunca se toca (nunca
+		// visible, nada que ocultar). Activa la graph variable que gatea el
+		// submod de OAR de Llamada (Animation::SetCallTrigger) y dispara el
+		// mismo evento vanilla que Lanzar
+		// (Constants::kLightAttackAnimationEvent) para que reproduzca
+		// Call.hkx en su lugar -- el regreso físico real no ocurre aquí, ver
+		// OnCallReleaseAnimationEvent. Arranca también la red de seguridad
+		// por tiempo (Constants::kCallReleaseFallbackWindow) por si el
+		// evento nunca llega. Recuerda si el arma venía de State::kStuck
+		// (wasStuckBeforeCalling) para pasarlo a BeginReturn más tarde -- el
+		// estado ya no es kStuck en ese momento (es kCalling), así que
+		// BeginReturn no puede recalcularlo por su cuenta.
+		void BeginCallAnimation();
+
+		// Sin usar desde v1.10.16 (ver BeginCallAnimation) -- se mantienen
+		// definidas como alternativa de reserva por si el experimento de
+		// iRightHandType no funciona en el juego, para no tener que
+		// reconstruirlas desde cero. Equipa de nuevo el arma real (la misma
+		// que ya trackea weaponState, no una nueva) -- primer paso del truco
+		// de "arma señuelo" para que el gesto de Llamada (y, más adelante,
+		// Atrape) dispare attackStart estando "armado" a nivel de animation
+		// graph, reutilizando la rama de combate a una mano (fiable, sin
+		// variantes direccionales que cubrir ni deslizamiento, ver
+		// CHANGELOG) en vez de la de cuerpo a cuerpo (desarmado, con ambos
+		// problemas) -- rechazado por el usuario por la espera visible que
+		// requiere (ver BeginCallAnimation). Activa suppressEquipGuard
+		// mientras dura el equipado sin cola, para que Events::EquipGuard no
+		// lo deshaga (ve el estado como != kInHand, igual que cualquier otro
+		// equipado ajeno). Suprime también la animación de equipar
+		// (SkipEquipAnimation, mismo truco que ReequipAndReset).
+		void EquipGestureWeapon();
+
+		// Inverso de EquipGestureWeapon: desequipa el arma señuelo (vuelve a
+		// desarmado genuino) antes de que empiece el regreso físico real
+		// (BeginReturn) -- el jugador sigue pudiendo golpear a puños durante
+		// el vuelo de vuelta, igual que antes de este cambio.
+		void UnequipGestureWeapon();
+
 		// Regreso animado (5.- RETURN, puntos 7-8): cancela el bucle de
 		// tick en marcha (vuelo, o seguimiento de un actor clavado),
 		// libera al objetivo si lo había, y arranca Return::BeginReturn
 		// sobre la réplica ya existente. Cae a RecallWeapon (recuperación
 		// instantánea) si no hay jugador o réplica válida de la que
-		// partir.
-		void BeginReturn();
+		// partir. a_wasStuck (punto 11): si el arma estaba clavada
+		// (superficie o actor) en el instante de pulsar recuperar -- lo pasa
+		// el llamante en vez de recalcularlo aquí, porque desde
+		// OnCallReleaseAnimationEvent el estado actual ya es kCalling, no
+		// kStuck.
+		void BeginReturn(bool a_wasStuck);
+
+		// Pasa a "atrapando": llamado desde el callback onArrived de
+		// Return::BeginReturn (el arma acaba de llegar a la mano, vuelo de
+		// regreso terminado) en vez de reequipar directamente. Mismo
+		// mecanismo que BeginCallAnimation: escribe
+		// Constants::kRightHandTypeGraphVariable a
+		// Constants::kRightHandTypeOneHanded (el jugador sigue genuinamente
+		// desarmado, el arma real todavía no se ha tocado), activa
+		// Animation::SetCatchTrigger y dispara
+		// Constants::kLightAttackAnimationEvent para que el submod de OAR
+		// de Atrape reproduzca Catch.hkx. El reequipado real
+		// (ReequipAndReset) no ocurre aquí, ver
+		// OnCatchReleaseAnimationEvent. Arranca también la red de seguridad
+		// por tiempo (Constants::kCatchReleaseFallbackWindow).
+		void BeginCatchAnimation();
 
 		// Recuperación instantánea: destruye la réplica (si la hay, ver
 		// Physics::DestroyReplica) y reequipa el arma de inmediato, sin
@@ -135,5 +227,14 @@ namespace Weapon
 		void ReequipAndReset();
 
 		WeaponState weaponState;
+
+		// Capturado en BeginCallAnimation antes de pasar a State::kCalling
+		// (que ya no es kStuck), para que OnCallReleaseAnimationEvent pueda
+		// pasárselo a BeginReturn más tarde -- ver comentario de BeginReturn.
+		bool wasStuckBeforeCalling{ false };
+
+		// Activado por EquipGestureWeapon mientras dura el equipado del
+		// señuelo -- ver IsEquipGuardSuppressed.
+		bool suppressEquipGuard{ false };
 	};
 }

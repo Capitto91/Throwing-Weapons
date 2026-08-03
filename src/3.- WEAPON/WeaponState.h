@@ -23,7 +23,15 @@ namespace Weapon
 		            // anotación de liberación (Fase 3, _reference/PLAN-OAR.md).
 		kThrown,    // Lanzada: fuera de la mano.
 		kStuck,     // Clavada en un enemigo o superficie.
-		kReturning  // Volviendo hacia el jugador.
+		kCalling,   // Botón pulsado desde kThrown/kStuck: reproduciendo
+		            // Call.hkx (vía OAR), el regreso físico real todavía no
+		            // ha empezado hasta el evento SoundPlay del chasquido de
+		            // dedos (o la red de seguridad, ver WeaponManager).
+		kReturning, // Volviendo hacia el jugador.
+		kCatching   // Llegó a la mano: reproduciendo Catch.hkx (vía OAR), el
+		            // reequipado real todavía no ha pasado hasta la
+		            // anotación de liberación (o la red de seguridad, ver
+		            // WeaponManager).
 	};
 
 	class WeaponState

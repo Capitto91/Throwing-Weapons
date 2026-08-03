@@ -20,8 +20,12 @@ namespace Weapon
 				return "Lanzada";
 			case State::kStuck:
 				return "Clavada";
+			case State::kCalling:
+				return "Llamando";
 			case State::kReturning:
 				return "Regresando";
+			case State::kCatching:
+				return "Atrapando";
 			default:
 				return "Desconocido";
 			}

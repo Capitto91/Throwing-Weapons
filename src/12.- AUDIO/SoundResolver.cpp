@@ -4,6 +4,14 @@
 #include "12.- AUDIO/SoundResolver.h"
 
 #include "1.- CORE/Constants.h"
+#include "RE/M/Misc.h"
+
+// mmsystem.h (arrastrado por Windows.h) define PlaySound como macro y
+// reescribe RE::PlaySound a RE::PlaySoundA -- mismo problema que min/max,
+// documentado en CLAUDE.md. Solo hace falta el guard en el punto de uso.
+#ifdef PlaySound
+#undef PlaySound
+#endif
 
 namespace Audio
 {
@@ -62,6 +70,31 @@ namespace Audio
 		return nullptr;
 	}
 
+	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID)
+	{
+		auto* audioManager = RE::BSAudioManager::GetSingleton();
+		auto* descriptor = audioManager ? ResolveSoundDescriptor(a_localFormID) : nullptr;
+		if (!descriptor) {
+			logs::warn("Audio::PlayReliableOneShot: no se pudo resolver el Sound Descriptor (FormID local 0x{:06X}).", a_localFormID);
+			return;
+		}
+
+		RE::BSSoundHandle primingHandle;
+		if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kFlightSoundHandleFlags)) {
+			primingHandle.FadeInPlay(0);
+		}
+
+		RE::PlaySound(a_editorID);
+
+		RE::BSSoundHandle handle;
+		if (audioManager->GetSoundHandle(handle, descriptor, Constants::kFlightSoundHandleFlags)) {
+			handle.SetPosition(a_position);
+			handle.SetVolume(Constants::kSoundHandleVolume);
+			const bool played = handle.FadeInPlay(0);
+			logs::info("Audio::PlayReliableOneShot: FormID local 0x{:06X} -- FadeInPlay()={}.", a_localFormID, played);
+		}
+	}
+
 	void PrecacheAll()
 	{
 		auto* audioManager = RE::BSAudioManager::GetSingleton();
@@ -69,7 +102,7 @@ namespace Audio
 			return;
 		}
 
-		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kFlightLoopSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID }) {
+		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kFlightLoopSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID, Constants::kCallReleaseSoundLocalFormID }) {
 			if (auto* descriptor = ResolveSoundDescriptor(localFormID)) {
 				audioManager->PrecacheDescriptor(descriptor, 0);
 				logs::info("Audio::PrecacheAll: precacheado FormID local 0x{:06X}.", localFormID);

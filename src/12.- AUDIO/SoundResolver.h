@@ -19,6 +19,18 @@ namespace Audio
 	// aviso en el log) si no resuelve como ninguno de los dos.
 	RE::BGSSoundDescriptorForm* ResolveSoundDescriptor(RE::FormID a_localFormID);
 
+	// Reproducción fiable de un sonido suelto en a_position, identificado por
+	// a_localFormID (ver ResolveSoundDescriptor) y a_editorID (para el
+	// RE::PlaySound de refuerzo). Mecanismo confirmado en el juego para los
+	// sonidos de atrape (12.- AUDIO/CatchSound.cpp, ver Constants.h "Sonido
+	// de atrape, en dos partes"): un RE::BSSoundHandle de cebado sin
+	// posición, RE::PlaySound(a_editorID) en paralelo, y un RE::BSSoundHandle
+	// real posicionado con FadeInPlay(0) -- las tres cosas a la vez, ninguna
+	// sola basta (comprobado repetidas veces). Movida aquí desde
+	// CatchSound.cpp para compartirla con cualquier otro sonido suelto que
+	// necesite la misma fiabilidad (p. ej. Audio::CallSound).
+	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID);
+
 	// Precarga en caché los cuatro Sound Descriptor del arma (lanzamiento,
 	// vuelo, arranque y golpe final del atrape, ver Constants.h) -- llamar
 	// una vez en Events::OnSKSEMessage(kDataLoaded), antes del primer
