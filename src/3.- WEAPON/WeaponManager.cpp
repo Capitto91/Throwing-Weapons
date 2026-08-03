@@ -92,6 +92,7 @@ namespace Weapon
 		weaponState.SetStuckActorHandle({});
 		weaponState.SetActiveTickToken({});
 		weaponState.SetState(State::kInHand);
+		catchAnimationActive = false;
 
 		// Por si el estado anterior era kThrowing (partida guardada/cargada
 		// a mitad de esa ventana, dentro de la misma sesión del proceso):
@@ -115,8 +116,7 @@ namespace Weapon
 		data.cycleActive = weaponState.GetState() == State::kThrown ||
 		                   weaponState.GetState() == State::kStuck ||
 		                   weaponState.GetState() == State::kCalling ||
-		                   weaponState.GetState() == State::kReturning ||
-		                   weaponState.GetState() == State::kCatching;
+		                   weaponState.GetState() == State::kReturning;
 
 		if (!data.cycleActive) {
 			return data;
@@ -221,21 +221,25 @@ namespace Weapon
 			Input::SetMovementLocked(false);
 			RecallWeapon();
 			break;
-		case State::kCatching:
-			// Igual que kCalling: la réplica sigue en el mundo, el
-			// reequipado real todavía no ha pasado (eso solo ocurre en
-			// OnCatchReleaseAnimationEvent) -- RecallWeapon para no dejarla
-			// huérfana, además de deshacer la graph variable a mano.
+		default:
+			break;
+		}
+
+		// Aparte del switch anterior (que solo cubre el ciclo principal del
+		// arma): el gesto visual de Atrape puede seguir en marcha aunque
+		// weaponState ya haya vuelto a kInHand (el reequipado real no
+		// espera a este gesto, ver BeginCatchAnimation/BeginReturn) -- sin
+		// esto, una pantalla de carga a mitad del gesto dejaría
+		// CatchTrigger/AnimationDriven/iRightHandType/el bloqueo de
+		// movimiento encendidos para siempre.
+		if (catchAnimationActive) {
+			catchAnimationActive = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 				Animation::SetCatchTrigger(*player, false);
 				Animation::SetAnimationDriven(*player, false);
 				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 			}
 			Input::SetMovementLocked(false);
-			RecallWeapon();
-			break;
-		default:
-			break;
 		}
 	}
 
@@ -454,14 +458,30 @@ namespace Weapon
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
-			// Sin jugador no hay a quién reequipar de todas formas --
-			// ReequipAndReset ya comprueba lo mismo y no hace nada si no hay
-			// jugador/arma, así que llamarla es un fallback seguro.
+			// Sin jugador no hay grafo sobre el que escribir nada ni
+			// animación que reproducir -- recuperación instantánea directa,
+			// igual que en Lanzar/Llamada (ver BeginThrowAnimation).
 			ReequipAndReset();
 			return;
 		}
+		if (catchAnimationActive) {
+			// No debería poder llamarse dos veces (onApproaching se dispara
+			// una sola vez por regreso, ver Return::ApproachTrigger), pero
+			// comprobarlo aquí evita re-disparar el trigger/red de
+			// seguridad por error si algún día deja de serlo.
+			return;
+		}
 
-		weaponState.SetState(State::kCatching);
+		// A diferencia de Lanzar/Llamada, el ciclo principal del arma
+		// (weaponState) no pasa por aquí ni se ve afectado: la réplica sigue
+		// su propio bucle de tick en Return::BeginReturn (todavía en vuelo
+		// en este instante -- esto se dispara con antelación, ver
+		// Constants::kCatchAnimationLeadTime), indiferente a esto.
+		// Trackeado aparte con catchAnimationActive en vez de
+		// weaponState.GetState() porque el reequipado real (más abajo, en
+		// OnCatchReleaseAnimationEvent) puede llegar antes o después de que
+		// weaponState ya haya cambiado de estado por su cuenta.
+		catchAnimationActive = true;
 
 		// Mismo motivo que en BeginCallAnimation: evitar que moverse durante
 		// el gesto de Atrape escale a un power attack direccional vanilla en
@@ -472,7 +492,8 @@ namespace Weapon
 		// Mismo mecanismo confirmado en Llamada (ver BeginCallAnimation):
 		// escribe iRightHandType directamente, sin pasar por
 		// RE::ActorEquipManager -- el arma real todavía no se ha reequipado
-		// en este punto (eso lo hace OnCatchReleaseAnimationEvent).
+		// en este punto (eso lo hace OnCatchReleaseAnimationEvent, al
+		// llegar la anotación PIE.ThorMjolnirCatch).
 		const std::int32_t previousRightHandType = [player]() {
 			std::int32_t value = 0;
 			player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, value);
@@ -493,11 +514,15 @@ namespace Weapon
 
 		// Red de seguridad: el reequipado real debe ocurrir siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
-		// BeginThrowAnimation/BeginCallAnimation.
+		// BeginThrowAnimation/BeginCallAnimation. Constants::kCatchReleaseFallbackWindow
+		// (1.5s) debe ser mayor que Constants::kCatchAnimationLeadTime
+		// (0.9s, medido por el usuario sobre el propio clip) con margen de
+		// sobra, o esta red de seguridad podría dispararse antes de que la
+		// réplica llegue de verdad a la mano.
 		std::thread([this]() {
 			std::this_thread::sleep_for(Constants::kCatchReleaseFallbackWindow);
 			SKSE::GetTaskInterface()->AddTask([this]() {
-				if (weaponState.GetState() == State::kCatching) {
+				if (catchAnimationActive) {
 					logs::info("WeaponManager: red de seguridad de Atrape disparada -- la anotación de liberación nunca llegó.");
 				}
 				OnCatchReleaseAnimationEvent();
@@ -507,22 +532,25 @@ namespace Weapon
 
 	void WeaponManager::OnCatchReleaseAnimationEvent()
 	{
-		if (weaponState.GetState() != State::kCatching) {
+		if (!catchAnimationActive) {
 			return;
 		}
+		catchAnimationActive = false;
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetCatchTrigger(*player, false);
 			Animation::SetAnimationDriven(*player, false);
-
-			// Vuelve iRightHandType a 0 -- ReequipAndReset (más abajo) va a
-			// reequipar el arma real de verdad ahora mismo, que es quien de
-			// verdad determina la rama de combate a partir de este instante;
-			// este valor a mano ya no hace falta.
 			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 		}
 		Input::SetMovementLocked(false);
 
+		// A diferencia de la llegada física en sí (BeginReturn, callback
+		// onArrived, que deja la réplica quieta pero no reequipa nada): la
+		// anotación PIE.ThorMjolnirCatch, ya horneada en Catch.hkx, marca el
+		// instante exacto en que la mano se cierra sobre el arma en el
+		// propio clip -- confiar en ella en vez de en el umbral de
+		// distancia de la llegada física es lo que sincroniza de verdad el
+		// reequipado visual con el gesto de la animación.
 		ReequipAndReset();
 	}
 
@@ -709,8 +737,15 @@ namespace Weapon
 		callbacks.onTickStarted = [this](Physics::TickToken a_token) {
 			weaponState.SetActiveTickToken(a_token);
 		};
-		callbacks.onArrived = [this]() {
+		callbacks.onApproaching = [this]() {
 			BeginCatchAnimation();
+		};
+		callbacks.onArrived = []() {
+			// Sin efecto a propósito: el reequipado real no ocurre aquí --
+			// ver OnCatchReleaseAnimationEvent, gatillado por la anotación
+			// PIE.ThorMjolnirCatch (o su red de seguridad), no por este
+			// umbral de distancia. La réplica se queda quieta junto a la
+			// mano hasta entonces (el bucle de tick ya se detiene solo).
 		};
 
 		Return::BeginReturn(player, replicaHandle, a_wasStuck, std::move(callbacks));

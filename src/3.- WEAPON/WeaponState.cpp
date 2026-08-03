@@ -24,8 +24,6 @@ namespace Weapon
 				return "Llamando";
 			case State::kReturning:
 				return "Regresando";
-			case State::kCatching:
-				return "Atrapando";
 			default:
 				return "Desconocido";
 			}

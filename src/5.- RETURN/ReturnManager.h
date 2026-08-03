@@ -23,8 +23,45 @@ namespace Return
 		// (p. ej. cierre de pantalla de carga a mitad del trayecto).
 		std::function<void(Physics::TickToken)> onTickStarted;
 
+		// Disparado desde dentro del propio bucle de tick del regreso (ver
+		// BeginReturnMovement), no por un temporizador precalculado de
+		// antemano -- a petición del usuario (2026-08-03): la
+		// sincronización entre la animación de Atrape y el vuelo físico
+		// real no es negociable, así que se mide la velocidad real de la
+		// réplica cada tick para estimar cuánto falta de verdad hasta la
+		// llegada (en segundos reales, no una predicción hecha al
+		// principio), y se dispara en cuanto esa estimación cae por debajo
+		// de Constants::kCatchAnimationLeadTime -- absorbe automáticamente
+		// el suavizado del tramo final (Constants::kReturnTailDistance/
+		// kReturnTailMinRate, que alarga la duración real más allá de lo
+		// que predice una fórmula cerrada) y cualquier desviación por que
+		// el jugador se haya movido durante el regreso. También exige que
+		// hayan pasado al menos Constants::kMinCatchAnimationDelay segundos
+		// reales desde que empezó el regreso (temblor de desprendimiento
+		// incluido si lo hubo) -- si la distancia es tan corta que la
+		// física natural no dejaría margen para ninguna de las dos cosas,
+		// BeginReturnMovement ralentiza el propio vuelo (nunca lo acelera,
+		// ver Return::ComputeReturnAccelerationForDuration) para que dure
+		// lo necesario, en vez de desacoplar animación y física. El
+		// llamante debe arrancar aquí el gesto visual de Atrape
+		// (WeaponManager::BeginCatchAnimation). Nunca obligatorio comprobar
+		// si está asignado (mismo contrato que onArrived, ver más abajo),
+		// el único llamante (WeaponManager::BeginReturn) lo asigna siempre.
+		std::function<void()> onApproaching;
+
 		// El arma ha llegado a la mano del jugador (a Constants::kReturnArrivalDistance
-		// o menos): el llamante debe reequiparla y destruir la réplica.
+		// o menos): la réplica se queda quieta aquí (el bucle de tick ya se
+		// detiene solo). El reequipado real de Atrape NO ocurre en este
+		// callback -- la anotación PIE.ThorMjolnirCatch, ya horneada en
+		// Catch.hkx, marca el instante exacto en que la mano debe cerrarse
+		// sobre el arma (WeaponManager::OnCatchReleaseAnimationEvent).
+		// Gracias a la sincronización en vivo de onApproaching (ver más
+		// arriba), ese instante debería coincidir de verdad con este --
+		// confiar en la anotación en vez de en este umbral de distancia
+		// para el reequipado en sí es lo que sincroniza el gesto de la
+		// mano en el clip con el reequipado visual. Sí es el punto
+		// correcto para una recuperación instantánea sin animación
+		// (RecallWeapon).
 		std::function<void()> onArrived;
 	};
 

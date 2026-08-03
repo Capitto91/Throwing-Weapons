@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -48,6 +49,30 @@ namespace Animation
 		}
 
 		spinNode->local.rotate.MakeRotation(ComputeSpinAngle(a_elapsedSeconds), Constants::kSpinAxisLocal);
+	}
+
+	void TickSpinStraighten(RE::TESObjectREFR& a_refr, float a_elapsedAtWindowStart, float a_blend)
+	{
+		auto* root = a_refr.Get3D();
+		auto* spinNode = root ? root->GetObjectByName(Constants::kWeaponSpinNodeName) : nullptr;
+		if (!spinNode) {
+			return;
+		}
+
+		// Curva suave (smoothstep, mismo criterio que
+		// Return::BeginReturnMovement para el suavizado del tramo final)
+		// en vez de una interpolación lineal brusca -- el enderezado debe
+		// notarse como un frenado gradual del giro, no un tirón.
+		const float clampedBlend = std::clamp(a_blend, 0.0f, 1.0f);
+		const float smoothBlend = clampedBlend * clampedBlend * (3.0f - 2.0f * clampedBlend);
+
+		// Ángulo que tenía el giro justo al empezar la ventana (misma
+		// fórmula que TickSpin), interpolado hacia 0 -- la orientación de
+		// reposo del nodo, la misma que ya tiene el arma real equipada.
+		const float angleAtWindowStart = ComputeSpinAngle(a_elapsedAtWindowStart);
+		const float angle = angleAtWindowStart * (1.0f - smoothBlend);
+
+		spinNode->local.rotate.MakeRotation(angle, Constants::kSpinAxisLocal);
 	}
 
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds)

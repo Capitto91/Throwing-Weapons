@@ -37,11 +37,12 @@ namespace Return
 		// insertarse antes sin duplicar esta lógica: se invoca tal cual al
 		// terminar el temblor si la réplica venía clavada, o de inmediato
 		// si venía en vuelo.
-		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks, std::shared_ptr<Audio::CatchCue> a_catchCue)
+		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks, std::shared_ptr<Audio::CatchCue> a_catchCue, float a_shudderDuration)
 		{
 			auto replica = a_replicaHandle.get();
 			if (!a_player || !replica) {
 				logs::warn("Return::BeginReturnMovement: sin jugador o réplica válida, se aborta el regreso.");
+				a_callbacks.onApproaching();
 				a_callbacks.onArrived();
 				return;
 			}
@@ -50,13 +51,39 @@ namespace Return
 			const auto initialHandPos = GetHandPosition(a_player);
 
 			const float initialDistance = (initialHandPos - start).Length();
-			const float acceleration = ComputeReturnAcceleration(initialDistance);
+			float       acceleration = ComputeReturnAcceleration(initialDistance);
 			const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
-			// Duración estimada del regreso -- para el log, y también la
-			// que ya usó Return::BeginReturn (antes de esta llamada) para
-			// calcular el retardo del sonido de arranque del atrape
-			// (a_catchCue, ver Audio::CatchCue).
+			// Duración estimada del regreso con la aceleración natural --
+			// para el log, y también la que ya usó Return::BeginReturn
+			// (antes de esta llamada) para calcular el retardo del sonido
+			// de arranque del atrape (a_catchCue, ver Audio::CatchCue).
+			const float naturalDuration = ComputeReturnDuration(acceleration, initialDistance);
+
+			// Duración mínima que necesita el tramo de movimiento para que
+			// el gesto de Atrape le dé tiempo a sincronizarse de verdad: el
+			// margen de asentado del grafo tras Llamada
+			// (Constants::kMinCatchAnimationDelay) menos lo que ya haya
+			// cubierto el temblor de desprendimiento si lo hubo
+			// (a_shudderDuration), más la duración propia de Catch.hkx
+			// (Constants::kCatchAnimationLeadTime) -- nunca por debajo de
+			// esta última sola, aunque el temblor ya cubriera de sobra el
+			// margen de asentado. Si la distancia es tan corta que la
+			// aceleración natural terminaría antes de este mínimo, se
+			// ralentiza el vuelo (nunca se acelera) para que dure
+			// exactamente lo necesario -- a petición del usuario
+			// (2026-08-03): la sincronización animación/física no es
+			// negociable, nunca se desacopla con temporizadores
+			// independientes de la trayectoria real.
+			const float requiredForSettle = Constants::kMinCatchAnimationDelay - a_shudderDuration + Constants::kCatchAnimationLeadTime;
+			const float requiredMovementDuration = requiredForSettle > Constants::kCatchAnimationLeadTime ? requiredForSettle : Constants::kCatchAnimationLeadTime;
+			if (naturalDuration < requiredMovementDuration) {
+				acceleration = ComputeReturnAccelerationForDuration(initialDistance, requiredMovementDuration);
+				logs::info(
+					"Return::BeginReturnMovement: distancia muy corta ({:.1f}) -- regreso ralentizado a {:.2f}s (natural: {:.2f}s) para sincronizar con Atrape.",
+					initialDistance, requiredMovementDuration, naturalDuration);
+			}
+
 			const float estimatedDuration = ComputeReturnDuration(acceleration, initialDistance);
 
 			logs::info(
@@ -73,19 +100,52 @@ namespace Return
 				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 			}
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
-				// Punto 10: se calcula y escribe el giro a mano cada tick
-				// (ver Animation::TickSpin), igual que en la ida.
-				Animation::TickSpin(a_refr, elapsed);
-
-				// El extremo final de la curva se recalcula cada tick (a
-				// diferencia del inicio y el punto de control, fijados una
-				// única vez): así el regreso no pierde de vista al jugador si
-				// se mueve mientras el arma vuela de vuelta.
 				const auto handPos = GetHandPosition(a_player);
+
+				// Una vez cruzado el umbral de llegada (más abajo), el
+				// bucle ya no se detiene -- se queda vivo pegando la
+				// réplica a la mano cada tick (siguiéndola si el jugador
+				// se sigue moviendo) en vez de dejarla congelada en la
+				// última posición de la curva, que podía quedar a
+				// Constants::kReturnArrivalDistance de la mano: un hueco
+				// visible entre "la réplica se para" y "el arma real
+				// reaparece" (reportado por el usuario, 2026-08-04),
+				// incluso con onApproaching ya bien sincronizado -- la
+				// estimación de velocidad nunca es perfecta del todo
+				// (mide un único tick, el suavizado del tramo final sigue
+				// decelerando después de esa medición), así que un margen
+				// residual siempre es posible; pegar la réplica a la mano
+				// mientras dure ese margen convierte el hueco en, como
+				// mucho, un cambio de malla en el sitio correcto, no un
+				// salto de posición. El reequipado real (ReequipAndReset,
+				// gatillado por la anotación de Catch.hkx) cancela este
+				// bucle desde fuera cuando de verdad toca -- ver
+				// WeaponManager::OnCatchReleaseAnimationEvent.
+				if (arrivedFired) {
+					a_refr.SetPosition(handPos);
+					Physics::SyncHavok(a_refr, handPos, a_refr.GetAngle());
+					return true;
+				}
+
+				// Punto 10: se calcula y escribe el giro a mano cada tick
+				// (ver Animation::TickSpin), igual que en la ida -- salvo
+				// durante la ventana de enderezado (arrancada junto con
+				// onApproaching, ver más abajo), donde Animation::TickSpinStraighten
+				// la sustituye para que el giro llegue frenado y alineado
+				// con la pose de agarre en vez de en mitad de una vuelta
+				// cualquiera (segunda mitad del punto 10, bug reportado
+				// por el usuario, 2026-08-04: el cambio a la pose real se
+				// notaba como un salto brusco de rotación).
+				if (approachFired) {
+					const float blend = (elapsed - straightenStart) / Constants::kSpinStraightenDuration;
+					Animation::TickSpinStraighten(a_refr, straightenStart, blend);
+				} else {
+					Animation::TickSpin(a_refr, elapsed);
+				}
 
 				// Mejora Kratos #4, campo 2 (diagnóstico, todavía sin usar en
 				// la curva): antes de confiar en la rotación del hueso "WEAPON"
@@ -155,14 +215,84 @@ namespace Return
 				catchCue->UpdateStart(nextPos, a_deltaSeconds);
 
 				const float distanceToHand = (handPos - nextPos).Length();
+
+				// Sincronización en vivo del gesto de Atrape con el vuelo
+				// real (a petición del usuario, 2026-08-03: nunca
+				// desacoplar animación y física con un temporizador
+				// precalculado de antemano -- diverge de la trayectoria
+				// real a medida que avanza el regreso, sobre todo por el
+				// suavizado del tramo final, que alarga la duración real
+				// más allá de lo que predice ComputeReturnDuration, ver
+				// Constants::kReturnTailDistance/kReturnTailMinRate).
+				// Se mide la velocidad real de este mismo tick (distancia
+				// cerrada / tiempo) para estimar cuánto falta de verdad en
+				// segundos reales, en vez de fiarse de una predicción hecha
+				// al principio del regreso -- esto absorbe automáticamente
+				// el suavizado del tramo final y cualquier desviación por
+				// que el jugador se haya movido mientras tanto (handPos se
+				// recalcula cada tick). shudderDuration + elapsed cubre el
+				// margen de asentado del grafo tras Llamada
+				// (Constants::kMinCatchAnimationDelay) -- ya garantizado
+				// por construcción una vez el vuelo se ha ralentizado lo
+				// necesario más arriba, comprobado aquí igualmente por si
+				// acaso.
+				if (!approachFired) {
+					const float closedThisTick = previousDistanceToHand - distanceToHand;
+					const float speed = a_deltaSeconds > 0.0f && closedThisTick > 0.0f ? closedThisTick / a_deltaSeconds : 0.0f;
+
+					// Objetivo: no distanceToHand==0, sino el mismo umbral
+					// que de verdad usa la condición de llegada dos bloques
+					// más abajo (Constants::kReturnArrivalDistance) -- si no,
+					// la estimación apunta a una llegada "completa" que el
+					// propio bucle nunca espera: el bucle congela la réplica
+					// en cuanto cruza ese umbral, antes de que
+					// distanceToHand llegue a 0, así que apuntar a 0 dispara
+					// onApproaching demasiado tarde y la réplica se queda
+					// visiblemente quieta esperando el resto del margen
+					// (bug reportado por el usuario, 2026-08-03: "el arma se
+					// detiene un momento muy corto pero visible justo antes
+					// de llegar a la mano").
+					const float remainingDistance = distanceToHand - Constants::kReturnArrivalDistance;
+					// std::numeric_limits<float>::max() evitado a propósito:
+					// Windows.h define max como macro (mismo problema ya
+					// documentado en el proyecto para std::min/std::max, ver
+					// BeginReturn más abajo) -- un literal centinela
+					// "efectivamente infinito" en su lugar, solo hace falta
+					// ser mayor que Constants::kCatchAnimationLeadTime.
+					constexpr float kEffectivelyInfinite = 1.0e9f;
+					const float     estimatedTimeToArrival = remainingDistance <= 0.0f ? 0.0f : (speed > 0.0f ? remainingDistance / speed : kEffectivelyInfinite);
+					const bool      settledSinceCall = shudderDuration + elapsed >= Constants::kMinCatchAnimationDelay;
+					if (settledSinceCall && estimatedTimeToArrival <= Constants::kCatchAnimationLeadTime) {
+						approachFired = true;
+						straightenStart = elapsed;
+						onApproaching();
+					}
+				}
+
 				if (distanceToHand <= Constants::kReturnArrivalDistance) {
 					logs::info("Return::BeginReturnMovement: la réplica ha llegado a la mano.");
 					// Golpe final del atrape: siempre, sin condición (ver
 					// Audio::CatchCue::PlayEnd), no depende de que el
 					// arranque haya llegado a sonar.
 					Audio::CatchCue::PlayEnd(handPos);
+					// Red de seguridad: con el vuelo ya ralentizado lo
+					// necesario más arriba, esto no debería hacer falta en
+					// la práctica, pero garantiza que onApproaching se
+					// dispara siempre antes de onArrived si por lo que sea
+					// no lo hizo por su cuenta (p. ej. un único tick final
+					// demasiado brusco para medir velocidad).
+					if (!approachFired) {
+						approachFired = true;
+						straightenStart = elapsed;
+						onApproaching();
+					}
 					onArrived();
-					return false;
+					// No se devuelve false aquí -- el bucle sigue vivo
+					// pegando la réplica a la mano (ver el chequeo de
+					// arrivedFired al principio del tick) hasta que
+					// ReequipAndReset lo cancele desde fuera.
+					arrivedFired = true;
+					return true;
 				}
 
 				return true;
@@ -177,6 +307,7 @@ namespace Return
 		auto replica = a_replicaHandle.get();
 		if (!a_player || !replica) {
 			logs::warn("Return::BeginReturn: sin jugador o réplica válida, se aborta el regreso.");
+			a_callbacks.onApproaching();
 			a_callbacks.onArrived();
 			return;
 		}
@@ -202,7 +333,7 @@ namespace Return
 		auto catchCue = std::make_shared<Audio::CatchCue>(startDelay);
 
 		if (!a_wasStuck) {
-			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks), catchCue);
+			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks), catchCue, shudderDuration);
 			return;
 		}
 
@@ -241,7 +372,7 @@ namespace Return
 			catchCue->UpdateStart(a_refr.GetPosition(), a_deltaSeconds);
 
 			if (elapsed >= Constants::kStickShudderDuration) {
-				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue));
+				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue), Constants::kStickShudderDuration);
 				return false;
 			}
 

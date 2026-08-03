@@ -404,6 +404,28 @@ namespace Constants
 	// antes). Placeholder, pendiente de ajustar en el juego.
 	inline constexpr float kSpinRampDuration = 0.3f;  // s, placeholder
 
+	// Punto 10 (segunda mitad, todavía sin implementar hasta ahora):
+	// "justo antes de... volver a la mano del jugador, se endereza para
+	// que... el mango quede orientado para que el jugador pueda
+	// agarrarla". Duración de esa ventana de enderezado -- ver
+	// Animation::TickSpinStraighten, llamada desde
+	// Return::BeginReturnMovement en vez de Animation::TickSpin durante
+	// los últimos instantes del regreso (arrancada en el mismo momento
+	// que Return::ReturnCallbacks::onApproaching, ver esa función, así
+	// que ambas terminan a la vez cerca de la llegada real). Bug
+	// reportado por el usuario (2026-08-04): sin enderezar, el nodo de
+	// giro llegaba a la mano en mitad de una vuelta cualquiera y el
+	// cambio a la pose de agarre real (sin rotación extra sobre este
+	// nodo) se notaba como un salto brusco de rotación, no de posición
+	// (el hueco de posición ya se resolvió aparte, ver
+	// Return::BeginReturnMovement/arrivedFired). Mismo valor que
+	// Constants::kCatchAnimationLeadTime de momento (no hay una medida
+	// propia de cuánto debería durar un enderezado que se note natural,
+	// a diferencia de los tiempos de los clips de animación) -- constante
+	// propia en vez de reutilizar esa directamente, para poder recalibrar
+	// una sin tocar la otra si hace falta.
+	inline constexpr float kSpinStraightenDuration = 0.5f;  // s, placeholder
+
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation
 	// Kit, copia del efecto vanilla de Parálisis) que se concede al actor
@@ -598,6 +620,39 @@ namespace Constants
 	// desde ese instante hasta que toca disparar el arranque; ver
 	// Audio::CatchCue::UpdateStart.
 	inline constexpr float kCatchStartSoundLeadTime = 1.066f;
+
+	// Cuánto tarda Catch.hkx, desde que arranca, en llegar a su propia
+	// anotación de liberación PIE.ThorMjolnirCatch (que gatilla el
+	// reequipado real, WeaponManager::OnCatchReleaseAnimationEvent) --
+	// medido por el usuario directamente sobre el clip: 30 fotogramas a
+	// 30 FPS de duración total, anotación en el fotograma 15 -> 0.5s. La
+	// sincronización con la llegada física real del arma (ver
+	// Return::BeginReturn) se apoya en este valor exacto -- ver también
+	// Constants::kMinCatchAnimationDelay para el otro extremo del cálculo
+	// (cuándo puede empezar a reproducirse Catch.hkx, no cuánto dura).
+	inline constexpr float kCatchAnimationLeadTime = 0.5f;
+
+	// Cuánto sigue reproduciéndose Call.hkx, en tiempo real, después de su
+	// propia anotación de liberación (la que dispara
+	// WeaponManager::OnCallReleaseAnimationEvent y arranca el regreso
+	// físico) hasta que el propio clip termina del todo -- medido por el
+	// usuario: 25 fotogramas a 30 FPS de duración total, anotación en el
+	// fotograma 10 -> (25-10)/30 = 0.5s de cola. Bug reportado por el
+	// usuario (2026-08-03): sin este margen, con el arma muy cerca al
+	// llamarla, WeaponManager::BeginCatchAnimation (con su propio
+	// player->NotifyAnimationGraph("attackStart")) podía dispararse casi
+	// en el mismo instante en que Call.hkx seguía resolviéndose -- dos
+	// disparos de ese mismo evento vanilla demasiado seguidos confundían
+	// al grafo de forma no determinista (a veces no arrancaba ninguna
+	// animación, a veces repetía Call.hkx, a veces caía en un ataque
+	// cuerpo a cuerpo). Return::BeginReturn usa este valor junto con
+	// kCatchAnimationLeadTime para, si hace falta, ralentizar el propio
+	// vuelo de regreso (nunca acelerarlo) cuando la distancia es tan corta
+	// que la física natural no dejaría tiempo para ninguno de los dos
+	// márgenes -- nunca desacoplando animación y física con temporizadores
+	// independientes (a petición del usuario: la sincronización no es
+	// negociable). Ver Return::ComputeReturnAccelerationForDuration.
+	inline constexpr float kMinCatchAnimationDelay = 0.5f;
 
 	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
 	// documentado en commonlibsse-ng (ver BSAudioManager.h), 0 sin más

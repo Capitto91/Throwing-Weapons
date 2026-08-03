@@ -71,4 +71,22 @@ namespace Return
 	// ese instante exacto (ver Constants::kCatchStartSoundLeadTime,
 	// Return::BeginReturn) en vez de solo detectar la llegada tick a tick.
 	float ComputeReturnDuration(float a_acceleration, float a_distance);
+
+	// Inversa de ComputeReturnDuration pero despejando la aceleración a
+	// partir de una duración objetivo cualquiera (a_targetDuration), no de
+	// un coeficiente ya dado: a = d·n·(n-1) / T^n -- mismo despeje que ya
+	// usa ComputeReturnAcceleration internamente para su límite superior
+	// (Constants::kReturnMaxDuration), aquí expuesto para el caso
+	// contrario, un límite *inferior*: Return::BeginReturn lo usa para
+	// ralentizar (nunca acelerar) un regreso cuya distancia sea tan corta
+	// que la aceleración natural (ComputeReturnAcceleration) lo haría
+	// durar menos de lo que necesita el gesto de Atrape para sincronizarse
+	// (Constants::kMinCatchAnimationDelay/kCatchAnimationLeadTime) -- a
+	// petición del usuario (2026-08-03), la sincronización animación/vuelo
+	// no es negociable, así que el vuelo se ralentiza en vez de desacoplar
+	// ambos con temporizadores independientes. a_distance/a_targetDuration
+	// deben ser mayores que cero (sin comprobación defensiva aquí -- el
+	// llamante ya lo garantiza, mismo criterio que el resto de este
+	// módulo).
+	float ComputeReturnAccelerationForDuration(float a_distance, float a_targetDuration);
 }

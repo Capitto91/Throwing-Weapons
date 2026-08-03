@@ -27,11 +27,17 @@ namespace Weapon
 		            // Call.hkx (vía OAR), el regreso físico real todavía no
 		            // ha empezado hasta el evento SoundPlay del chasquido de
 		            // dedos (o la red de seguridad, ver WeaponManager).
-		kReturning, // Volviendo hacia el jugador.
-		kCatching   // Llegó a la mano: reproduciendo Catch.hkx (vía OAR), el
-		            // reequipado real todavía no ha pasado hasta la
-		            // anotación de liberación (o la red de seguridad, ver
-		            // WeaponManager).
+		kReturning  // Volviendo hacia el jugador. El gesto visual de Atrape
+		            // (Catch.hkx, vía OAR) se dispara y termina dentro de
+		            // este mismo estado -- a diferencia de Lanzar/Llamada,
+		            // no tiene su propio estado propio: es puramente
+		            // decorativo, trackeado aparte (ver
+		            // WeaponManager::catchAnimationActive). El reequipado
+		            // real (que sí hace transicionar a kInHand) está
+		            // gatillado por la anotación de liberación de Catch.hkx,
+		            // no por la llegada física en sí -- ver
+		            // WeaponManager::BeginCatchAnimation/
+		            // OnCatchReleaseAnimationEvent.
 	};
 
 	class WeaponState

@@ -105,4 +105,15 @@ namespace Return
 		// mismo criterio de forma cerrada que el resto del módulo.
 		return std::pow(a_distance * n * (n - 1.0f) / a_acceleration, 1.0f / n);
 	}
+
+	float ComputeReturnAccelerationForDuration(float a_distance, float a_targetDuration)
+	{
+		constexpr float n = Constants::kReturnAccelerationExponent;
+
+		// Mismo despeje que el límite superior dentro de
+		// ComputeReturnAcceleration (a = d·n·(n-1)/T^n), aquí parametrizado
+		// por a_targetDuration en vez de la constante fija
+		// kReturnMaxDuration.
+		return a_distance * n * (n - 1.0f) / std::pow(a_targetDuration, n);
+	}
 }

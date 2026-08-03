@@ -41,6 +41,23 @@ namespace Animation
 	// explícitos.
 	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds);
 
+	// Punto 10 (segunda mitad, giro): "justo antes de... volver a la mano
+	// del jugador, se endereza para que... el mango quede orientado para
+	// que el jugador pueda agarrarla" -- sustituye a TickSpin durante la
+	// ventana de enderezado (Constants::kSpinStraightenDuration, llamada
+	// desde Return::BeginReturnMovement en los últimos instantes del
+	// regreso, arrancada junto con Return::ReturnCallbacks::onApproaching).
+	// Recalcula internamente (misma fórmula que TickSpin) el ángulo que
+	// tenía el giro justo al empezar la ventana a partir de
+	// a_elapsedAtWindowStart, y lo interpola (curva suave, no lineal)
+	// hacia 0 -- la orientación de reposo del nodo, la misma que ya tiene
+	// el arma real equipada (nunca lleva rotación extra sobre este nodo)
+	// -- según a_blend avanza de 0 (recién empezada la ventana, ángulo
+	// intacto) a 1 (terminada, coincidiendo con la orientación de agarre).
+	// a_blend fuera de [0,1] se acota. Mismo comportamiento que TickSpin
+	// si el nodo de giro no existe todavía.
+	void TickSpinStraighten(RE::TESObjectREFR& a_refr, float a_elapsedAtWindowStart, float a_blend);
+
 	// Punto 11: temblor de desprendimiento antes de iniciar el regreso
 	// desde un objetivo clavado (Constants::kStickShudderDuration,
 	// llamado desde 5.- RETURN/ReturnManager::BeginReturn antes de

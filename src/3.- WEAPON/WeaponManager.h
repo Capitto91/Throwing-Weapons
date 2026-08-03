@@ -93,16 +93,18 @@ namespace Weapon
 		// estado ya cambió por otra vía antes de que llegara.
 		void OnCallReleaseAnimationEvent();
 
-		// Mismo patrón que OnCallReleaseAnimationEvent, para Atrape: llamado
-		// desde Events::CatchReleaseWatcher al recibir la anotación de
-		// liberación (Constants::kCatchReleasePayload, ya horneada en
-		// Catch.hkx desde el principio) mientras se reproduce Catch.hkx -- o
-		// desde la red de seguridad por tiempo si esa anotación nunca llega
-		// (Constants::kCatchReleaseFallbackWindow). A diferencia de
-		// OnCallReleaseAnimationEvent (que arranca BeginReturn), aquí el
-		// regreso físico ya ha terminado -- lo que sigue es el reequipado
-		// real (ReequipAndReset). Sin efecto si el estado ya cambió por otra
-		// vía antes de que llegara.
+		// Llamado desde Events::CatchReleaseWatcher al recibir la anotación
+		// de liberación (Constants::kCatchReleasePayload, ya horneada en
+		// Catch.hkx desde el principio, exactamente Constants::kCatchAnimationLeadTime
+		// después del arranque de la animación -- medido por el usuario
+		// sobre el propio clip) mientras se reproduce Catch.hkx -- o desde
+		// la red de seguridad por tiempo si esa anotación nunca llega
+		// (Constants::kCatchReleaseFallbackWindow). Esta anotación, no la
+		// llegada física en sí (ver Return::ReturnCallbacks::onArrived), es
+		// la que gatea el reequipado real (ReequipAndReset) -- marca el
+		// instante exacto en que la mano se cierra sobre el arma en el
+		// propio clip. Sin efecto si el gesto ya se cerró por otra vía
+		// (catchAnimationActive a false) antes de que llegara.
 		void OnCatchReleaseAnimationEvent();
 
 		// Consultado por Events::EquipGuard: si true, no debe deshacer el
@@ -192,19 +194,37 @@ namespace Weapon
 		// kStuck.
 		void BeginReturn(bool a_wasStuck);
 
-		// Pasa a "atrapando": llamado desde el callback onArrived de
-		// Return::BeginReturn (el arma acaba de llegar a la mano, vuelo de
-		// regreso terminado) en vez de reequipar directamente. Mismo
-		// mecanismo que BeginCallAnimation: escribe
+		// Gesto visual de Atrape -- llamado desde el callback onApproaching
+		// de Return::BeginReturn, sincronizado en vivo con el vuelo físico
+		// real (medido tick a tick, no un temporizador precalculado de
+		// antemano -- a petición del usuario, 2026-08-03: la
+		// sincronización animación/física no es negociable). Se dispara
+		// cuando de verdad quedan Constants::kCatchAnimationLeadTime
+		// segundos (0.5s, medido por el usuario: duración total de
+		// Catch.hkx menos el fotograma de su propia anotación) para la
+		// llegada real, y solo si ya han pasado
+		// Constants::kMinCatchAnimationDelay segundos reales desde que
+		// empezó el regreso (0.5s, medido: lo que sigue reproduciéndose
+		// Call.hkx tras su propia anotación -- disparar esto antes
+		// confundía al grafo de forma no determinista, dos "attackStart"
+		// vanilla demasiado seguidos). Si la distancia es tan corta que la
+		// física natural no dejaría margen para ninguna de las dos cosas,
+		// Return::BeginReturnMovement ralentiza el propio vuelo (nunca lo
+		// acelera) en vez de desacoplar animación y física. A diferencia de
+		// BeginThrowAnimation/BeginCallAnimation,
+		// NO toca weaponState en absoluto -- el ciclo principal del arma
+		// sigue en kReturning mientras dura este gesto, y solo pasa a
+		// kInHand cuando OnCatchReleaseAnimationEvent llama a
+		// ReequipAndReset (gatillado por la anotación real de Catch.hkx, no
+		// por la llegada física en sí). Esto es puramente decorativo,
+		// trackeado aparte con catchAnimationActive. Mismo mecanismo que
+		// BeginCallAnimation por lo demás: escribe
 		// Constants::kRightHandTypeGraphVariable a
-		// Constants::kRightHandTypeOneHanded (el jugador sigue genuinamente
-		// desarmado, el arma real todavía no se ha tocado), activa
-		// Animation::SetCatchTrigger y dispara
-		// Constants::kLightAttackAnimationEvent para que el submod de OAR
-		// de Atrape reproduzca Catch.hkx. El reequipado real
-		// (ReequipAndReset) no ocurre aquí, ver
-		// OnCatchReleaseAnimationEvent. Arranca también la red de seguridad
-		// por tiempo (Constants::kCatchReleaseFallbackWindow).
+		// Constants::kRightHandTypeOneHanded, activa Animation::SetCatchTrigger
+		// y dispara Constants::kLightAttackAnimationEvent para que el submod
+		// de OAR de Atrape reproduzca Catch.hkx. Arranca también la red de
+		// seguridad por tiempo (Constants::kCatchReleaseFallbackWindow) por
+		// si la anotación de liberación nunca llega.
 		void BeginCatchAnimation();
 
 		// Recuperación instantánea: destruye la réplica (si la hay, ver
@@ -236,5 +256,16 @@ namespace Weapon
 		// Activado por EquipGestureWeapon mientras dura el equipado del
 		// señuelo -- ver IsEquipGuardSuppressed.
 		bool suppressEquipGuard{ false };
+
+		// True mientras dura el gesto visual de Atrape (desde
+		// BeginCatchAnimation hasta OnCatchReleaseAnimationEvent) --
+		// deliberadamente independiente de weaponState.GetState(), que para
+		// entonces puede ya haber vuelto a kInHand (el reequipado real no
+		// espera a este gesto, ver BeginCatchAnimation). Comprobado también
+		// en OnLoadingScreenClosed/ResetToInHand para no dejar los flags del
+		// grafo (CatchTrigger/AnimationDriven/iRightHandType/movimiento
+		// bloqueado) encendidos para siempre si una pantalla de carga o una
+		// partida nueva interrumpe el gesto a mitad.
+		bool catchAnimationActive{ false };
 	};
 }
