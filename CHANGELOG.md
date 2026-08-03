@@ -748,3 +748,11 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - `Return::BeginReturnMovement` arranca esa ventana en el mismo instante que `onApproaching` (mismo disparador, misma duración de momento: `Constants::kSpinStraightenDuration`, 0.5s placeholder) -- así el giro llega frenado y alineado justo cuando toca, en paralelo con el gesto de Atrape.
   - Revisado con la skill `skse-plugin-pitfalls`: sin hallazgos.
   - Pendiente de confirmar en el juego, y de implementar la otra mitad del punto 10 (enderezar la cabeza/filo hacia el objetivo antes de clavarse en la ida) -- fuera de alcance de este bug de Atrape, sigue pendiente como estaba.
+
+### v1.11.9
+
+- **Corregido un bug arrastrado desde varias versiones atrás: tras Atrape, el personaje se quedaba en pose de cuerpo a cuerpo hasta realizar una acción (atacar, etc.), momento en el que saltaba de golpe a la pose de una mano -- a pesar de que el arma ya estaba genuinamente reequipada.** Causa: tanto `WeaponManager::OnCatchReleaseAnimationEvent` como el bloque de limpieza de `OnLoadingScreenClosed` volvían `iRightHandType` a `0` (desarmado) justo *antes* de disparar el reequipado real (`ReequipAndReset`/`RecallWeapon`, que sí incluye una llamada real a `RE::ActorEquipManager::EquipObject`) -- el reequipado real no parece disparar por sí solo un refresco de la pose de reposo, así que el personaje se quedaba mostrando la última pose evaluada (cuerpo a cuerpo) hasta que otra acción forzaba al grafo a releer la graph variable.
+  - Quitada esa escritura a `0` en ambos sitios -- `iRightHandType` ya está en el valor correcto (`Constants::kRightHandTypeOneHanded`, puesto en `BeginCatchAnimation`) para lo que va a ser cierto de verdad en cuanto `EquipObject` se aplique, así que tocarlo ahí sobraba y además rompía la pose de reposo.
+  - Sigue reseteándose a `0` en `WeaponManager::OnCallReleaseAnimationEvent` (correcto: ahí el jugador se queda genuinamente desarmado, sin ningún reequipado real a continuación) y en `ResetToInHand` (red de seguridad de sesión, sin reequipado real garantizado justo después).
+  - Revisado con la skill `skse-plugin-pitfalls`: sin hallazgos.
+  - Pendiente de confirmar en el juego.

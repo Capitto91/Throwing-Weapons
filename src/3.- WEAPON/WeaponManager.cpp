@@ -225,19 +225,26 @@ namespace Weapon
 			break;
 		}
 
-		// Aparte del switch anterior (que solo cubre el ciclo principal del
-		// arma): el gesto visual de Atrape puede seguir en marcha aunque
-		// weaponState ya haya vuelto a kInHand (el reequipado real no
-		// espera a este gesto, ver BeginCatchAnimation/BeginReturn) -- sin
-		// esto, una pantalla de carga a mitad del gesto dejaría
-		// CatchTrigger/AnimationDriven/iRightHandType/el bloqueo de
-		// movimiento encendidos para siempre.
+		// Aparte del switch anterior: mientras dura el gesto visual de
+		// Atrape, weaponState sigue en kReturning (el reequipado real está
+		// gatillado por la anotación de Catch.hkx, no por la llegada
+		// física -- ver OnCatchReleaseAnimationEvent), así que el caso
+		// kReturning de arriba ya llama a RecallWeapon() y reequipa el
+		// arma real de verdad -- pero no toca los flags propios del gesto
+		// (CatchTrigger/AnimationDriven/catchAnimationActive/bloqueo de
+		// movimiento), que sin esto se quedarían encendidos para siempre.
 		if (catchAnimationActive) {
 			catchAnimationActive = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 				Animation::SetCatchTrigger(*player, false);
 				Animation::SetAnimationDriven(*player, false);
-				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+				// iRightHandType NO se toca aquí -- mismo motivo que
+				// OnCatchReleaseAnimationEvent: RecallWeapon ya reequipó el
+				// arma real de verdad justo arriba, y resetear esta graph
+				// variable después de un reequipado real deja al personaje
+				// en pose de cuerpo a cuerpo hasta la siguiente acción que
+				// fuerce al grafo a releerla (bug reportado por el
+				// usuario, 2026-08-04).
 			}
 			Input::SetMovementLocked(false);
 		}
@@ -540,7 +547,23 @@ namespace Weapon
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetCatchTrigger(*player, false);
 			Animation::SetAnimationDriven(*player, false);
-			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+
+			// A diferencia de OnCallReleaseAnimationEvent (que sí vuelve
+			// iRightHandType a 0 -- el jugador se queda genuinamente
+			// desarmado, sin ningún reequipado real a continuación), aquí
+			// NO se toca -- justo debajo, ReequipAndReset reequipa el arma
+			// real de verdad, y es esa llamada real a
+			// RE::ActorEquipManager::EquipObject la que debe quedarse como
+			// dueña de esta graph variable a partir de ahora. Bug
+			// reportado por el usuario (2026-08-04): resetear a 0 aquí y
+			// reequipar de verdad justo después dejaba al personaje en
+			// pose de cuerpo a cuerpo hasta la siguiente acción (ataque,
+			// etc.) que forzara al grafo a releer el valor -- el
+			// reequipado real no parece disparar por sí solo ese
+			// refresco. Ya está en el valor correcto
+			// (Constants::kRightHandTypeOneHanded, puesto en
+			// BeginCatchAnimation) para lo que va a ser cierto de verdad
+			// en un instante, así que tocarlo aquí sobra.
 		}
 		Input::SetMovementLocked(false);
 
