@@ -20,20 +20,23 @@ add_requires("simpleini")
 -- Nombre del target (no el del proyecto, fijado arriba con set_project) --
 -- la regla commonlibsse-ng.plugin calcula installdir como
 -- XSE_TES5_MODS_PATH/<nombre del target> (ver
--- lib/commonlibsse-ng/xmake.lua). "ThorMjolnir" en vez de "Throwing-Weapons"
--- para que el DLL/INI compilados caigan en la misma carpeta de mod que el
--- resto del mod real (nif/sonidos/ESP, gestionados fuera de este repo) en
--- vez de en una carpeta separada -- decisión del usuario, solo afecta al
--- despliegue, no a cómo se organiza el código fuente en este repo. Probado
--- un after_config(...) propio para sobrescribir installdir sin renombrar el
--- target -- descartado: xmake solo invoca after_config de *reglas*
--- (config_target en modules/private/utils/target.lua), no del target en sí,
--- así que nunca llegaba a ejecutarse.
-target("ThorMjolnir")
+-- lib/commonlibsse-ng/xmake.lua). "ThorMjolnir_OAR" (exclusivo de esta rama,
+-- no de "behavior"/"main") para que este build caiga en su propia carpeta de
+-- mod en vez de compartir "ThorMjolnir" con la rama "behavior" -- ambas
+-- ramas compilaban al mismo installdir y se pisaban el DLL/INI la una a la
+-- otra en el mismo mod manager. Los assets ya existentes bajo la carpeta de
+-- mod "ThorMjolnir" (nif/sonidos/ESP/animaciones OAR, gestionados fuera de
+-- este repo) siguen sin duplicarse aquí -- pendiente de decidir si hace
+-- falta copiarlos a "ThorMjolnir_OAR" para que el mod funcione de forma
+-- aislada. Probado un after_config(...) propio para sobrescribir installdir
+-- sin renombrar el target -- descartado: xmake solo invoca after_config de
+-- *reglas* (config_target en modules/private/utils/target.lua), no del
+-- target en sí, así que nunca llegaba a ejecutarse.
+target("ThorMjolnir_OAR")
     add_rules("commonlibsse-ng.plugin", {
-        name = "ThorMjolnir",
+        name = "ThorMjolnir_OAR",
         author = "Capitto91",
-        description = "Arma arrojadiza y retornable (estilo Leviathan Axe) para Skyrim SE/AE"
+        description = "Arma arrojadiza y retornable (estilo Leviathan Axe) para Skyrim SE/AE -- variante OAR"
     })
 
     -- add src files
