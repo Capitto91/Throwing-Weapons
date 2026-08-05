@@ -693,6 +693,17 @@ namespace Constants
 	// negociable). Ver Return::ComputeReturnAccelerationForDuration.
 	inline constexpr float kMinCatchAnimationDelay = 0.5f;
 
+	// Temblor de cámara al cerrar la mano sobre el arma, disparado en el
+	// mismo instante que el reequipado real (WeaponManager::
+	// OnCatchReleaseAnimationEvent, misma anotación PIE.ThorMjolnirCatch ya
+	// usada para el reequipado/attackStop) -- vía RE::ShakeCamera
+	// (RE/M/Misc.h), el mismo motor nativo detrás de Game.ShakeCamera() en
+	// Papyrus. No es un punto numerado de "Mecanica del arma.txt" (no cubre
+	// cámara en ningún punto) -- puro polish pedido aparte. Placeholders sin
+	// valor de referencia previo, pendientes de ajustar en el juego.
+	inline constexpr float kCatchShakeStrength = 1.5f;
+	inline constexpr float kCatchShakeDuration = 0.2f;
+
 	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
 	// documentado en commonlibsse-ng (ver BSAudioManager.h), 0 sin más
 	// justificación que ser el valor neutro (probado también el 0x1A por

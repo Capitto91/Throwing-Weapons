@@ -556,6 +556,12 @@ namespace Weapon
 			// Ver Constants::kAttackStopAnimationEvent -- mismo motivo que
 			// OnCallReleaseAnimationEvent.
 			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
+
+			// Temblor de cámara al cerrar la mano sobre el arma -- ver
+			// Constants::kCatchShakeStrength/kCatchShakeDuration. Epicentro
+			// en el propio jugador para que la atenuación por distancia del
+			// motor no le reste fuerza a su propia cámara.
+			RE::ShakeCamera(Constants::kCatchShakeStrength, player->GetPosition(), Constants::kCatchShakeDuration);
 		}
 		Input::SetMovementLocked(false);
 
