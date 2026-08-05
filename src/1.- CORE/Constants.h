@@ -80,23 +80,27 @@ namespace Constants
 	// no rastreada todavía en el XML. Sin confirmar en el juego.
 	inline constexpr const char* kAttackStopAnimationEvent = "attackStop";
 
-	// Payload Interpreter (dependencia externa, ver CLAUDE.md): el tag real
-	// que llega a RE::BSAnimationGraphEvent es siempre "PIE" -- el contenido
-	// útil vive en el campo payload, no en el tag combinado.
-	// Ojo, minúsculas tras la P: confirmado en el juego (Animation Event Log
-	// de OAR) que el evento real que dispara Payload Interpreter es "Pie",
-	// no "PIE" -- BSFixedString::operator== compara contenido exacto, sin
-	// normalizar mayúsculas/minúsculas.
-	inline constexpr const char* kPayloadInterpreterTag = "Pie";
-	inline constexpr const char* kThrowReleasePayload = "MjolnirThrow";
+	// La detección de la anotación de liberación usa la API de Functions de
+	// Open Animation Replacer para plugins externos (ver CLAUDE.md para el
+	// porqué frente a otros mecanismos descartados, y ver
+	// 10.- EVENTS/OARFunctions.h/.cpp y los headers vendorizados en
+	// 13.- EXTERNAL/OpenAnimationReplacer/) -- nuestro propio código se
+	// registra en OAR con una función custom, y OAR nos llama a nosotros
+	// directamente (Run/RunImpl, misma pila de llamada) en el instante
+	// exacto de la anotación, sin ningún evento de por medio. El nombre de
+	// la anotación en el clip (p. ej. "OAR.MjolnirThrow") solo importa para
+	// el "trigger" (par event/payload) que cada config.json liga a nuestra
+	// función -- ya no hay ninguna constante aquí que comparar contra un
+	// BSAnimationGraphEvent::tag.
 
-	// Red de seguridad: si kThrowReleasePayload nunca llega (OAR/Payload
-	// Interpreter desinstalado, o el ataque se interrumpe por algún motivo),
-	// el arma se lanza igualmente pasado este margen en vez de quedarse
-	// atascada en State::kThrowing para siempre -- el lanzamiento físico
-	// debe ocurrir siempre, la sincronía visual es best-effort (decisión del
-	// usuario, 2026-07-29). Mayor que el instante de liberación real (0.8s)
-	// pero sin llegar a la duración completa del clip.
+	// Red de seguridad: si la anotación real nunca llega (OAR
+	// desinstalado/desactualizado/sin la API de Functions, o el ataque se
+	// interrumpe por algún motivo), el arma se lanza igualmente pasado este
+	// margen en vez de quedarse atascada en State::kThrowing para siempre --
+	// el lanzamiento físico debe ocurrir siempre, la sincronía visual es
+	// best-effort (decisión del usuario, 2026-07-29). Mayor que el instante
+	// de liberación real (0.8s) pero sin llegar a la duración completa del
+	// clip.
 	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
 
 	// -- Llamada: sustitución de animación vía Open Animation Replacer,
@@ -133,25 +137,25 @@ namespace Constants
 	// valor real confirmado en vez de depender de esa coincidencia.
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
 
-	// Mismo mecanismo que Lanzar (Payload Interpreter, tag "Pie" siempre +
-	// payload separado, ver kPayloadInterpreterTag/kThrowReleasePayload):
-	// primer intento con un evento SoundPlay vanilla nativo descartado (no
-	// llegaba a dispararse, Call.hkx reproducía la animación vanilla en su
-	// lugar en vez de la sustituida por OAR -- sin confirmar todavía si el
-	// motivo era el propio SoundPlay o la sustitución de OAR en sí). Vuelve
-	// a la misma anotación PIE.<payload> ya probada y confirmada con Lanzar.
-	inline constexpr const char* kCallReleasePayload = "ThorMjolnirCall";
+	// Mismo mecanismo que Lanzar (ver el bloque de comentarios sobre
+	// kThrowReleaseFallbackWindow: API de Functions de Open Animation
+	// Replacer). Antes de esto, un primer intento con un evento SoundPlay
+	// vanilla nativo se descartó (no llegaba a dispararse, Call.hkx
+	// reproducía la animación vanilla en su lugar en vez de la sustituida
+	// por OAR -- sin confirmar todavía si el motivo era el propio SoundPlay
+	// o la sustitución de OAR en sí).
 
-	// Red de seguridad análoga a kThrowReleaseFallbackWindow, por si
-	// kCallReleasePayload nunca llega -- mismos motivos (OAR/Payload
-	// Interpreter desinstalado, o el ataque se interrumpe). Constante propia
-	// (no reutiliza kThrowReleaseFallbackWindow) porque Call.hkx no tiene por
-	// qué durar lo mismo que Throw.hkx hasta el chasquido -- placeholder, sin
-	// calibrar en el juego.
+	// Red de seguridad análoga a kThrowReleaseFallbackWindow, por si la
+	// anotación real nunca llega -- mismos motivos (OAR
+	// desinstalado/desactualizado/sin la API de Functions, o el ataque se
+	// interrumpe). Constante propia (no reutiliza kThrowReleaseFallbackWindow)
+	// porque Call.hkx no tiene por qué durar lo mismo que Throw.hkx hasta el
+	// chasquido -- placeholder, sin calibrar en el juego.
 	inline constexpr std::chrono::milliseconds kCallReleaseFallbackWindow{ 1500 };
 
 	// Sonido del chasquido de dedos, disparado desde el propio código (ya no
-	// vía SoundPlay vanilla) en el mismo instante que kCallReleasePayload --
+	// vía SoundPlay vanilla) en el mismo instante que la anotación de
+	// liberación de Llamada (Events::OARFunctions::CallReleaseFunction) --
 	// FormID local dado por el usuario desde xEdit (0x01011579, el byte alto
 	// 01 es el índice de carga del plugin en su partida, no parte del FormID
 	// local). "MarkSound" en el EditorID sugiere un Sound Marker
@@ -175,13 +179,10 @@ namespace Constants
 	// (mismo motivo que kThrowTriggerGraphVariable/kCallTriggerGraphVariable).
 	inline constexpr const char* kCatchTriggerGraphVariable = "ThorMjolnir_CatchTrigger";
 
-	// A diferencia de kCallReleasePayload (que tuvo que probarse con un
-	// SoundPlay vanilla primero, ver CHANGELOG), Catch.hkx ya llevaba esta
-	// anotación PIE.<payload> horneada desde el principio (confirmado con
-	// `strings` sobre el propio .hkx) -- mismo mecanismo de Payload
-	// Interpreter que Lanzar/Llamada (tag "Pie" siempre, ver
-	// kPayloadInterpreterTag).
-	inline constexpr const char* kCatchReleasePayload = "ThorMjolnirCatch";
+	// A diferencia de Llamada (que tuvo que probarse con un SoundPlay
+	// vanilla primero, ver CHANGELOG), Catch.hkx ya llevaba esta anotación
+	// horneada desde el principio (confirmado con `strings` sobre el propio
+	// .hkx) -- mismo mecanismo (API de Functions de OAR) que Lanzar/Llamada.
 
 	// Red de seguridad análoga a kCallReleaseFallbackWindow -- placeholder,
 	// sin calibrar en el juego.

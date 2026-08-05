@@ -4,10 +4,11 @@
 #include "10.- EVENTS/EventManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "10.- EVENTS/OARFunctions.h"
+#include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
-#include "12.- AUDIO/SoundResolver.h"
 
 #include <optional>
 
@@ -202,113 +203,6 @@ namespace Events
 			~LoadingScreenWatcher() override = default;
 		};
 
-		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): detecta la anotación
-		// de liberación de Lanzar (Payload Interpreter, tag siempre "Pie" --
-		// el contenido real va en payload, ver CLAUDE.md) mientras se
-		// reproduce Throw.hkx vía Open Animation Replacer, y dispara el
-		// lanzamiento físico real en ese instante en vez de al soltar el
-		// botón. Confirmado en el juego de punta a punta (2026-07-29): el
-		// sink recibe la anotación real y sincroniza correctamente con
-		// varios ciclos completos de lanzar/recuperar.
-		class ThrowReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
-		{
-		public:
-			static ThrowReleaseWatcher* GetSingleton()
-			{
-				static ThrowReleaseWatcher singleton;
-				return &singleton;
-			}
-
-			ThrowReleaseWatcher(const ThrowReleaseWatcher&) = delete;
-			ThrowReleaseWatcher(ThrowReleaseWatcher&&) = delete;
-			ThrowReleaseWatcher& operator=(const ThrowReleaseWatcher&) = delete;
-			ThrowReleaseWatcher& operator=(ThrowReleaseWatcher&&) = delete;
-
-		protected:
-			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
-			{
-				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kThrowReleasePayload) {
-					Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
-				}
-
-				return RE::BSEventNotifyControl::kContinue;
-			}
-
-		private:
-			ThrowReleaseWatcher() = default;
-			~ThrowReleaseWatcher() override = default;
-		};
-
-		// Mismo patrón que ThrowReleaseWatcher, para Llamada: misma anotación
-		// de Payload Interpreter (tag "Pie" + payload separado), distinto
-		// payload (Constants::kCallReleasePayload). Un intento anterior con
-		// un evento SoundPlay vanilla nativo se descartó -- Call.hkx no
-		// llegaba a sustituir la animación vanilla (sin aislar todavía si el
-		// motivo era el propio SoundPlay o la sustitución de OAR), así que se
-		// vuelve al mecanismo ya confirmado con Lanzar.
-		class CallReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
-		{
-		public:
-			static CallReleaseWatcher* GetSingleton()
-			{
-				static CallReleaseWatcher singleton;
-				return &singleton;
-			}
-
-			CallReleaseWatcher(const CallReleaseWatcher&) = delete;
-			CallReleaseWatcher(CallReleaseWatcher&&) = delete;
-			CallReleaseWatcher& operator=(const CallReleaseWatcher&) = delete;
-			CallReleaseWatcher& operator=(CallReleaseWatcher&&) = delete;
-
-		protected:
-			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
-			{
-				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kCallReleasePayload) {
-					Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
-				}
-
-				return RE::BSEventNotifyControl::kContinue;
-			}
-
-		private:
-			CallReleaseWatcher() = default;
-			~CallReleaseWatcher() override = default;
-		};
-
-		// Mismo patrón que CallReleaseWatcher, para Atrape: misma anotación
-		// de Payload Interpreter, payload propio (Constants::kCatchReleasePayload).
-		// A diferencia de Lanzar/Llamada, Catch.hkx ya llevaba esta anotación
-		// horneada desde el principio (confirmado con `strings` sobre el
-		// propio .hkx), no hizo falta ningún intento previo con SoundPlay.
-		class CatchReleaseWatcher final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
-		{
-		public:
-			static CatchReleaseWatcher* GetSingleton()
-			{
-				static CatchReleaseWatcher singleton;
-				return &singleton;
-			}
-
-			CatchReleaseWatcher(const CatchReleaseWatcher&) = delete;
-			CatchReleaseWatcher(CatchReleaseWatcher&&) = delete;
-			CatchReleaseWatcher& operator=(const CatchReleaseWatcher&) = delete;
-			CatchReleaseWatcher& operator=(CatchReleaseWatcher&&) = delete;
-
-		protected:
-			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
-			{
-				if (a_event && a_event->tag == Constants::kPayloadInterpreterTag && a_event->payload == Constants::kCatchReleasePayload) {
-					Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent();
-				}
-
-				return RE::BSEventNotifyControl::kContinue;
-			}
-
-		private:
-			CatchReleaseWatcher() = default;
-			~CatchReleaseWatcher() override = default;
-		};
-
 		void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
 		{
 			switch (a_message->type) {
@@ -333,6 +227,13 @@ namespace Events
 				} else {
 					logs::warn("Events::OnSKSEMessage: kPostLoad, no se pudo obtener SerializationInterface.");
 				}
+
+				// Debe llamarse aquí o antes -- ver OARFunctions.h. No
+				// depende de ningún singleton del motor (a diferencia de
+				// EquipGuard/LoadingScreenWatcher, diferidos a kDataLoaded),
+				// solo de que la DLL de Open Animation Replacer ya esté
+				// cargada en el proceso.
+				OARFunctions::RegisterAll();
 				break;
 			case SKSE::MessagingInterface::kInputLoaded:
 				// Los dispositivos de entrada ya están listos para
@@ -391,21 +292,5 @@ namespace Events
 		// fiable.
 		SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
 		logs::info("EventManager inicializado (a la espera de kInputLoaded/kDataLoaded).");
-	}
-
-	void EnsureAnimationSinksRegistered()
-	{
-		static bool registered = false;
-		if (registered) {
-			return;
-		}
-
-		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			player->AddAnimationGraphEventSink(ThrowReleaseWatcher::GetSingleton());
-			player->AddAnimationGraphEventSink(CallReleaseWatcher::GetSingleton());
-			player->AddAnimationGraphEventSink(CatchReleaseWatcher::GetSingleton());
-			registered = true;
-			logs::info("Events::EnsureAnimationSinksRegistered: ThrowReleaseWatcher/CallReleaseWatcher/CatchReleaseWatcher registrados.");
-		}
 	}
 }

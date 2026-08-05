@@ -4,7 +4,6 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
-#include "10.- EVENTS/EventManager.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "4.- THROW/ThrowManager.h"
@@ -274,12 +273,6 @@ namespace Weapon
 			return;
 		}
 
-		// Registro perezoso del sink de liberación de Lanzar (ver
-		// EventManager.h): garantiza que ya está enganchado antes de que
-		// pueda hacer falta, sin depender de kNewGame/kPostLoadGame -- que
-		// `coc` desde la consola del menú principal se salta por completo.
-		Events::EnsureAnimationSinksRegistered();
-
 		weaponState.SetActiveWeapon(boundWeapon);
 		weaponState.SetState(State::kAiming);
 
@@ -453,8 +446,8 @@ namespace Weapon
 			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 
 			// El sonido del chasquido ya no depende de un SoundPlay vanilla
-			// (descartado, ver Constants::kCallReleasePayload) -- se dispara
-			// aquí mismo, en el mismo instante que el regreso físico real.
+			// (descartado, ver CHANGELOG.md) -- se dispara aquí mismo, en el
+			// mismo instante que el regreso físico real.
 			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
 
 			// Ver Constants::kAttackStopAnimationEvent: confirmado en el

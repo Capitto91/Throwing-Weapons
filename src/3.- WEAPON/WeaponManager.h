@@ -74,28 +74,28 @@ namespace Weapon
 		// (puerta, viaje rápido...).
 		void OnLoadingScreenClosed();
 
-		// Llamado desde el event sink de Events::ThrowReleaseWatcher al
-		// recibir la anotación de liberación (Constants::kThrowReleasePayload,
-		// vía Payload Interpreter) mientras se reproduce Throw.hkx -- o desde
-		// la red de seguridad por tiempo si esa anotación nunca llega (ver
-		// Constants::kThrowReleaseFallbackWindow). Sin efecto si el estado ya
-		// cambió por otra vía (p. ej. una pantalla de carga) antes de que
-		// llegara.
+		// Llamado desde Events::OARFunctions::ThrowReleaseFunction::RunImpl
+		// (ver 10.- EVENTS/OARFunctions.h/.cpp) -- función custom registrada
+		// en la API de Open Animation Replacer, invocada directamente por
+		// OAR (sin ningún BSAnimationGraphEvent de por medio) en el instante
+		// exacto de la anotación de liberación mientras se reproduce
+		// Throw.hkx -- o desde la red de seguridad por tiempo si esa
+		// anotación nunca llega (ver Constants::kThrowReleaseFallbackWindow).
+		// Sin efecto si el estado ya cambió por otra vía (p. ej. una
+		// pantalla de carga) antes de que llegara.
 		void OnThrowReleaseAnimationEvent();
 
 		// Mismo patrón que OnThrowReleaseAnimationEvent, para Llamada:
-		// llamado desde Events::CallReleaseWatcher al recibir la anotación de
-		// liberación (Constants::kCallReleasePayload, vía Payload Interpreter,
-		// mismo tag "Pie" que Lanzar) mientras se reproduce Call.hkx -- o
-		// desde la red de seguridad por tiempo si esa anotación nunca llega
-		// (ver Constants::kCallReleaseFallbackWindow). También dispara el
-		// sonido del chasquido (Audio::PlayReliableOneShot). Sin efecto si el
+		// llamado desde Events::OARFunctions::CallReleaseFunction::RunImpl
+		// mientras se reproduce Call.hkx -- o desde la red de seguridad por
+		// tiempo si esa anotación nunca llega (ver
+		// Constants::kCallReleaseFallbackWindow). También dispara el sonido
+		// del chasquido (Audio::PlayReliableOneShot). Sin efecto si el
 		// estado ya cambió por otra vía antes de que llegara.
 		void OnCallReleaseAnimationEvent();
 
-		// Llamado desde Events::CatchReleaseWatcher al recibir la anotación
-		// de liberación (Constants::kCatchReleasePayload, ya horneada en
-		// Catch.hkx desde el principio, exactamente Constants::kCatchAnimationLeadTime
+		// Llamado desde Events::OARFunctions::CatchReleaseFunction::RunImpl,
+		// ya horneada en Catch.hkx desde el principio, exactamente Constants::kCatchAnimationLeadTime
 		// después del arranque de la animación -- medido por el usuario
 		// sobre el propio clip) mientras se reproduce Catch.hkx -- o desde
 		// la red de seguridad por tiempo si esa anotación nunca llega
