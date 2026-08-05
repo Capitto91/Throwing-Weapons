@@ -11,6 +11,7 @@
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "9.- MATH/CurveMath.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
 #include <vector>
@@ -100,7 +101,22 @@ namespace Return
 				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 			}
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			// Punto de partida real del giro para este tramo (ver
+			// CLAUDE.md, "Arquitectura de física de proyectiles"): lo que
+			// llevara el nodo de giro justo antes de empezar a mover la
+			// réplica -- recién desprendida tras el temblor
+			// (Return::BeginReturn), o todavía en pleno vuelo de ida si el
+			// regreso lo dispara un auto-recall a media parábola. Sin
+			// esto, el primer tick de este bucle saltaba de golpe a la
+			// fórmula de giro calculada desde cero, mismo problema que en
+			// el lanzamiento (ver Throw::LaunchWeapon). rootWorld se lee
+			// una única vez: el nodo raíz de la réplica no vuelve a rotar
+			// en lo que le queda de vida (nadie llama SetAngle sobre
+			// ella).
+			const RE::NiMatrix3 rootWorld = replica->Get3D() ? replica->Get3D()->world.rotate : RE::NiMatrix3{};
+			const RE::NiMatrix3 movementBaseLocal = Animation::GetSpinLocalRotation(*replica);
+
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -134,17 +150,25 @@ namespace Return
 				// Punto 10: se calcula y escribe el giro a mano cada tick
 				// (ver Animation::TickSpin), igual que en la ida -- salvo
 				// durante la ventana de enderezado (arrancada junto con
-				// onApproaching, ver más abajo), donde Animation::TickSpinStraighten
-				// la sustituye para que el giro llegue frenado y alineado
-				// con la pose de agarre en vez de en mitad de una vuelta
-				// cualquiera (segunda mitad del punto 10, bug reportado
-				// por el usuario, 2026-08-04: el cambio a la pose real se
-				// notaba como un salto brusco de rotación).
+				// onApproaching, ver más abajo), donde
+				// Animation::TickSpinStraighten la sustituye para que el
+				// giro llegue frenado y alineado con la orientación real
+				// de la mano en vez de en mitad de una vuelta cualquiera
+				// (segunda mitad del punto 10, bug reportado por el
+				// usuario, 2026-08-04: el cambio a la pose real se notaba
+				// como un salto brusco de rotación). El objetivo se
+				// recalcula cada tick (GetHandBoneWorldRotation, no una
+				// foto fija tomada al empezar la ventana) porque el
+				// jugador puede seguir girando mientras dura -- así el
+				// enderezado siempre converge a la orientación real en el
+				// instante exacto de la llegada, no a la que tuviera la
+				// mano medio segundo antes.
 				if (approachFired) {
-					const float blend = (elapsed - straightenStart) / Constants::kSpinStraightenDuration;
-					Animation::TickSpinStraighten(a_refr, straightenStart, blend);
+					const float         blend = (elapsed - straightenStart) / Constants::kSpinStraightenDuration;
+					const RE::NiMatrix3 handTargetLocal = Math::LocalRotationFromWorld(rootWorld, Animation::GetHandBoneWorldRotation(*a_player));
+					Animation::TickSpinStraighten(a_refr, straightenBlendFromLocal, handTargetLocal, blend);
 				} else {
-					Animation::TickSpin(a_refr, elapsed);
+					Animation::TickSpin(a_refr, elapsed, movementBaseLocal);
 				}
 
 				// Mejora Kratos #4, campo 2 (diagnóstico, todavía sin usar en
@@ -265,6 +289,7 @@ namespace Return
 					if (settledSinceCall && estimatedTimeToArrival <= Constants::kCatchAnimationLeadTime) {
 						approachFired = true;
 						straightenStart = elapsed;
+						straightenBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
 						onApproaching();
 					}
 				}
@@ -284,6 +309,7 @@ namespace Return
 					if (!approachFired) {
 						approachFired = true;
 						straightenStart = elapsed;
+						straightenBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
 						onApproaching();
 					}
 					onArrived();
@@ -330,7 +356,7 @@ namespace Return
 		// WeaponTrail.cpp), así que un ternario aquí en su lugar.
 		const float rawStartDelay = shudderDuration + predictedMovementDuration - Constants::kCatchStartSoundLeadTime;
 		const float startDelay = rawStartDelay > 0.0f ? rawStartDelay : 0.0f;
-		auto catchCue = std::make_shared<Audio::CatchCue>(startDelay);
+		auto        catchCue = std::make_shared<Audio::CatchCue>(startDelay);
 
 		if (!a_wasStuck) {
 			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks), catchCue, shudderDuration);

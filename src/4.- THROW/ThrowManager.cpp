@@ -9,6 +9,7 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <cmath>
 #include <optional>
@@ -148,7 +149,17 @@ namespace Throw
 		const auto         direction = ComputeAimedDirection(a_shooter, origin);
 		const RE::NiPoint3 velocity0 = direction * Constants::kThrowInitialSpeed;
 
-		Physics::SpawnReplica(a_shooter, a_weapon, origin, [a_shooter, a_weapon, origin, velocity0, callbacks = a_callbacks](RE::ObjectRefHandle a_handle) {
+		// Punto de partida real del giro (ver CLAUDE.md, "Arquitectura de
+		// física de proyectiles"): la rotación mundial que tenía la malla
+		// del arma equipada un instante antes de convertirse en réplica --
+		// captura síncrona, antes de que Physics::SpawnReplica arranque la
+		// espera asíncrona por el 3D de la réplica, así que sigue siendo
+		// la última pose real visible aunque WeaponManager::ThrowWeapon ya
+		// la haya ocultado (SetEquippedWeaponHidden no toca la
+		// transformación, solo la visibilidad).
+		const RE::NiMatrix3 capturedWeaponWorldRotation = Animation::GetEquippedWeaponWorldRotation(*a_shooter);
+
+		Physics::SpawnReplica(a_shooter, a_weapon, origin, [a_shooter, a_weapon, origin, velocity0, capturedWeaponWorldRotation, callbacks = a_callbacks](RE::ObjectRefHandle a_handle) {
 			callbacks.onSpawned(a_handle);
 
 			if (!a_handle.get()) {
@@ -164,16 +175,28 @@ namespace Throw
 			// un std::function, que exige que su objetivo sea copiable, y
 			// FlightSound deliberadamente no lo es (ver FlightSound.h).
 			auto flightSound = std::make_shared<Audio::FlightSound>();
+
+			// Rotación LOCAL (respecto al nodo raíz de la réplica) que
+			// reproduce exactamente la pose capturada -- ver
+			// Math::LocalRotationFromWorld. rootWorld es la rotación
+			// mundial del nodo raíz en el instante de creación, constante
+			// durante toda la vida de la réplica (nadie llama SetAngle
+			// sobre ella, ver CLAUDE.md), así que basta con leerla una vez
+			// aquí. TickSpin compone esta base sobre el giro calculado
+			// durante TODO el tramo de vuelo, no solo al principio -- ver
+			// WeaponAnimation.h (bug "se aplana momentos después",
+			// 2026-08-06).
+			RE::NiMatrix3 launchBaseLocal;
 			if (auto replica = a_handle.get()) {
 				if (auto* node3D = replica->Get3D()) {
-					// Punto 10: TickSpin escribe una rotación absoluta
-					// (MakeRotation(velocidad·elapsed, eje)), no incremental.
-					// Sin esta llamada a elapsed=0 (identidad, ver
-					// NiMatrix3::MakeRotation), el nodo de giro se queda en
-					// la rotación de reposo que trae el NIF de fábrica hasta
-					// el primer tick del bucle, que ya lo salta de golpe a
-					// la rotación absoluta calculada desde cero.
-					Animation::TickSpin(*replica, 0.0f);
+					const RE::NiMatrix3 rootWorld = node3D->world.rotate;
+					launchBaseLocal = Math::LocalRotationFromWorld(rootWorld, capturedWeaponWorldRotation);
+
+					// Esta llamada a elapsed=0 solo evita que el nodo de
+					// giro muestre la rotación de reposo del NIF durante el
+					// hueco real (~un Constants::kTickInterval) hasta que
+					// el bucle de abajo dispare su primer tick.
+					Animation::TickSpin(*replica, 0.0f, launchBaseLocal);
 
 					Audio::PlaySoundOneShot(origin, Constants::kThrowLaunchSoundLocalFormID);
 					flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
@@ -185,13 +208,16 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, launchBaseLocal, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
 				// Punto 10: se calcula y escribe el giro a mano cada tick
-				// (ver Animation::TickSpin).
-				Animation::TickSpin(a_refr, elapsed);
+				// (ver Animation::TickSpin), compuesto permanentemente
+				// sobre launchBaseLocal -- la pose real que tenía el arma
+				// al salir de la mano marca su rotación durante todo el
+				// vuelo, no solo los primeros instantes.
+				Animation::TickSpin(a_refr, elapsed, launchBaseLocal);
 
 				const float gravityDrop = ComputeGravityDrop(elapsed);
 
@@ -238,27 +264,48 @@ namespace Throw
 					                            hit.point + travelDir * Constants::kActorStickForwardOffset :
 					                            hit.point - travelDir * Constants::kStickEmbedBackoff;
 
-					// Punto 10: clavada -- ya no se llama a TickSpin sobre
-					// esta réplica, así que el giro se queda congelado en
-					// el ángulo que tuviera en este instante, sin ninguna
-					// llamada explícita de "parar" (ver WeaponAnimation.h).
-
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
 
+					// Punto 10 (segunda mitad, caso impacto): en vez de
+					// dejar el giro congelado en el ángulo arbitrario que
+					// tuviera al golpear, se endereza hacia la dirección de
+					// vuelo (Constants::kImpactAxisLocal alineado con
+					// travelDir) en una ventana corta
+					// (Constants::kImpactStraightenDuration).
+					//
 					// Punto 6: contra un actor, no basta con detenerse — hay
 					// que aplicar daño/parálisis y seguir su posición
 					// mientras el arma siga clavada
 					// (Combat::BeginEmbeddedEffect arranca su propio bucle
 					// de tick, sustituyendo a este, y decide si llamar a
 					// onStuck —clavada de verdad— o a onAutoRecall —objetivo
-					// inmune, p. ej. un dragón—). Contra una superficie no
-					// hay nada más que hacer.
+					// inmune, p. ej. un dragón—; ese mismo bucle nuevo hace
+					// también el enderezado, ver DamageManager.cpp). Contra
+					// una superficie no hay enemigo que seguir, así que el
+					// enderezado se hace aquí mismo con un bucle propio y
+					// corto.
 					if (actor) {
-						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall, onTickStarted);
+						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, travelDir, onStuck, onAutoRecall, onTickStarted);
 					} else {
 						onStuck(RE::ActorHandle{});
+
+						if (auto* node3D = a_refr.Get3D()) {
+							const RE::NiMatrix3 rootWorld = node3D->world.rotate;
+							const RE::NiMatrix3 impactBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
+							const RE::NiMatrix3 impactTargetLocal = Animation::ComputeImpactAlignment(rootWorld, impactBlendFromLocal, travelDir);
+
+							auto straightenToken = Physics::StartTickLoop(a_handle, [impactBlendFromLocal, impactTargetLocal, straightenElapsed = 0.0f](RE::TESObjectREFR& a_stuckRefr, float a_deltaSeconds) mutable {
+								straightenElapsed += a_deltaSeconds;
+								const float blend = straightenElapsed / Constants::kImpactStraightenDuration;
+								Animation::TickSpinStraighten(a_stuckRefr, impactBlendFromLocal, impactTargetLocal, blend);
+								a_stuckRefr.Update3DPosition(true);
+								return blend < 1.0f;
+							});
+
+							onTickStarted(straightenToken);
+						}
 					}
 
 					return false;

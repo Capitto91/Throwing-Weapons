@@ -24,39 +24,114 @@
 namespace Animation
 {
 	// Avanza a mano el giro de a_refr: calcula un ángulo a partir de
-	// a_elapsedSeconds y lo escribe en la rotación local del nodo
-	// Constants::kWeaponSpinNodeName -- la posición/escala del nodo no se
-	// tocan. La velocidad angular ya no es constante desde el instante
-	// cero (a petición del usuario): sube en línea recta desde 0 hasta
+	// a_elapsedSeconds y lo compone SOBRE a_baseLocal -- la rotación LOCAL
+	// real de la que partía el arma al empezar este tramo de vuelo (ver
+	// GetEquippedWeaponWorldRotation/GetSpinLocalRotation + los llamantes,
+	// Throw::LaunchWeapon/Return::BeginReturnMovement) -- no la sustituye.
+	// La posición/escala del nodo no se tocan.
+	//
+	// a_baseLocal se mantiene como multiplicador constante durante TODO el
+	// tramo, no solo en los primeros instantes: es el valor inicial de
+	// lanzamiento el que marca la rotación de ahí en adelante, nunca al
+	// revés (bug reportado por el usuario, 2026-08-06: con una versión
+	// anterior de esta función que solo fundía hacia a_baseLocal durante
+	// Constants::kSpinRampDuration y luego lo descartaba, el arma "salía
+	// de la posición correcta pero se aplanaba momentos después" --
+	// escribía la rotación calculada en bruto, anclada al nodo raíz, que
+	// normalmente es una orientación casi horizontal, ver CLAUDE.md). La
+	// velocidad angular en sí no es constante desde el instante cero (a
+	// petición del usuario): sube en línea recta desde 0 hasta
 	// Constants::kSpinAngularSpeed a lo largo de Constants::kSpinRampDuration
 	// (aceleración angular constante durante la rampa, forma cerrada de
 	// dos tramos empalmados en ángulo y velocidad angular -- mismo
 	// criterio que Throw::ComputeGravityDrop, un orden de derivada más
-	// abajo), después constante como antes. Debe llamarse cada tick del
-	// mismo bucle de movimiento manual que ya mueve la réplica, antes de
-	// Physics::SyncHavok (que ya recalcula el árbol de transformaciones
-	// mundiales, incluida la de este nodo hijo). Sin efecto si la réplica
-	// no tiene el nodo todavía (NIF sin cargar del todo) -- en ese caso el
-	// giro empieza a verse en cuanto el nodo aparezca, sin reintentos
-	// explícitos.
-	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds);
+	// abajo), después constante como antes -- eso sigue igual, es
+	// ortogonal al problema de a_baseLocal de arriba.
+	//
+	// Debe llamarse cada tick del mismo bucle de movimiento manual que ya
+	// mueve la réplica, antes de Physics::SyncHavok (que ya recalcula el
+	// árbol de transformaciones mundiales, incluida la de este nodo
+	// hijo). Sin efecto si la réplica no tiene el nodo todavía (NIF sin
+	// cargar del todo) -- en ese caso el giro empieza a verse en cuanto el
+	// nodo aparezca, sin reintentos explícitos.
+	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds, const RE::NiMatrix3& a_baseLocal);
 
-	// Punto 10 (segunda mitad, giro): "justo antes de... volver a la mano
-	// del jugador, se endereza para que... el mango quede orientado para
-	// que el jugador pueda agarrarla" -- sustituye a TickSpin durante la
-	// ventana de enderezado (Constants::kSpinStraightenDuration, llamada
-	// desde Return::BeginReturnMovement en los últimos instantes del
-	// regreso, arrancada junto con Return::ReturnCallbacks::onApproaching).
-	// Recalcula internamente (misma fórmula que TickSpin) el ángulo que
-	// tenía el giro justo al empezar la ventana a partir de
-	// a_elapsedAtWindowStart, y lo interpola (curva suave, no lineal)
-	// hacia 0 -- la orientación de reposo del nodo, la misma que ya tiene
-	// el arma real equipada (nunca lleva rotación extra sobre este nodo)
-	// -- según a_blend avanza de 0 (recién empezada la ventana, ángulo
-	// intacto) a 1 (terminada, coincidiendo con la orientación de agarre).
-	// a_blend fuera de [0,1] se acota. Mismo comportamiento que TickSpin
-	// si el nodo de giro no existe todavía.
-	void TickSpinStraighten(RE::TESObjectREFR& a_refr, float a_elapsedAtWindowStart, float a_blend);
+	// Rotación LOCAL actual del nodo de giro (Constants::kWeaponSpinNodeName)
+	// de a_refr -- identidad si el nodo no existe todavía. Pensado para
+	// capturar "lo que llevara el giro en este instante" como a_baseLocal
+	// de un TickSpin posterior (p. ej. al empezar el regreso tras un
+	// temblor de desprendimiento), como a_blendFromLocal de un
+	// TickSpinStraighten posterior (al detectarse un impacto), o como
+	// a_currentLocal de ComputeImpactAlignment -- sin que el llamante
+	// necesite conocer el nombre del nodo.
+	RE::NiMatrix3 GetSpinLocalRotation(RE::TESObjectREFR& a_refr);
+
+	// Punto 10 (segunda mitad, giro): "justo antes de... alcanzar un
+	// objetivo o de volver a la mano del jugador, se endereza". Funde
+	// (Math::SlerpRotation, curva suave) la rotación LOCAL del nodo de
+	// giro desde a_blendFromLocal (capturada una única vez por el
+	// llamante al empezar la ventana -- lo que llevara el giro en ese
+	// instante, ver Return::BeginReturnMovement/Throw::LaunchWeapon) hacia
+	// a_targetLocal, según a_blend avanza de 0 (recién empezada la
+	// ventana) a 1 (terminada, coincidiendo exactamente con el objetivo).
+	// a_targetLocal lo calcula el llamante -- puede recalcularse cada tick
+	// (caso del regreso: la mano puede seguir girando mientras dura la
+	// ventana, ver Math::LocalRotationFromWorld + GetHandBoneWorldRotation
+	// más abajo) o mantenerse fijo (caso del impacto, ver
+	// ComputeImpactAlignment: una vez clavada, nada vuelve a cambiar).
+	// a_blend fuera de [0,1] se acota. Sin efecto si el nodo de giro no
+	// existe todavía.
+	void TickSpinStraighten(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_blendFromLocal, const RE::NiMatrix3& a_targetLocal, float a_blend);
+
+	// Rotación LOCAL objetivo (respecto al nodo de giro) que alinea
+	// Constants::kImpactAxisLocal con a_travelDirection en el instante del
+	// impacto -- ver Math::ShortestArcRotation. a_currentLocal es la
+	// rotación LOCAL que lleva el nodo de giro en este instante (ver
+	// GetSpinLocalRotation) -- se parte de hacia dónde apunta
+	// kImpactAxisLocal AHORA MISMO (a_rootWorld * a_currentLocal *
+	// kImpactAxisLocal), no de una referencia de "reposo" asumida: el nodo
+	// de giro puede tener su propia rotación local de partida distinta de
+	// identidad (el offset que le diera NifSkope al montarlo, ver
+	// CLAUDE.md), y desde el fix de TickSpin (2026-08-06) casi nunca está
+	// en identidad durante el vuelo, así que asumir "reposo == identidad"
+	// aquí habría medido la dirección equivocada -- posible causa real
+	// (más allá de una posible corrección de signo pendiente en
+	// Constants::kImpactAxisLocal) del bug reportado por el usuario de
+	// quedar clavada por el mango en vez de por la cabeza. a_rootWorld es
+	// la rotación mundial (constante durante toda la vida de la réplica)
+	// del nodo raíz de a_refr, ver Math::LocalRotationFromWorld. Pensado
+	// para usarse como a_targetLocal de TickSpinStraighten justo al
+	// detectarse un impacto (punto 10, caso "objetivo": el filo/cabeza
+	// debe apuntar hacia donde golpeó).
+	RE::NiMatrix3 ComputeImpactAlignment(const RE::NiMatrix3& a_rootWorld, const RE::NiMatrix3& a_currentLocal, const RE::NiPoint3& a_travelDirection);
+
+	// Rotación mundial actual de la malla real del arma equipada en
+	// a_actor -- mismo nodo que SetEquippedWeaponHidden (el/los
+	// BSFadeNode hijos de "WEAPON", no el propio hueso). Identidad + aviso
+	// por log si no se encuentra (arma sin 3D cargado, o "WEAPON" sin
+	// hijos). Pensado para capturar el punto de partida real del giro
+	// justo antes de que el arma se vuelva réplica (ver
+	// Throw::LaunchWeapon) -- da igual llamarla antes o después de
+	// SetEquippedWeaponHidden, que no toca la transformación, solo la
+	// visibilidad.
+	RE::NiMatrix3 GetEquippedWeaponWorldRotation(RE::Actor& a_actor);
+
+	// Rotación mundial actual del hueso "WEAPON" del esqueleto de
+	// a_actor -- a diferencia de GetEquippedWeaponWorldRotation, existe
+	// siempre (no depende de tener un arma equipada), así que es la única
+	// referencia disponible durante el regreso, cuando el arma real ya
+	// está desequipada del todo (ver CLAUDE.md,
+	// WeaponManager::ThrowWeapon: el desequipado real se difiere unos
+	// instantes tras el lanzamiento, pero llega mucho antes de que la
+	// réplica esté cerca de volver). En teoría puede diferir de la
+	// orientación real que tendría la malla equipada por el offset de
+	// agarre que tenga el NIF entre el hueso y la malla -- medido en el
+	// juego (log de diagnóstico ya retirado de Throw::LaunchWeapon, offset
+	// real de (-0.00, -0.00, 0.00) grados XYZ) y confirmado despreciable
+	// en este NIF en concreto, así que no hace falta ninguna corrección.
+	// Identidad si el hueso no existe (no debería ocurrir con un
+	// esqueleto normal).
+	RE::NiMatrix3 GetHandBoneWorldRotation(RE::Actor& a_actor);
 
 	// Punto 11: temblor de desprendimiento antes de iniciar el regreso
 	// desde un objetivo clavado (Constants::kStickShudderDuration,

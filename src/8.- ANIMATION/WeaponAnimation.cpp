@@ -4,6 +4,7 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 
 #include "1.- CORE/Constants.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,9 +39,16 @@ namespace Animation
 			const float angleAtRampEnd = Constants::kSpinAngularSpeed * rampDuration / 2.0f;
 			return angleAtRampEnd + Constants::kSpinAngularSpeed * (a_elapsedSeconds - rampDuration);
 		}
+
+		RE::NiMatrix3 ComputeSpinRotation(float a_elapsedSeconds)
+		{
+			RE::NiMatrix3 rotation;
+			rotation.MakeRotation(ComputeSpinAngle(a_elapsedSeconds), Constants::kSpinAxisLocal);
+			return rotation;
+		}
 	}
 
-	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds)
+	void TickSpin(RE::TESObjectREFR& a_refr, float a_elapsedSeconds, const RE::NiMatrix3& a_baseLocal)
 	{
 		auto* root = a_refr.Get3D();
 		auto* spinNode = root ? root->GetObjectByName(Constants::kWeaponSpinNodeName) : nullptr;
@@ -48,10 +56,15 @@ namespace Animation
 			return;
 		}
 
-		spinNode->local.rotate.MakeRotation(ComputeSpinAngle(a_elapsedSeconds), Constants::kSpinAxisLocal);
+		// Composición permanente, no un fundido temporal: a_baseLocal (la
+		// pose real de la que partía el arma al empezar este tramo) sigue
+		// pintando durante todo el vuelo, no solo durante la rampa de
+		// arranque del giro -- ver el comentario del header (bug "se
+		// aplana momentos después", 2026-08-06).
+		spinNode->local.rotate = a_baseLocal * ComputeSpinRotation(a_elapsedSeconds);
 	}
 
-	void TickSpinStraighten(RE::TESObjectREFR& a_refr, float a_elapsedAtWindowStart, float a_blend)
+	void TickSpinStraighten(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_blendFromLocal, const RE::NiMatrix3& a_targetLocal, float a_blend)
 	{
 		auto* root = a_refr.Get3D();
 		auto* spinNode = root ? root->GetObjectByName(Constants::kWeaponSpinNodeName) : nullptr;
@@ -59,20 +72,65 @@ namespace Animation
 			return;
 		}
 
-		// Curva suave (smoothstep, mismo criterio que
-		// Return::BeginReturnMovement para el suavizado del tramo final)
-		// en vez de una interpolación lineal brusca -- el enderezado debe
-		// notarse como un frenado gradual del giro, no un tirón.
-		const float clampedBlend = std::clamp(a_blend, 0.0f, 1.0f);
-		const float smoothBlend = clampedBlend * clampedBlend * (3.0f - 2.0f * clampedBlend);
+		// Curva suave (smoothstep) en vez de una interpolación lineal
+		// brusca -- el enderezado debe notarse como un frenado gradual del
+		// giro, no un tirón.
+		const float smoothBlend = Math::SmoothStep01(a_blend);
+		spinNode->local.rotate = Math::SlerpRotation(a_blendFromLocal, a_targetLocal, smoothBlend);
+	}
 
-		// Ángulo que tenía el giro justo al empezar la ventana (misma
-		// fórmula que TickSpin), interpolado hacia 0 -- la orientación de
-		// reposo del nodo, la misma que ya tiene el arma real equipada.
-		const float angleAtWindowStart = ComputeSpinAngle(a_elapsedAtWindowStart);
-		const float angle = angleAtWindowStart * (1.0f - smoothBlend);
+	RE::NiMatrix3 GetSpinLocalRotation(RE::TESObjectREFR& a_refr)
+	{
+		auto* root = a_refr.Get3D();
+		auto* spinNode = root ? root->GetObjectByName(Constants::kWeaponSpinNodeName) : nullptr;
+		return spinNode ? spinNode->local.rotate : RE::NiMatrix3{};
+	}
 
-		spinNode->local.rotate.MakeRotation(angle, Constants::kSpinAxisLocal);
+	RE::NiMatrix3 ComputeImpactAlignment(const RE::NiMatrix3& a_rootWorld, const RE::NiMatrix3& a_currentLocal, const RE::NiPoint3& a_travelDirection)
+	{
+		// Dirección mundial hacia la que apunta Constants::kImpactAxisLocal
+		// AHORA MISMO (con la rotación local real que lleve el nodo de
+		// giro en este instante, no una referencia de "reposo" asumida --
+		// ver el comentario del header) -- punto de partida para calcular
+		// cuánto hay que girar para que esa dirección coincida con
+		// a_travelDirection.
+		const RE::NiMatrix3 currentWorld = a_rootWorld * a_currentLocal;
+		const RE::NiPoint3  currentHeadWorldDir = currentWorld * Constants::kImpactAxisLocal;
+		const RE::NiMatrix3 align = Math::ShortestArcRotation(currentHeadWorldDir, a_travelDirection);
+		const RE::NiMatrix3 targetWorld = align * currentWorld;
+		return Math::LocalRotationFromWorld(a_rootWorld, targetWorld);
+	}
+
+	RE::NiMatrix3 GetEquippedWeaponWorldRotation(RE::Actor& a_actor)
+	{
+		// "WEAPON" es el hueso de enganche, no la malla -- mismo criterio
+		// que SetEquippedWeaponHidden (ver ese comentario para el porqué
+		// de bajar a los hijos en vez de usar el hueso directamente).
+		auto* weaponNode = a_actor.GetNodeByName("WEAPON");
+		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
+		if (!asNode || asNode->GetChildren().empty()) {
+			logs::warn("Animation::GetEquippedWeaponWorldRotation: nodo \"WEAPON\" no encontrado o sin hijos.");
+			return RE::NiMatrix3{};
+		}
+
+		for (auto& child : asNode->GetChildren()) {
+			if (child) {
+				return child->world.rotate;
+			}
+		}
+
+		return RE::NiMatrix3{};
+	}
+
+	RE::NiMatrix3 GetHandBoneWorldRotation(RE::Actor& a_actor)
+	{
+		auto* handNode = a_actor.GetNodeByName("WEAPON");
+		if (!handNode) {
+			logs::warn("Animation::GetHandBoneWorldRotation: hueso \"WEAPON\" no encontrado.");
+			return RE::NiMatrix3{};
+		}
+
+		return handNode->world.rotate;
 	}
 
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds)

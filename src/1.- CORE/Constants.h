@@ -443,6 +443,28 @@ namespace Constants
 	// una sin tocar la otra si hace falta.
 	inline constexpr float kSpinStraightenDuration = 0.5f;  // s, placeholder
 
+	// Segunda mitad del punto 10, caso "impacto" (hasta ahora solo
+	// cubierto el caso "vuelta a la mano", ver kSpinStraightenDuration
+	// arriba): "justo antes de alcanzar un objetivo... se endereza para
+	// que el filo/cabeza apunte hacia el objetivo". Arrancado en el mismo
+	// tick del impacto (Throw::LaunchWeapon / Combat::BeginEmbeddedEffect)
+	// -- a diferencia del regreso, no hay forma de anticipar el instante
+	// exacto del golpe para empezar antes. Duración corta a propósito: es
+	// un ajuste de pocos grados sobre el giro que ya llevaba, no una
+	// reorientación completa como al volver a la mano. Placeholder,
+	// pendiente de ajustar en el juego.
+	inline constexpr float kImpactStraightenDuration = 0.15f;  // s, placeholder
+
+	// Eje local (unitario) que representa "hacia el filo/cabeza" del
+	// modelo -- se alinea con la dirección de vuelo en el instante del
+	// impacto (ver Animation::ComputeImpactAlignment). Mismo criterio que
+	// kSpinAxisLocal: si el mango va a lo largo del eje Y local
+	// (convención habitual, ver ese comentario más arriba), la cabeza
+	// queda hacia +Y o -Y según cómo esté modelado -- sin verificar en
+	// este NIF en concreto, primer valor a revisar si el enderezado
+	// apunta al lado contrario del esperado.
+	inline constexpr RE::NiPoint3 kImpactAxisLocal{ 0.0f, 1.0f, 0.0f };
+
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation
 	// Kit, copia del efecto vanilla de Parálisis) que se concede al actor

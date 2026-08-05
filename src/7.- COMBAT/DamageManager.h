@@ -36,10 +36,18 @@ namespace Combat
 	// de Throw::LaunchWeapon, y el llamante debe quedarse con este token
 	// nuevo para poder cancelarlo mas adelante (p. ej. al pulsar el boton
 	// de recuperar).
+	//
+	// a_travelDirection es la dirección de vuelo en el instante del
+	// impacto (ver Throw::LaunchWeapon) -- punto 10 (segunda mitad, caso
+	// impacto): el mismo bucle de seguimiento endereza el giro
+	// (Constants::kImpactAxisLocal alineado con a_travelDirection) durante
+	// los primeros Constants::kImpactStraightenDuration segundos, en vez
+	// de dejarlo congelado en el ángulo arbitrario que tuviera al golpear.
 	void BeginEmbeddedEffect(
 		RE::Actor*                              a_attacker,
 		RE::Actor*                              a_target,
 		RE::ObjectRefHandle                     a_replicaHandle,
+		const RE::NiPoint3&                     a_travelDirection,
 		std::function<void(RE::ActorHandle)>    a_onStuck,
 		std::function<void()>                   a_onAutoRecall,
 		std::function<void(Physics::TickToken)> a_onTickStarted);
