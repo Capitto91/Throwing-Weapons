@@ -4,14 +4,14 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "10.- EVENTS/EventManager.h"
+#include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "4.- THROW/ThrowManager.h"
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
-#include "10.- EVENTS/EventManager.h"
-#include "12.- AUDIO/SoundResolver.h"
 
 #include <thread>
 
@@ -26,22 +26,23 @@ namespace Weapon
 	void WeaponManager::OnAimButtonDown()
 	{
 		switch (weaponState.GetState()) {
-		case State::kInHand: {
-			// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el
-			// arma envainada: la primera pulsación solo desenvaina, no
-			// empieza a apuntar -- hace falta una segunda pulsación ya con
-			// el arma desenvainada. Sin esto, el arma salía disparada sin
-			// llegar a reproducir Throw.hkx: el propio desenvainado (que
-			// tiene su propia animación, con tiempo real) todavía no había
-			// terminado en el instante en que se disparaba attackStart.
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			if (player && !player->AsActorState()->IsWeaponDrawn()) {
-				player->DrawWeaponMagicHands(true);
+		case State::kInHand:
+			{
+				// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el
+				// arma envainada: la primera pulsación solo desenvaina, no
+				// empieza a apuntar -- hace falta una segunda pulsación ya con
+				// el arma desenvainada. Sin esto, el arma salía disparada sin
+				// llegar a reproducir Throw.hkx: el propio desenvainado (que
+				// tiene su propia animación, con tiempo real) todavía no había
+				// terminado en el instante en que se disparaba attackStart.
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				if (player && !player->AsActorState()->IsWeaponDrawn()) {
+					player->DrawWeaponMagicHands(true);
+					break;
+				}
+				BeginAiming();
 				break;
 			}
-			BeginAiming();
-			break;
-		}
 		case State::kAiming:
 			// Solo se puede recibir una pulsación nueva estando ya
 			// "apuntando" si nos perdimos el botón de soltar anterior (p.ej.
@@ -455,6 +456,12 @@ namespace Weapon
 			// (descartado, ver Constants::kCallReleasePayload) -- se dispara
 			// aquí mismo, en el mismo instante que el regreso físico real.
 			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
+
+			// Ver Constants::kAttackStopAnimationEvent: confirmado en el
+			// juego que desatasca el grafo de AttackRight_State (el submod de
+			// OAR de Llamada ignora los triggers horneados en el clip
+			// vainilla sustituido, ver ahí el porqué).
+			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 		}
 		Input::SetMovementLocked(false);
 
@@ -564,6 +571,10 @@ namespace Weapon
 			// (Constants::kRightHandTypeOneHanded, puesto en
 			// BeginCatchAnimation) para lo que va a ser cierto de verdad
 			// en un instante, así que tocarlo aquí sobra.
+
+			// Ver Constants::kAttackStopAnimationEvent -- mismo motivo que
+			// OnCallReleaseAnimationEvent.
+			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 		}
 		Input::SetMovementLocked(false);
 

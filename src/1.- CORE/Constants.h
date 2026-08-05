@@ -56,6 +56,30 @@ namespace Constants
 	// gestiona como mutuamente excluyentes). Ver _reference/PLAN-OAR.md.
 	inline constexpr const char* kLightAttackAnimationEvent = "attackStart";
 
+	// Experimento 2026-08-05: con la opción de OAR "Only use triggers from
+	// annotations" activada en los tres submods (Throw/Call/Catch --
+	// ignora los triggers horneados en el clip vainilla sustituido, solo se
+	// procesan los que vengan de anotaciones dentro de nuestro propio
+	// archivo, ver el tooltip real de OAR: "The 'Don't convert annotations
+	// to triggers' flag is still respected, so make sure to enable the
+	// above setting if necessary" -- de ahí que el submod también active
+	// "Ignore 'Don't Convert Annotations To Triggers' flag"), Llamada y
+	// Atrape se quedan congelados sin salir de AttackRight_State (Lanzar no,
+	// porque su propio desequipado real del arma parece forzar un reset del
+	// grafo por fuera de cualquier transición). Rastreadas las 18
+	// transiciones reales de AttackRight_State en 1hm_behavior.xml (11
+	// locales + 7 wildcard) -- ninguna es un simple "ataque terminado,
+	// vuelve a idle": todas encadenan a otro ataque (power attacks/combos),
+	// condicionadas a ventanas de tiempo ancladas a anotaciones del clip
+	// vainilla original (AttackWinStart/AttackWinEnd/weaponSwing) que
+	// nuestros clips no llevan -- añadirlas solo reabriría el sistema de
+	// combos vainilla, no soluciona el atasco. "attackStop" (evento
+	// contrario a kLightAttackAnimationEvent, ya existe en la tabla vanilla)
+	// se dispara a mano desde WeaponManager::OnCallReleaseAnimationEvent/
+	// OnCatchReleaseAnimationEvent a ver si desatasca el grafo por una vía
+	// no rastreada todavía en el XML. Sin confirmar en el juego.
+	inline constexpr const char* kAttackStopAnimationEvent = "attackStop";
+
 	// Payload Interpreter (dependencia externa, ver CLAUDE.md): el tag real
 	// que llega a RE::BSAnimationGraphEvent es siempre "PIE" -- el contenido
 	// útil vive en el campo payload, no en el tag combinado.
@@ -138,7 +162,7 @@ namespace Constants
 	// Audio::PlaySoundOneShot -- este último nunca se ha confirmado fiable en
 	// el juego, mientras que el mecanismo triple de PlayReliableOneShot sí
 	// (ver Constants::kFlightSoundHandleFlags).
-	inline constexpr RE::FormID kCallReleaseSoundLocalFormID = 0x011579;
+	inline constexpr RE::FormID  kCallReleaseSoundLocalFormID = 0x011579;
 	inline constexpr const char* kCallReleaseSoundEditorID = "CAP_ThorMjolnir_MarkSound_FingerSnap";
 
 	// -- Atrape: sustitución de animación vía Open Animation Replacer,
