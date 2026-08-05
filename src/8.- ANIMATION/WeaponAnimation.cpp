@@ -113,22 +113,54 @@ namespace Animation
 		spinNode->local.rotate = a_baseRotation * wobble;
 	}
 
-	void SetThrowTrigger(RE::Actor& a_actor, bool a_active)
+	namespace
 	{
-		// Float, no Bool -- la condición CompareValues montada en el editor
-		// de OAR (ver _reference/PLAN-OAR.md) compara esta graph variable
-		// como Float contra 1.0f, para no arriesgar un desajuste de tipo.
-		a_actor.SetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+		// Sustituye a la graph variable + BehaviorDataInjector (ver
+		// CLAUDE.md, 2026-08-05): un TESGlobal real de la Creation Kit no
+		// tiene el problema de fondo que sí tienen las graph variables de
+		// Havok (solo hay almacenamiento real para nombres ya declarados en
+		// la tabla interna del behavior) -- BDI existía solo para inyectar
+		// esa entrada en tiempo de ejecución; un Global no la necesita en
+		// absoluto, es almacenamiento nativo del motor. La condición
+		// CompareValues del submod de OAR compara contra este mismo Global
+		// (Value A -> "form", no "graphVariable" -- ver el config.json real
+		// de cada submod). Búsqueda perezosa (primera llamada, no en
+		// carga del plugin) cacheada en la propia variable estática -- mismo
+		// motivo que el resto de búsquedas por EditorID del proyecto
+		// (p. ej. Combat::BeginEmbeddedEffect): las formas no están
+		// garantizadas disponibles antes de kDataLoaded.
+		RE::TESGlobal* LookupTriggerGlobal(const char* a_editorID)
+		{
+			auto* global = RE::TESForm::LookupByEditorID<RE::TESGlobal>(a_editorID);
+			if (!global) {
+				logs::warn("Animation: no se encontró el Global '{}' (revisa que exista en la Creation Kit/xEdit, con ese EditorID exacto).", a_editorID);
+			}
+			return global;
+		}
 	}
 
-	void SetCallTrigger(RE::Actor& a_actor, bool a_active)
+	void SetThrowTrigger(RE::Actor&, bool a_active)
 	{
-		a_actor.SetGraphVariableFloat(Constants::kCallTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kThrowTriggerGlobalEditorID);
+		if (global) {
+			global->value = a_active ? 1.0f : 0.0f;
+		}
 	}
 
-	void SetCatchTrigger(RE::Actor& a_actor, bool a_active)
+	void SetCallTrigger(RE::Actor&, bool a_active)
 	{
-		a_actor.SetGraphVariableFloat(Constants::kCatchTriggerGraphVariable, a_active ? 1.0f : 0.0f);
+		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kCallTriggerGlobalEditorID);
+		if (global) {
+			global->value = a_active ? 1.0f : 0.0f;
+		}
+	}
+
+	void SetCatchTrigger(RE::Actor&, bool a_active)
+	{
+		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kCatchTriggerGlobalEditorID);
+		if (global) {
+			global->value = a_active ? 1.0f : 0.0f;
+		}
 	}
 
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)

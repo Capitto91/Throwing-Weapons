@@ -85,19 +85,22 @@ namespace Animation
 	// explícito).
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds);
 
-	// Fase 3 del plan OAR (_reference/PLAN-OAR.md): activa/desactiva
-	// Constants::kThrowTriggerGraphVariable en a_actor. Envuelta aquí (en vez
-	// de llamar SetGraphVariableBool directo desde WeaponManager) para que
-	// el nombre de la variable viva en un solo sitio, mismo motivo que
-	// TickSpin/TickShudder.
+	// Fase 3 del plan OAR (_reference/PLAN-OAR.md), rediseñado 2026-08-05
+	// (ver CLAUDE.md): activa/desactiva el TESGlobal
+	// Constants::kThrowTriggerGlobalEditorID. a_actor ya no se usa para la
+	// búsqueda (un Global no es per-actor), se conserva en la firma por
+	// coherencia con el resto de funciones de este archivo y porque el
+	// proyecto es de un solo jugador. Envuelta aquí (en vez de tocar el
+	// Global directo desde WeaponManager) para que el nombre viva en un
+	// solo sitio, mismo motivo que TickSpin/TickShudder.
 	void SetThrowTrigger(RE::Actor& a_actor, bool a_active);
 
 	// Mismo patrón que SetThrowTrigger, para Llamada: activa/desactiva
-	// Constants::kCallTriggerGraphVariable en a_actor.
+	// Constants::kCallTriggerGlobalEditorID.
 	void SetCallTrigger(RE::Actor& a_actor, bool a_active);
 
 	// Mismo patrón que SetThrowTrigger/SetCallTrigger, para Atrape: activa/
-	// desactiva Constants::kCatchTriggerGraphVariable en a_actor.
+	// desactiva Constants::kCatchTriggerGlobalEditorID.
 	void SetCatchTrigger(RE::Actor& a_actor, bool a_active);
 
 	// Prueba (ver _reference/PLAN-OAR.md, 2026-07-29): activa/desactiva

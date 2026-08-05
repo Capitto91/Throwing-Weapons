@@ -28,14 +28,17 @@ namespace Constants
 	// -- Lanzar: sustitución de animación vía Open Animation Replacer (Fase 3,
 	// ver _reference/PLAN-OAR.md) --
 
-	// Graph variable propia que gatea, en el submod de OAR, la sustitución
-	// del ataque ligero de pie por Throw.hkx -- puesta a true justo antes de
-	// disparar kLightAttackAnimationEvent, a false en cuanto llega la anotación de
-	// liberación (o si el ciclo se aborta por otra vía, p. ej. una pantalla
-	// de carga). Prefijada con el nombre del proyecto por el mismo motivo
-	// que "SkipEquipAnimation" en CLAUDE.md: las graph variables son un
-	// espacio de nombres global por actor, no aislado por mod.
-	inline constexpr const char* kThrowTriggerGraphVariable = "ThorMjolnir_ThrowTrigger";
+	// EditorID de un TESGlobal real de la Creation Kit (no una graph
+	// variable -- ver CLAUDE.md, 2026-08-05: sustituye a
+	// BehaviorDataInjector, que solo hacía falta para registrar
+	// almacenamiento de graph variables, no de Globals) que gatea, en el
+	// submod de OAR, la sustitución del ataque ligero de pie por Throw.hkx
+	// -- puesto a 1 justo antes de disparar kLightAttackAnimationEvent, a 0
+	// en cuanto llega la anotación de liberación (o si el ciclo se aborta
+	// por otra vía, p. ej. una pantalla de carga). Prefijado con el nombre
+	// del proyecto para evitar colisión de EditorID con otros mods, mismo
+	// motivo que "SkipEquipAnimation" en CLAUDE.md para las graph variables.
+	inline constexpr const char* kThrowTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_ThrowTrigger";
 
 	// Variable vanilla (no inventada por el plugin, ya existe en la tabla de
 	// variables de 1hm_behavior.hkx -- no necesita BehaviorDataInjector).
@@ -50,8 +53,8 @@ namespace Constants
 
 	// Evento vanilla ya existente en 1hm_behavior.hkx (no uno nuevo) que el
 	// submod de OAR intercepta para sustituir el ataque ligero de pie por el
-	// clip que corresponda -- Throw.hkx (kThrowTriggerGraphVariable) o
-	// Call.hkx (kCallTriggerGraphVariable) según cuál de las dos esté activa
+	// clip que corresponda -- Throw.hkx (kThrowTriggerGlobalEditorID) o
+	// Call.hkx (kCallTriggerGlobalEditorID) según cuál de las dos esté activa
 	// en cada momento (nunca las dos a la vez, el propio WeaponManager las
 	// gestiona como mutuamente excluyentes). Ver _reference/PLAN-OAR.md.
 	inline constexpr const char* kLightAttackAnimationEvent = "attackStart";
@@ -106,11 +109,10 @@ namespace Constants
 	// -- Llamada: sustitución de animación vía Open Animation Replacer,
 	// mismo patrón que Lanzar --
 
-	// Graph variable propia que gatea, en el submod de OAR, la sustitución
-	// del mismo ataque ligero de pie por Call.hkx -- declarada como kFloat
-	// en Data/SKSE/Plugins/BehaviorDataInjector/ThorMjolnir_BDI.json, mismo
-	// motivo que kThrowTriggerGraphVariable.
-	inline constexpr const char* kCallTriggerGraphVariable = "ThorMjolnir_CallTrigger";
+	// EditorID de un TESGlobal real que gatea, en el submod de OAR, la
+	// sustitución del mismo ataque ligero de pie por Call.hkx -- mismo
+	// motivo que kThrowTriggerGlobalEditorID.
+	inline constexpr const char* kCallTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_CallTrigger";
 
 	// Experimento (sustituye al arma señuelo/EquipGestureWeapon, rechazado
 	// por el usuario: ~500ms de espera visible con el arma real equipada en
@@ -173,11 +175,10 @@ namespace Constants
 	// mismo patrón que Llamada (iRightHandType directo, sin arma señuelo,
 	// ver CHANGELOG v1.10.16/v1.10.17) --
 
-	// Graph variable propia que gatea, en el submod de OAR, la sustitución
-	// del mismo ataque ligero de pie por Catch.hkx -- ya declarada como
-	// kFloat en Data/SKSE/Plugins/BehaviorDataInjector/ThorMjolnir_BDI.json
-	// (mismo motivo que kThrowTriggerGraphVariable/kCallTriggerGraphVariable).
-	inline constexpr const char* kCatchTriggerGraphVariable = "ThorMjolnir_CatchTrigger";
+	// EditorID de un TESGlobal real que gatea, en el submod de OAR, la
+	// sustitución del mismo ataque ligero de pie por Catch.hkx (mismo
+	// motivo que kThrowTriggerGlobalEditorID/kCallTriggerGlobalEditorID).
+	inline constexpr const char* kCatchTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_CatchTrigger";
 
 	// A diferencia de Llamada (que tuvo que probarse con un SoundPlay
 	// vanilla primero, ver CHANGELOG), Catch.hkx ya llevaba esta anotación

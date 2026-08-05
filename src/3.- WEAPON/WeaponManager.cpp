@@ -316,21 +316,13 @@ namespace Weapon
 		// evita (bloquea input *nuevo*, no el momentum ya acumulado).
 		Animation::SetAnimationDriven(*player, true);
 
-		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): la graph variable
-		// gatea el submod de OAR que sustituye Constants::kLightAttackAnimationEvent
+		// Fase 3 del plan OAR (_reference/PLAN-OAR.md): el Global gatea el
+		// submod de OAR que sustituye Constants::kLightAttackAnimationEvent
 		// (un evento vanilla ya existente, ninguno nuevo) por Throw.hkx.
 		Animation::SetThrowTrigger(*player, true);
 		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
-
-		// Log temporal de diagnóstico (retirar una vez confirmado en el
-		// juego el ciclo real, ver _reference/PLAN-OAR.md Fase 3): confirma
-		// que la escritura de la graph variable se lee de vuelta como se
-		// espera, y si NotifyAnimationGraph reporta éxito, antes de disparar
-		// el evento.
-		float readBack = -1.0f;
-		player->GetGraphVariableFloat(Constants::kThrowTriggerGraphVariable, readBack);
-		logs::info("WeaponManager::BeginThrowAnimation: graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
-			Constants::kThrowTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
+		logs::info("WeaponManager::BeginThrowAnimation: '{}' disparado, NotifyAnimationGraph()={}.",
+			Constants::kLightAttackAnimationEvent, notifyOk);
 
 		// Red de seguridad: el lanzamiento físico debe ocurrir siempre, tenga
 		// o no confirmación de la anotación real (decisión del usuario,
@@ -409,11 +401,9 @@ namespace Weapon
 
 		std::int32_t readBackInt = -1;
 		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
-		float readBack = -1.0f;
-		player->GetGraphVariableFloat(Constants::kCallTriggerGraphVariable, readBack);
-		logs::info("WeaponManager::BeginCallAnimation: '{}' puesto a {} (era {}), releído como {} -- graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+		logs::info("WeaponManager::BeginCallAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
 			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
-			Constants::kCallTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
+			Constants::kLightAttackAnimationEvent, notifyOk);
 
 		// Red de seguridad: el regreso físico debe empezar siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
@@ -513,11 +503,9 @@ namespace Weapon
 
 		std::int32_t readBackInt = -1;
 		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
-		float readBack = -1.0f;
-		player->GetGraphVariableFloat(Constants::kCatchTriggerGraphVariable, readBack);
-		logs::info("WeaponManager::BeginCatchAnimation: '{}' puesto a {} (era {}), releído como {} -- graph variable '{}' puesta a 1, releída como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+		logs::info("WeaponManager::BeginCatchAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
 			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
-			Constants::kCatchTriggerGraphVariable, readBack, Constants::kLightAttackAnimationEvent, notifyOk);
+			Constants::kLightAttackAnimationEvent, notifyOk);
 
 		// Red de seguridad: el reequipado real debe ocurrir siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
