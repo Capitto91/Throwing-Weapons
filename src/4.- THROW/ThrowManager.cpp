@@ -10,6 +10,9 @@
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 
+#include <cmath>
+#include <optional>
+
 namespace Throw
 {
 	namespace
@@ -42,15 +45,57 @@ namespace Throw
 			return camera->cameraRoot->world.rotate.GetVectorY();
 		}
 
+		// Ángulo de tiro (pitch, radianes) que hace que una parábola con
+		// velocidad Constants::kThrowInitialSpeed y gravedad constante
+		// Constants::kThrowGravity pase exactamente por el punto apuntado,
+		// dada su distancia horizontal y diferencia de altura respecto al
+		// origen -- solución cerrada de "Solving Ballistic Trajectories"
+		// (forrestthewoods.com), caso de velocidad fija / objetivo
+		// estático: tan(θ) = (v² ± √(v⁴ − g·(g·x² + 2·y·v²))) / (g·x).
+		// Se toma siempre la raíz de arco bajo (signo -), la más directa --
+		// la de arco alto queda "cómicamente alta" a media/larga distancia
+		// (razón dada en el propio artículo, y no encaja con un lanzamiento
+		// de martillo). La fórmula asume gravedad constante desde el
+		// instante cero -- ComputeGravityDrop, más abajo, ya no aplica
+		// ninguna rampa de gravedad por este mismo motivo (ver su
+		// comentario).
+		//
+		// Sin solución real (discriminante negativo, objetivo fuera del
+		// alcance máximo que esa velocidad puede cubrir) devuelve
+		// nullopt -- no ocurre dentro de Constants::kMaxThrowDistance con
+		// las constantes actuales (alcance máximo teórico v²/g ≈ 8398
+		// unidades, por encima de las 6000 de kMaxThrowDistance, que solo
+		// limita cuándo el arma se da por perdida y regresa sola, sin
+		// relación con si la parábola llega o no), pero se contempla por
+		// seguridad para cualquier ajuste futuro de las constantes.
+		std::optional<float> SolveLowArcPitch(float a_horizontalDistance, float a_heightDiff)
+		{
+			constexpr float speed = Constants::kThrowInitialSpeed;
+			constexpr float gravity = -Constants::kThrowGravity;  // magnitud positiva
+
+			const float speedSq = speed * speed;
+			const float discriminant = speedSq * speedSq - gravity * (gravity * a_horizontalDistance * a_horizontalDistance + 2.0f * a_heightDiff * speedSq);
+			if (discriminant < 0.0f) {
+				return std::nullopt;
+			}
+
+			const float tangent = (speedSq - std::sqrt(discriminant)) / (gravity * a_horizontalDistance);
+			return std::atan(tangent);
+		}
+
 		// Corrección de paralaje cámara/mano (fallo detectado en la
 		// iteración anterior: usar la dirección de la cámara tal cual,
 		// aplicada desde el origen en la mano, no converge en el punto al
 		// que apunta la mirilla). Se calcula primero el punto real al que
 		// apunta la mirilla con un raycast desde la cámara hasta
-		// Constants::kMaxThrowDistance, y la dirección de lanzamiento va
-		// desde el origen en la mano hacia ese punto — así el origen
-		// visual y el punto de impacto coinciden con lo que el jugador ve
-		// en la mirilla, sea cual sea la distancia.
+		// Constants::kMaxThrowDistance, y la dirección horizontal de
+		// lanzamiento va desde el origen en la mano hacia ese punto — así
+		// el origen visual coincide con lo que el jugador ve en la
+		// mirilla, sea cual sea la distancia. El pitch (componente
+		// vertical) ya no apunta en línea recta al punto: se resuelve con
+		// SolveLowArcPitch para que la parábola completa termine ahí, no
+		// solo la línea recta inicial (sin esto, el arma cae muy por
+		// debajo de la mirilla a corta/media distancia, ver CHANGELOG.md).
 		RE::NiPoint3 ComputeAimedDirection(RE::Actor* a_shooter, const RE::NiPoint3& a_origin)
 		{
 			const auto cameraPos = GetCameraPosition();
@@ -60,37 +105,35 @@ namespace Throw
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
 
-			const auto  direction = aimPoint - a_origin;
-			const float length = direction.Length();
-			return length > 0.0f ? direction / length : forward;
+			const RE::NiPoint3 toAimPoint = aimPoint - a_origin;
+			const RE::NiPoint3 horizontal{ toAimPoint.x, toAimPoint.y, 0.0f };
+			const float        horizontalDistance = horizontal.Length();
+
+			// Tiro (casi) vertical puro, u objetivo fuera del alcance
+			// balístico (SolveLowArcPitch devuelve nullopt): apuntar en
+			// línea recta al punto en vez de resolver el ángulo -- ver
+			// comentario de SolveLowArcPitch.
+			const auto pitch = horizontalDistance > 1.0f ? SolveLowArcPitch(horizontalDistance, toAimPoint.z) : std::nullopt;
+			if (!pitch) {
+				const float length = toAimPoint.Length();
+				return length > 0.0f ? toAimPoint / length : forward;
+			}
+
+			const RE::NiPoint3 horizontalDir = horizontal / horizontalDistance;
+			return horizontalDir * std::cos(*pitch) + RE::NiPoint3{ 0.0f, 0.0f, 1.0f } * std::sin(*pitch);
 		}
 
-		// Mejora Kratos #1 (PLAN-mejoras-kratos.md): rampa lineal de
-		// gravedad (0 -> kThrowGravity durante los primeros
-		// kThrowGravityRampDuration segundos, luego constante) en vez de
-		// gravedad constante desde el instante cero. Forma cerrada
-		// (verificada por doble integración y por diferenciación inversa:
-		// posición, velocidad y aceleración continuas en el empalme), no
-		// acumulada tick a tick -- mismo motivo que el resto de este
-		// archivo (ver comentario en LaunchWeapon).
+		// Gravedad constante desde el instante cero (posición(t) = origen +
+		// velocidad0·t + ½·gravedad·t²) -- ya no hay rampa de arranque
+		// (Mejora Kratos #1, retirada 2026-08-05, ver CHANGELOG.md): la
+		// mantenía "plana" al salir de la mano, pero Throw::SolveLowArcPitch
+		// necesita gravedad constante desde t=0 para que la parábola
+		// resuelta pase exactamente por el punto apuntado (ver esa
+		// función) -- con rampa, quedaba un residuo por debajo de la
+		// mirilla en tiros cortos.
 		float ComputeGravityDrop(float a_elapsed)
 		{
-			constexpr float rampDuration = Constants::kThrowGravityRampDuration;
-			if constexpr (rampDuration <= 0.0f) {
-				return 0.5f * Constants::kThrowGravity * a_elapsed * a_elapsed;
-			}
-
-			// kThrowGravity ya es negativo; toda la derivación es lineal en
-			// g, así que el signo se propaga solo -- no añadir std::abs
-			// aquí.
-			if (a_elapsed < rampDuration) {
-				return Constants::kThrowGravity * (a_elapsed * a_elapsed * a_elapsed) / (6.0f * rampDuration);
-			}
-
-			const float zAtRampEnd = Constants::kThrowGravity * rampDuration * rampDuration / 6.0f;
-			const float vAtRampEnd = Constants::kThrowGravity * rampDuration / 2.0f;
-			const float t = a_elapsed - rampDuration;
-			return zAtRampEnd + vAtRampEnd * t + 0.5f * Constants::kThrowGravity * t * t;
+			return 0.5f * Constants::kThrowGravity * a_elapsed * a_elapsed;
 		}
 	}
 
@@ -142,7 +185,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false, loggedRampCrossing = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -152,19 +195,11 @@ namespace Throw
 
 				const float gravityDrop = ComputeGravityDrop(elapsed);
 
-				// Mejora Kratos #1: log de verificación campo a campo (ver
-				// protocolo de testeo en PLAN-mejoras-kratos.md), no en
-				// cada tick -- solo el primer valor (inicio de la rampa) y
-				// el instante en que se cruza kThrowGravityRampDuration
-				// (empalme con la rama de gravedad constante), suficiente
-				// para confirmar la fórmula sin inundar el log.
+				// Log de verificación campo a campo, solo el primer tick
+				// (no en cada uno, para no inundar el log).
 				if (!loggedFirstGravitySample) {
 					logs::info("Throw::LaunchWeapon: ComputeGravityDrop primer tick t={:.3f}s -> drop={:.2f}", elapsed, gravityDrop);
 					loggedFirstGravitySample = true;
-				}
-				if (!loggedRampCrossing && elapsed >= Constants::kThrowGravityRampDuration) {
-					logs::info("Throw::LaunchWeapon: ComputeGravityDrop cruce de rampa t={:.3f}s -> drop={:.2f}", elapsed, gravityDrop);
-					loggedRampCrossing = true;
 				}
 
 				RE::NiPoint3 nextPos = origin + velocity0 * elapsed;

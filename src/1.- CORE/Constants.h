@@ -224,15 +224,6 @@ namespace Constants
 	inline constexpr float kThrowInitialSpeed = 3000.0f;  // u/s, placeholder
 	inline constexpr float kThrowGravity = -1071.816f;    // u/s^2, gravedad estándar de Havok en Skyrim
 
-	// Mejora Kratos #1 (ver PLAN-mejoras-kratos.md): rampa lineal de
-	// gravedad al salir de la mano (0 -> kThrowGravity durante este tiempo,
-	// luego constante), para que la trayectoria salga más "plana" en vez de
-	// empezar a caer desde el primer instante. Placeholder, sin valor de
-	// referencia previo -- pendiente de ajustar en el juego. <= 0.0f
-	// desactiva la rampa (comportamiento anterior, gravedad constante desde
-	// el instante cero).
-	inline constexpr float kThrowGravityRampDuration = 0.15f;  // s, placeholder
-
 	// Radio del barrido en cruz de la colisión en vuelo
 	// (Collision::SweepRaycast): varias muestras cercanas entre sí, en vez
 	// de un único rayo, detectan de forma más fiable geometría irregular o
