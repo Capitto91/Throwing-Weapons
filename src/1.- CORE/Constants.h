@@ -220,8 +220,16 @@ namespace Constants
 	// sus propias constantes. kThrowGravity usa el valor de gravedad
 	// estándar de Havok en Skyrim (documentado en la comunidad de
 	// modding, no medido por nosotros); kThrowInitialSpeed es un punto de
-	// partida redondo pendiente de ajustar en el juego.
-	inline constexpr float kThrowInitialSpeed = 3000.0f;  // u/s, placeholder
+	// partida redondo pendiente de ajustar en el juego. Subido de 3000 a
+	// 3600 a petición del usuario (2026-08-07, junto con
+	// kReturnTargetArrivalSpeed más abajo y la bajada de kReturnMaxDuration):
+	// el regreso ya no ralentiza su velocidad para sincronizar con la
+	// animación de Atrape (ver Return::BeginReturnMovement/CLAUDE.md), así
+	// que ida y vuelta podían subirse de ritmo para transmitir más la
+	// sensación de un arma pesada y poderosa, en vez de lenta en distancias
+	// medias/cortas. Subido otra vez, de 3600 a 4500, a petición del
+	// usuario (2026-08-07).
+	inline constexpr float kThrowInitialSpeed = 4500.0f;  // u/s, placeholder
 	inline constexpr float kThrowGravity = -1071.816f;    // u/s^2, gravedad estándar de Havok en Skyrim
 
 	// Radio del barrido en cruz de la colisión en vuelo
@@ -263,25 +271,41 @@ namespace Constants
 	// Cambio de criterio sobre el punto 8 original de Mecanica del
 	// arma.txt (ya actualizado ahí): decisión tomada con el usuario de que
 	// el regreso ya no acelera de forma constante, sino con una
-	// aceleración *creciente* (perfil d(t) = kReturnAcceleration /
-	// (n·(n-1)) · t^n, ver kReturnAccelerationExponent y
-	// Return::ComputeTraveledDistance) -- simula un tirón magnético cada
-	// vez más fuerte según se acerca a la mano, en vez de un tirón parejo
-	// durante todo el trayecto. Con kReturnAccelerationExponent = 2 esta
-	// fórmula colapsa exactamente en la aceleración constante anterior
-	// (d = ½·a·t²), así que kReturnAcceleration conserva el mismo
-	// significado físico de siempre (el valor de aceleración que se
-	// alcanzaría tras 1s de rampa), solo cambia cómo se llega a él.
-	// kReturnMaxDuration sigue límitando la duración total (contada desde
-	// que se desprende del todo, sin el temblor del punto 11) exactamente
-	// igual que antes -- ver Return::ComputeReturnAcceleration para el
-	// recálculo híbrido si a este ritmo tardaría más. Subido de 3000 a
-	// 4500 a petición del usuario: con el exponente creciente
-	// (kReturnAccelerationExponent > 2) el mismo coeficiente de antes
-	// tarda más en alcanzar velocidad de crucero que con aceleración
-	// constante, y el regreso se sentía demasiado lento -- este ajuste
-	// compensa esa diferencia sin tocar la forma de la curva (el "más
-	// imán cuanto más cerca" se mantiene, solo más rápido en conjunto).
+	// aceleración *creciente* (perfil d(t) = a/(n·(n-1)) · t^n, ver
+	// kReturnAccelerationExponent y Return::ComputeTraveledDistance) --
+	// simula un tirón magnético cada vez más fuerte según se acerca a la
+	// mano, en vez de un tirón parejo durante todo el trayecto.
+	//
+	// Cambio de criterio (2026-08-07, ver CLAUDE.md): el coeficiente "a" ya
+	// no es una constante fija (kReturnAcceleration, eliminada) -- con una
+	// aceleración fija, la velocidad media de todo el trayecto escala con
+	// distancia^(1-1/n) (despeje algebraico de d(T)=distancia con
+	// T=duración), es decir que cuanto más corta la distancia, más lenta se
+	// ve *en proporción* la vuelta, porque el arma pasa todo el trayecto
+	// corto dentro del primer tramo de la rampa sin llegar a coger
+	// velocidad -- confirmado por el usuario tras dos rondas de subir el
+	// coeficiente fijo (3000->4500->5500) y seguir viéndose lenta en
+	// distancias cortas: subir el coeficiente fijo escala la velocidad por
+	// igual en todas las distancias, nunca corrige esa desproporción entre
+	// cortas y largas.
+	//
+	// La aceleración ahora se recalcula por distancia (Return::
+	// ComputeReturnAcceleration) para que la velocidad justo al llegar a la
+	// mano sea siempre kReturnTargetArrivalSpeed, sin importar la distancia
+	// recorrida (despeje algebraico de d(T)=distancia y v(T)=
+	// kReturnTargetArrivalSpeed a la vez): a = (n-1)/n^(n-1) ·
+	// kReturnTargetArrivalSpeed^n / distancia^(n-1), con duración resultante
+	// T = n·distancia / kReturnTargetArrivalSpeed (lineal con la distancia,
+	// a diferencia de antes). Un regreso corto ahora tarda menos tiempo en
+	// llegar (T más pequeño) pero con una aceleración proporcionalmente
+	// mayor para llegar exactamente igual de rápido que uno largo, en vez
+	// de llegar más lento -- la sensación de "tirón" debería notarse igual
+	// de contundente sea cual sea la distancia. kReturnMaxDuration sigue
+	// límitando la duración total (contada desde que se desprende del
+	// todo, sin el temblor del punto 11) exactamente igual que antes -- ver
+	// Return::ComputeReturnAcceleration para el recálculo híbrido si a este
+	// ritmo tardaría más (ahí sí se sacrifica la velocidad de llegada
+	// constante, a cambio de no superar el límite de duración).
 	//
 	// ATENCIÓN al tocar esta constante (o kReturnAccelerationExponent/
 	// kReturnMaxDuration más abajo): Return::ComputeReturnDuration predice
@@ -292,15 +316,20 @@ namespace Constants
 	// kCatchStartSoundLeadTime, Audio::CatchCue) -- una pequeña
 	// desincronización de ese arranque es aceptable (decisión del
 	// usuario), pero cambios grandes en la velocidad del regreso sin
-	// volver a probar en el juego pueden notarse.
-	inline constexpr float kReturnAcceleration = 4500.0f;
+	// volver a probar en el juego pueden notarse. Placeholder, pendiente de
+	// calibrar en el juego.
+	inline constexpr float kReturnTargetArrivalSpeed = 5000.0f;  // u/s
 	// Subido de 2.0 a 2.3 a petición del usuario, para dar presupuesto de
 	// tiempo extra al suavizado del tramo final (kReturnTailDistance/
 	// kReturnTailMinRate más abajo) sin acortar el resto del recorrido --
 	// ese suavizado alarga la duración real un poco más allá de lo que
 	// predice Return::ComputeReturnDuration (que no lo conoce, ver esa
-	// función), así que este límite necesitaba margen de sobra.
-	inline constexpr float kReturnMaxDuration = 2.3f;
+	// función), así que este límite necesitaba margen de sobra. Bajado de
+	// 2.3 a 1.5 a petición del usuario (2026-08-07), a la vez que se
+	// introducía kReturnTargetArrivalSpeed -- el arma debe tardar como mucho
+	// 1,5s en volver, nunca los ~2s de antes, para reforzar la sensación de
+	// un regreso rápido y contundente.
+	inline constexpr float kReturnMaxDuration = 1.5f;
 
 	// Exponente del perfil de aceleración creciente de arriba. 2 recupera
 	// la aceleración constante de siempre; valores mayores hacen que el
@@ -346,11 +375,20 @@ namespace Constants
 	// de este rango en cada regreso, para que varíe de una vez a otra en
 	// vez de ser siempre la misma curva. Rango y topes absolutos
 	// reducidos respecto al valor fijo anterior (0.28 / 60-500) para
-	// cerrar el ángulo general.
-	inline constexpr float kReturnCurveLateralFractionMin = 0.10f;
-	inline constexpr float kReturnCurveLateralFractionMax = 0.18f;
-	inline constexpr float kReturnCurveMinOffset = 40.0f;
-	inline constexpr float kReturnCurveMaxOffset = 260.0f;
+	// cerrar el ángulo general -- y vueltos a subir (2026-08-07, a
+	// petición del usuario) porque a ese rango cerrado la curva resultaba
+	// apenas perceptible, sobre todo ahora que el regreso vuela más rápido
+	// (kReturnTargetArrivalSpeed más arriba): a más velocidad, menos tiempo
+	// real para apreciar la misma desviación geométrica, así que hacía
+	// falta una desviación mayor para que siguiera notándose. Con este
+	// rango la fracción vuelve a acercarse al valor fijo original, pero el
+	// tope absoluto (kReturnCurveMaxOffset) se deja por debajo de aquel
+	// (350 en vez de 500) para no reabrir del todo el problema original
+	// (demasiado amplia) en distancias largas.
+	inline constexpr float kReturnCurveLateralFractionMin = 0.20f;
+	inline constexpr float kReturnCurveLateralFractionMax = 0.30f;
+	inline constexpr float kReturnCurveMinOffset = 70.0f;
+	inline constexpr float kReturnCurveMaxOffset = 350.0f;
 
 	// Mejora Kratos #4 (PLAN-mejoras-kratos.md), campo 1: fracción de
 	// anclaje del punto de control a lo largo de la línea inicio→mano (no
@@ -441,6 +479,19 @@ namespace Constants
 	// a diferencia de los tiempos de los clips de animación) -- constante
 	// propia en vez de reutilizar esa directamente, para poder recalibrar
 	// una sin tocar la otra si hace falta.
+	//
+	// Cambio de criterio (2026-08-07, ver CLAUDE.md): ya no es la duración
+	// real de la ventana en todos los casos -- solo el valor inicial con el
+	// que arranca el bucle de tick de Return::BeginReturnMovement, antes de
+	// que se dispare `onApproaching` la primera vez (nunca llega a usarse
+	// tal cual). En cuanto se dispara, la duración real se recalcula a
+	// partir del tiempo que quede de verdad hasta la llegada (estimación en
+	// vivo ya existente) -- con la aceleración de llegada constante
+	// (Constants::kReturnTargetArrivalSpeed) un regreso corto puede tener
+	// menos de 0,5s reales por delante, y forzar esta constante igual
+	// dejaba el enderezado a medias cuando la llegada física ya se había
+	// disparado (bug reportado por el usuario: "llega de cualquier
+	// manera").
 	inline constexpr float kSpinStraightenDuration = 0.5f;  // s, placeholder
 
 	// Segunda mitad del punto 10, caso "impacto" (hasta ahora solo
@@ -522,14 +573,25 @@ namespace Constants
 	inline constexpr float kStaggerMagnitude = 1.0f;
 
 	// -- Temblor al clavarse (punto 11) --
-	// Duración de la vibración antes de desprenderse al iniciar el
-	// regreso desde un objetivo clavado. Mecanica del arma.txt da 0,1s
+	// Duración *mínima* de la vibración antes de desprenderse al iniciar
+	// el regreso desde un objetivo clavado. Mecanica del arma.txt da 0,1s
 	// explícitamente, pero a ese valor el usuario no apreciaba el efecto en
 	// el juego (probablemente por el bug de Update3DPosition corregido en
 	// Animation::TickShudder/Return::BeginReturn -- ver CHANGELOG.md, no
 	// por la duración en sí) -- subido a 0,5s a petición expresa para
 	// confirmar visualmente que el temblor ocurre antes de recortarlo de
 	// vuelta hacia el valor del documento.
+	//
+	// Cambio de criterio (2026-08-07, ver CLAUDE.md y Return::BeginReturn):
+	// esta constante ya no es la duración fija del temblor, sino su suelo.
+	// Return::BeginReturn puede alargarla en distancias cortas, donde el
+	// vuelo de vuelta (ya a velocidad natural, sin ralentizar -- ver
+	// Return::BeginReturnMovement) no dejaría tiempo suficiente para que la
+	// animación de Atrape se sincronice con la llegada real; antes era el
+	// propio vuelo el que se ralentizaba para cubrir ese hueco, ahora es
+	// este temblor el que se estira (Animation::TickShudder acepta la
+	// duración real como parámetro en vez de asumir siempre esta
+	// constante). Nunca se acorta por debajo de este valor.
 	inline constexpr float kStickShudderDuration = 0.5f;
 
 	// Ángulo máximo (radianes) que alcanza la amplitud de la oscilación --
@@ -685,12 +747,14 @@ namespace Constants
 	// al grafo de forma no determinista (a veces no arrancaba ninguna
 	// animación, a veces repetía Call.hkx, a veces caía en un ataque
 	// cuerpo a cuerpo). Return::BeginReturn usa este valor junto con
-	// kCatchAnimationLeadTime para, si hace falta, ralentizar el propio
-	// vuelo de regreso (nunca acelerarlo) cuando la distancia es tan corta
-	// que la física natural no dejaría tiempo para ninguno de los dos
-	// márgenes -- nunca desacoplando animación y física con temporizadores
+	// kCatchAnimationLeadTime para, si hace falta, alargar el temblor de
+	// desprendimiento del punto 11 (Constants::kStickShudderDuration como
+	// suelo, nunca el vuelo de regreso en sí -- cambio de criterio
+	// 2026-08-07, ver CLAUDE.md) cuando la distancia es tan corta que la
+	// física natural no dejaría tiempo para ninguno de los dos márgenes --
+	// nunca desacoplando animación y física con temporizadores
 	// independientes (a petición del usuario: la sincronización no es
-	// negociable). Ver Return::ComputeReturnAccelerationForDuration.
+	// negociable).
 	inline constexpr float kMinCatchAnimationDelay = 0.5f;
 
 	// Temblor de cámara al cerrar la mano sobre el arma, disparado en el
@@ -703,6 +767,55 @@ namespace Constants
 	// valor de referencia previo, pendientes de ajustar en el juego.
 	inline constexpr float kCatchShakeStrength = 1.5f;
 	inline constexpr float kCatchShakeDuration = 0.2f;
+
+	// -- Zoom de cámara al apuntar --
+	// Tampoco es un punto numerado de "Mecanica del arma.txt" (no cubre
+	// cámara en ningún punto, igual que kCatchShakeStrength/kCatchShakeDuration
+	// arriba) -- mecánica nueva pedida aparte.
+	//
+	// Historial de dos intentos descartados antes de llegar a esto
+	// (2026-08-07, ver CHANGELOG.md para el detalle completo):
+	// 1) Escribir RE::ThirdPersonState::targetZoomOffset una sola vez al
+	//    activar, bajo la hipótesis (nunca confirmada contra código fuente,
+	//    solo inferida del nombre de los campos) de que el motor interpola
+	//    currentZoomOffset hacia ahí por su cuenta -- la cámara no paraba de
+	//    acercarse mientras se mantenía pulsado el botón.
+	// 2) Rampa manual propia escribiendo targetZoomOffset Y
+	//    currentZoomOffset a la vez cada tick -- ya no avanzaba infinito,
+	//    pero por pequeña que se hiciera la magnitud del offset (-40 a -12,
+	//    sin diferencia visible), la cámara en tercera persona atravesaba al
+	//    personaje varios METROS por delante suyo, frenada solo por
+	//    colisión real contra geometría (muros/vallas). Confirmado con una
+	//    prueba A/B (función completamente inerte vs. activa) que el
+	//    problema lo causaba justo este código, pese a que un log de
+	//    diagnóstico mostraba posOffsetExpected/posOffsetActual (mismo
+	//    struct) sin cambios entre zoom activo/inactivo -- esos dos campos
+	//    están ligados al sistema de colisión/posicionamiento real de la
+	//    cámara en tercera persona de un modo que no se llegó a entender
+	//    del todo, y no merece la pena seguir investigándolo.
+	//
+	// Solución actual: RE::PlayerCamera::RUNTIME_DATA2::worldFOV (ver
+	// Animation::SetAimZoom/StartAimZoomRamp, mismo patrón de rampa manual
+	// que el intento 2, pero sobre este campo) -- un parámetro de
+	// renderizado puro (ángulo de visión), sin relación con la posición ni
+	// la colisión de la cámara, así que no hereda ninguno de los dos
+	// problemas de arriba. Mismo campo en primera y tercera persona, ya no
+	// hace falta distinguir la perspectiva.
+	//
+	// Offset (no valor absoluto) sobre el FOV que ya hubiera en cada momento
+	// (Animation::SetAimZoom guarda el valor previo antes de sumar este
+	// offset, y lo restaura tal cual al desactivar). Negativo estrecha el
+	// campo de visión (efecto zoom). Placeholder sin calibrar en el juego
+	// todavía -- primer valor a ajustar si el efecto resulta de más o de
+	// menos.
+	inline constexpr float kAimZoomFOVOffset = -15.0f;
+
+	// Duración de la rampa manual de entrada Y de salida (Animation::
+	// StartAimZoomRamp) -- a petición del usuario, más corta que lo que
+	// tardaba el intento anterior (delegado en el motor, sin control sobre
+	// la velocidad real). Placeholder, primer valor a subir/bajar si se ve
+	// demasiado brusca o demasiado lenta en el juego.
+	inline constexpr float kAimZoomTransitionDuration = 0.2f;  // s, placeholder
 
 	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
 	// documentado en commonlibsse-ng (ver BSAudioManager.h), 0 sin más

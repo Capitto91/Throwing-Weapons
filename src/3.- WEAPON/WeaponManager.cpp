@@ -94,6 +94,12 @@ namespace Weapon
 		weaponState.SetState(State::kInHand);
 		catchAnimationActive = false;
 
+		// Por si el estado anterior era kAiming (sin esto, el offset de zoom
+		// se quedaría aplicado para siempre) -- desactivar un zoom que ya
+		// estaba desactivado es un no-op inofensivo, mismo criterio que
+		// Input::SetMovementLocked(false) más abajo.
+		Animation::SetAimZoom(false);
+
 		// Por si el estado anterior era kThrowing (partida guardada/cargada
 		// a mitad de esa ventana, dentro de la misma sesión del proceso):
 		// sin esto, el movimiento/la graph variable se quedarían activos
@@ -192,6 +198,7 @@ namespace Weapon
 			// solo reordenamos el estado por si la pulsación de soltar se
 			// perdió durante la carga.
 			weaponState.SetState(State::kInHand);
+			Animation::SetAimZoom(false);
 			break;
 		case State::kThrowing:
 			// El arma tampoco ha llegado a desequiparse todavía en este
@@ -276,6 +283,13 @@ namespace Weapon
 		weaponState.SetActiveWeapon(boundWeapon);
 		weaponState.SetState(State::kAiming);
 
+		// Zoom de cámara mientras dura el apuntado -- puro polish, no cubierto
+		// por Mecanica del arma.txt (ver Constants::kAimZoomThirdPersonOffset).
+		// Revertido en BeginThrowAnimation (salida normal) y en
+		// OnLoadingScreenClosed/ResetToInHand (salida por pantalla de carga o
+		// reinicio).
+		Animation::SetAimZoom(true);
+
 		// El arma ya se desenvainó antes de llegar aquí -- ver
 		// OnAimButtonDown, que ahora exige una pulsación previa dedicada
 		// solo a desenvainar (igual que el ataque cuerpo a cuerpo vanilla
@@ -294,6 +308,10 @@ namespace Weapon
 		}
 
 		weaponState.SetState(State::kThrowing);
+
+		// Fin del zoom de apuntado (ver BeginAiming) -- el gesto de Lanzar ya
+		// no es "apuntando".
+		Animation::SetAimZoom(false);
 
 		// Bloquea el movimiento mientras dura la animación de Lanzar:
 		// atacar mientras te mueves (incluso si empiezas a moverte a mitad

@@ -7,8 +7,11 @@
 #include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <memory>
 #include <numbers>
+#include <thread>
 
 namespace Animation
 {
@@ -133,7 +136,7 @@ namespace Animation
 		return handNode->world.rotate;
 	}
 
-	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds)
+	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds, float a_duration)
 	{
 		auto* root = a_refr.Get3D();
 		auto* spinNode = root ? root->GetObjectByName(Constants::kWeaponSpinNodeName) : nullptr;
@@ -143,19 +146,20 @@ namespace Animation
 
 		// Chirp de fase continua: frecuencia f(t) sube en línea recta de
 		// kStickShudderFrequencyStart a kStickShudderFrequencyEnd a lo
-		// largo de kStickShudderDuration; la fase es la integral de
+		// largo de a_duration (ya no siempre Constants::kStickShudderDuration,
+		// ver TickShudder en el header); la fase es la integral de
 		// 2π·f(t), en forma cerrada (no acumulada tick a tick, mismo
 		// criterio que Throw::ComputeGravityDrop) para no arrastrar
 		// deriva numérica ni depender del intervalo de tick.
 		constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-		constexpr float freqSlope = (Constants::kStickShudderFrequencyEnd - Constants::kStickShudderFrequencyStart) / Constants::kStickShudderDuration;
+		const float     freqSlope = (Constants::kStickShudderFrequencyEnd - Constants::kStickShudderFrequencyStart) / a_duration;
 		const float     phase = twoPi * (Constants::kStickShudderFrequencyStart * a_elapsedSeconds + 0.5f * freqSlope * a_elapsedSeconds * a_elapsedSeconds);
 
 		// Envolvente de amplitud: crece exponencialmente desde 0 hasta
 		// kStickShudderMaxAngle, alcanzando kStickShudderAmplitudeRampFraction
-		// de ese máximo justo al final de kStickShudderDuration -- decayRate
-		// se despeja de esa condición (forma cerrada, no ajustada a mano).
-		const float decayRate = -std::log(1.0f - Constants::kStickShudderAmplitudeRampFraction) / Constants::kStickShudderDuration;
+		// de ese máximo justo al final de a_duration -- decayRate se
+		// despeja de esa condición (forma cerrada, no ajustada a mano).
+		const float decayRate = -std::log(1.0f - Constants::kStickShudderAmplitudeRampFraction) / a_duration;
 		const float amplitude = Constants::kStickShudderMaxAngle * (1.0f - std::exp(-decayRate * a_elapsedSeconds));
 
 		const float angle = amplitude * std::sin(phase);
@@ -250,5 +254,117 @@ namespace Animation
 		}
 
 		return true;
+	}
+
+	namespace
+	{
+		// Estado del zoom de apuntado: valor de worldFOV ANTES de restarle
+		// el offset, para poder restaurarlo tal cual al desactivar.
+		bool  g_aimZoomActive = false;
+		float g_aimZoomSavedFOV = 0.0f;
+
+		// Cancela la rampa en marcha (si la hay) antes de arrancar una nueva
+		// -- sin esto, una activación seguida de una desactivación rápida
+		// (o viceversa) dejaría dos hilos escribiendo el mismo campo de
+		// cámara a la vez.
+		std::shared_ptr<std::atomic<bool>> g_aimZoomRampActive;
+
+		// Rampa manual propia (mismo patrón hilo-que-duerme-y-reencola de
+		// StartTickLoop, ver 6.- PHYSICS/PhysicsManager.cpp): duración fija
+		// (Constants::kAimZoomTransitionDuration), curva suave
+		// (Math::SmoothStep01), llega exactamente a a_targetFOV y se detiene
+		// sola.
+		//
+		// worldFOV (RE::PlayerCamera::RUNTIME_DATA2), no
+		// ThirdPersonState::targetZoomOffset/currentZoomOffset (primer
+		// intento, 2026-08-07, revertido): confirmado en el juego con una
+		// prueba A/B (función completamente inerte vs. activa) que tocar
+		// esos dos campos, aunque la lectura de vuelta mostraba el valor
+		// exacto que escribíamos, causaba que la cámara en tercera persona
+		// "volara" muchos metros por delante del personaje, detenida solo
+		// por colisión real contra geometría (muros/vallas) -- ver
+		// CHANGELOG.md. Esos campos están ligados al sistema de colisión/
+		// posicionamiento de la cámara en tercera persona (ver
+		// posOffsetExpected/posOffsetActual, mismo struct), un área que ya
+		// no se toca. worldFOV es un parámetro de renderizado puro (ángulo
+		// de visión), sin relación con la posición/colisión de la cámara --
+		// mismo campo en primera y tercera persona, así que ya no hace
+		// falta ninguna rama por perspectiva.
+		void StartAimZoomRamp(float a_startFOV, float a_targetFOV)
+		{
+			auto active = std::make_shared<std::atomic<bool>>(true);
+			g_aimZoomRampActive = active;
+
+			// std::max evitado a propósito: Windows.h define max como macro
+			// (mismo problema ya documentado en el proyecto, ver
+			// Return::BeginReturn) -- un ternario en su lugar.
+			const int rawStepCount = static_cast<int>(Constants::kAimZoomTransitionDuration / Constants::kTickDeltaSeconds);
+			const int stepCount = rawStepCount > 1 ? rawStepCount : 1;
+
+			std::thread([active, a_startFOV, a_targetFOV, stepCount]() {
+				for (int step = 1; step <= stepCount && active->load(); ++step) {
+					std::this_thread::sleep_for(Constants::kTickInterval);
+					if (!active->load()) {
+						return;
+					}
+
+					SKSE::GetTaskInterface()->AddTask([active, a_startFOV, a_targetFOV, step, stepCount]() {
+						if (!active->load()) {
+							return;
+						}
+						auto* camera = RE::PlayerCamera::GetSingleton();
+						if (camera) {
+							const float blend = Math::SmoothStep01(static_cast<float>(step) / static_cast<float>(stepCount));
+							camera->GetRuntimeData2().worldFOV = a_startFOV + (a_targetFOV - a_startFOV) * blend;
+						}
+						if (step == stepCount) {
+							active->store(false);
+						}
+					});
+				}
+			}).detach();
+		}
+	}
+
+	void SetAimZoom(bool a_active)
+	{
+		if (a_active == g_aimZoomActive) {
+			return;
+		}
+
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		if (!camera) {
+			return;
+		}
+
+		if (!camera->IsInFirstPerson() && !camera->IsInThirdPerson()) {
+			// Ni primera ni tercera persona (p. ej. cámara libre) -- nada
+			// que zoomear, no se marca activo para no revertir un valor que
+			// nunca se llegó a tocar.
+			return;
+		}
+
+		if (g_aimZoomRampActive) {
+			g_aimZoomRampActive->store(false);
+			g_aimZoomRampActive.reset();
+		}
+
+		float startFOV;
+		float targetFOV;
+
+		if (a_active) {
+			g_aimZoomSavedFOV = camera->GetRuntimeData2().worldFOV;
+			startFOV = g_aimZoomSavedFOV;
+			targetFOV = g_aimZoomSavedFOV + Constants::kAimZoomFOVOffset;
+		} else {
+			// Parte de donde esté ahora mismo (no necesariamente el valor
+			// objetivo, si se soltó el botón antes de que la rampa de
+			// entrada terminase) hacia el valor guardado antes de activar.
+			startFOV = camera->GetRuntimeData2().worldFOV;
+			targetFOV = g_aimZoomSavedFOV;
+		}
+
+		g_aimZoomActive = a_active;
+		StartAimZoomRamp(startFOV, targetFOV);
 	}
 }

@@ -134,9 +134,9 @@ namespace Animation
 	RE::NiMatrix3 GetHandBoneWorldRotation(RE::Actor& a_actor);
 
 	// Punto 11: temblor de desprendimiento antes de iniciar el regreso
-	// desde un objetivo clavado (Constants::kStickShudderDuration,
+	// desde un objetivo clavado (duración a_duration, ver más abajo),
 	// llamado desde 5.- RETURN/ReturnManager::BeginReturn antes de
-	// arrancar el movimiento de vuelta en sí, nunca durante el vuelo).
+	// arrancar el movimiento de vuelta en sí, nunca durante el vuelo.
 	// Escribe una oscilación de frecuencia creciente (chirp de fase
 	// continua, ver Constants::kStickShudderFrequencyStart/End) y amplitud
 	// creciente (crecimiento exponencial hacia Constants::kStickShudderMaxAngle,
@@ -154,11 +154,17 @@ namespace Animation
 	// absoluta desde cero: aquí el arma ya viene de un ángulo de vuelo
 	// arbitrario, no del reposo).
 	//
-	// a_elapsedSeconds debe ir de 0 (reposo, sin oscilación) a
-	// Constants::kStickShudderDuration. Mismo comportamiento que TickSpin
-	// si el nodo de giro no existe todavía (sin efecto, sin reintento
-	// explícito).
-	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds);
+	// a_elapsedSeconds debe ir de 0 (reposo, sin oscilación) a a_duration.
+	// a_duration ya no es siempre Constants::kStickShudderDuration (cambio
+	// de criterio 2026-08-07, ver CLAUDE.md): Return::BeginReturn puede
+	// alargarlo por encima de ese mínimo en regresos cortos, para dar
+	// tiempo a que la animación de Atrape se sincronice sin ralentizar el
+	// vuelo en sí (ver Return::BeginReturnMovement) -- la fórmula del chirp
+	// y de la envolvente de amplitud se estiran/comprimen sobre a_duration
+	// igual que antes lo hacían sobre la constante fija. Mismo
+	// comportamiento que TickSpin si el nodo de giro no existe todavía
+	// (sin efecto, sin reintento explícito).
+	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds, float a_duration);
 
 	// Fase 3 del plan OAR (_reference/PLAN-OAR.md), rediseñado 2026-08-05
 	// (ver CLAUDE.md): activa/desactiva el TESGlobal
@@ -197,4 +203,34 @@ namespace Animation
 	// WeaponManager::PollGestureWeaponReady), no solo "arma sin 3D cargado"
 	// en general.
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
+
+	// Zoom de cámara mientras dura State::kAiming -- arranca una rampa
+	// manual propia (Constants::kAimZoomTransitionDuration) sobre
+	// RE::PlayerCamera::RUNTIME_DATA2::worldFOV (estrecha el campo de
+	// visión, mismo campo en primera y tercera persona) hacia el valor
+	// objetivo (activar) o hacia el valor previo a activar (desactivar).
+	// Ver Constants::kAimZoomFOVOffset para el porqué de FOV y no la
+	// posición/zoom de la cámara en tercera persona (ThirdPersonState::
+	// targetZoomOffset/currentZoomOffset, primer intento, descartado tras
+	// confirmar en el juego que causaba que la cámara atravesara al
+	// personaje varios metros, frenada solo por colisión real contra
+	// geometría).
+	//
+	// Sin efecto (salvo actualizar el flag interno) si a_active coincide
+	// con el estado ya activo -- evita sumar el offset dos veces si
+	// BeginAiming se llama sin haber revertido antes (ver
+	// WeaponManager::OnAimButtonDown, caso kAiming: reinicia el ciclo
+	// llamando a BeginAiming de nuevo sin pasar por un SetAimZoom(false)
+	// intermedio). Si ya hay una rampa en marcha (p. ej. se suelta el botón
+	// antes de que termine la de entrada), la cancela y arranca la nueva
+	// partiendo del valor real en ese instante, no del objetivo todavía sin
+	// alcanzar -- sin salto visual.
+	//
+	// Función global sin parámetro RE::Actor& (a diferencia de
+	// SetThrowTrigger/SetCallTrigger/SetCatchTrigger, que sí lo llevan por
+	// coherencia con el resto del archivo pese a no usarlo, ver esas
+	// funciones): RE::PlayerCamera es un singleton inherentemente ligado al
+	// jugador, no un concepto por actor como una graph variable, así que no
+	// aplica el mismo criterio aquí.
+	void SetAimZoom(bool a_active);
 }

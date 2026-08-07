@@ -72,18 +72,30 @@ namespace Return
 		constexpr float n = Constants::kReturnAccelerationExponent;
 
 		if (a_distance <= 0.0f) {
-			return Constants::kReturnAcceleration;
+			return 0.0f;
 		}
 
-		// d(T) = a/(n·(n-1))·T^n despejando T, para el coeficiente por
-		// defecto -- generaliza el sqrt(2d/a) anterior (caso n=2).
-		const float defaultDuration = std::pow(a_distance * n * (n - 1.0f) / Constants::kReturnAcceleration, 1.0f / n);
+		// Aceleración que hace que la velocidad de llegada (v(T), con
+		// T = duración total) sea exactamente Constants::kReturnTargetArrivalSpeed
+		// sin importar a_distance -- despeje simultáneo de d(T)=a_distance
+		// (T = n·a_distance/vf, sustituyendo en v(T)=a/(n-1)·T^(n-1)) y
+		// v(T)=vf: a = (n-1)/n^(n-1) · vf^n / a_distance^(n-1). A diferencia
+		// de un coeficiente fijo, esto evita que un regreso corto se quede
+		// todo el trayecto dentro del primer tramo de la rampa sin llegar a
+		// coger velocidad (ver CLAUDE.md, 2026-08-07).
+		constexpr float vf = Constants::kReturnTargetArrivalSpeed;
+		const float     defaultAcceleration = (n - 1.0f) / std::pow(n, n - 1.0f) * std::pow(vf, n) / std::pow(a_distance, n - 1.0f);
+
+		// T = n·a_distance/vf -- mismo despeje que arriba, para T en vez de
+		// para a.
+		const float defaultDuration = n * a_distance / vf;
 		if (defaultDuration <= Constants::kReturnMaxDuration) {
-			return Constants::kReturnAcceleration;
+			return defaultAcceleration;
 		}
 
-		// Mismo despeje que arriba pero al revés (a partir de T fijo en
-		// kReturnMaxDuration): a = d·n·(n-1)/T^n.
+		// A partir de aquí se sacrifica la velocidad de llegada constante:
+		// mismo despeje que ComputeTraveledDistance pero al revés (a partir
+		// de T fijo en kReturnMaxDuration): a = d·n·(n-1)/T^n.
 		return a_distance * n * (n - 1.0f) / std::pow(Constants::kReturnMaxDuration, n);
 	}
 

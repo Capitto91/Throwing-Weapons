@@ -52,40 +52,49 @@ namespace Return
 			const auto initialHandPos = GetHandPosition(a_player);
 
 			const float initialDistance = (initialHandPos - start).Length();
-			float       acceleration = ComputeReturnAcceleration(initialDistance);
-			const auto  controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
+			// A velocidad/aceleración siempre natural (cambio de criterio
+			// 2026-08-07, ver CLAUDE.md): el vuelo de vuelta ya no se
+			// ralentiza para dar tiempo a que la animación de Atrape se
+			// sincronice -- en distancias medias/cortas eso se notaba poco
+			// "poderoso" para un arma como esta (a petición del usuario). La
+			// sincronización sigue siendo obligatoria, pero ahora es
+			// Return::BeginReturn quien la garantiza por el otro lado,
+			// alargando si hace falta el temblor de desprendimiento del
+			// punto 11 (a_shudderDuration, ver Animation::TickShudder) en
+			// vez de tocar esta aceleración. Sigue acotada por
+			// Constants::kReturnMaxDuration (ComputeReturnAcceleration), que
+			// es un límite distinto y sin relación con la animación de
+			// Atrape -- ver el punto 8 de Mecanica del arma.txt.
+			float acceleration = ComputeReturnAcceleration(initialDistance);
 
-			// Duración estimada del regreso con la aceleración natural --
-			// para el log, y también la que ya usó Return::BeginReturn
-			// (antes de esta llamada) para calcular el retardo del sonido
-			// de arranque del atrape (a_catchCue, ver Audio::CatchCue).
-			const float naturalDuration = ComputeReturnDuration(acceleration, initialDistance);
-
-			// Duración mínima que necesita el tramo de movimiento para que
-			// el gesto de Atrape le dé tiempo a sincronizarse de verdad: el
-			// margen de asentado del grafo tras Llamada
-			// (Constants::kMinCatchAnimationDelay) menos lo que ya haya
-			// cubierto el temblor de desprendimiento si lo hubo
-			// (a_shudderDuration), más la duración propia de Catch.hkx
-			// (Constants::kCatchAnimationLeadTime) -- nunca por debajo de
-			// esta última sola, aunque el temblor ya cubriera de sobra el
-			// margen de asentado. Si la distancia es tan corta que la
-			// aceleración natural terminaría antes de este mínimo, se
-			// ralentiza el vuelo (nunca se acelera) para que dure
-			// exactamente lo necesario -- a petición del usuario
-			// (2026-08-03): la sincronización animación/física no es
-			// negociable, nunca se desacopla con temporizadores
-			// independientes de la trayectoria real.
-			const float requiredForSettle = Constants::kMinCatchAnimationDelay - a_shudderDuration + Constants::kCatchAnimationLeadTime;
-			const float requiredMovementDuration = requiredForSettle > Constants::kCatchAnimationLeadTime ? requiredForSettle : Constants::kCatchAnimationLeadTime;
-			if (naturalDuration < requiredMovementDuration) {
-				acceleration = ComputeReturnAccelerationForDuration(initialDistance, requiredMovementDuration);
-				logs::info(
-					"Return::BeginReturnMovement: distancia muy corta ({:.1f}) -- regreso ralentizado a {:.2f}s (natural: {:.2f}s) para sincronizar con Atrape.",
-					initialDistance, requiredMovementDuration, naturalDuration);
+			// Excepción, solo si no hubo temblor (a_shudderDuration<=0.0f --
+			// a_wasStuck=false en Return::BeginReturn, p. ej. recuperar el
+			// arma en pleno vuelo de ida antes de impactar): ahí no hay
+			// ningún temblor que alargar para darle al vuelo el mínimo real
+			// (Constants::kMinCatchAnimationDelay + kCatchAnimationLeadTime)
+			// que necesita la sincronización con Atrape -- sin este mínimo,
+			// el propio grafo de animación puede confundirse si Atrape se
+			// dispara demasiado pronto tras Llamada (ver kMinCatchAnimationDelay),
+			// y además no queda margen real para que el enderezado (más
+			// abajo) tenga tiempo de converger antes de la llegada física.
+			// Caso raro (el habitual es recuperar con el arma ya clavada,
+			// que siempre tiene temblor de sobra) así que esta ralentización
+			// puntual no contradice la decisión de no ralentizar el caso
+			// normal.
+			float       estimatedDuration = ComputeReturnDuration(acceleration, initialDistance);
+			const float naturalDuration = estimatedDuration;
+			if (a_shudderDuration <= 0.0f) {
+				const float requiredMovementDuration = Constants::kMinCatchAnimationDelay + Constants::kCatchAnimationLeadTime;
+				if (estimatedDuration < requiredMovementDuration) {
+					acceleration = ComputeReturnAccelerationForDuration(initialDistance, requiredMovementDuration);
+					estimatedDuration = requiredMovementDuration;
+					logs::info(
+						"Return::BeginReturnMovement: regreso sin temblor y demasiado corto ({:.2f}s) -- ralentizado a {:.2f}s para dejar margen a la sincronización con Atrape.",
+						naturalDuration, estimatedDuration);
+				}
 			}
 
-			const float estimatedDuration = ComputeReturnDuration(acceleration, initialDistance);
+			const auto controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
 			logs::info(
 				"Return::BeginReturnMovement: distancia inicial {:.1f}, aceleración {:.1f}, duración estimada {:.2f}s",
@@ -116,7 +125,7 @@ namespace Return
 			const RE::NiMatrix3 rootWorld = replica->Get3D() ? replica->Get3D()->world.rotate : RE::NiMatrix3{};
 			const RE::NiMatrix3 movementBaseLocal = Animation::GetSpinLocalRotation(*replica);
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenDuration, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -164,7 +173,16 @@ namespace Return
 				// instante exacto de la llegada, no a la que tuviera la
 				// mano medio segundo antes.
 				if (approachFired) {
-					const float         blend = (elapsed - straightenStart) / Constants::kSpinStraightenDuration;
+					// straightenDuration ya no es siempre Constants::kSpinStraightenDuration
+					// (bug reportado por el usuario, 2026-08-07, ver más abajo
+					// dónde se recalcula): con la aceleración de llegada
+					// constante (Constants::kReturnTargetArrivalSpeed), un
+					// regreso corto puede durar menos que esa constante fija,
+					// así que forzar siempre esa ventana dejaba el arma a
+					// mitad de enderezar cuando la llegada física ya se había
+					// disparado -- llegaba "de cualquier manera" en vez de
+					// con el mango orientado a la mano.
+					const float         blend = (elapsed - straightenStart) / straightenDuration;
 					const RE::NiMatrix3 handTargetLocal = Math::LocalRotationFromWorld(rootWorld, Animation::GetHandBoneWorldRotation(*a_player));
 					Animation::TickSpinStraighten(a_refr, straightenBlendFromLocal, handTargetLocal, blend);
 				} else {
@@ -289,6 +307,21 @@ namespace Return
 					if (settledSinceCall && estimatedTimeToArrival <= Constants::kCatchAnimationLeadTime) {
 						approachFired = true;
 						straightenStart = elapsed;
+						// La ventana de enderezado dura lo que quede de
+						// verdad hasta la llegada (estimación en vivo de
+						// arriba), no siempre Constants::kSpinStraightenDuration
+						// (bug reportado por el usuario, 2026-08-07): con la
+						// aceleración de llegada constante
+						// (Constants::kReturnTargetArrivalSpeed), un regreso
+						// corto puede tener menos tiempo real restante que esa
+						// constante fija, y forzarla igual dejaba el
+						// enderezado a medias cuando la llegada física ya se
+						// había disparado. Suelo pequeño para evitar una
+						// ventana de longitud ~0 (blend saltando prácticamente
+						// de golpe en vez de con la curva suave de
+						// TickSpinStraighten).
+						constexpr float kMinStraightenBlendDuration = 0.05f;
+						straightenDuration = estimatedTimeToArrival > kMinStraightenBlendDuration ? estimatedTimeToArrival : kMinStraightenBlendDuration;
 						straightenBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
 						onApproaching();
 					}
@@ -300,17 +333,35 @@ namespace Return
 					// Audio::CatchCue::PlayEnd), no depende de que el
 					// arranque haya llegado a sonar.
 					Audio::CatchCue::PlayEnd(handPos);
-					// Red de seguridad: con el vuelo ya ralentizado lo
-					// necesario más arriba, esto no debería hacer falta en
-					// la práctica, pero garantiza que onApproaching se
-					// dispara siempre antes de onArrived si por lo que sea
-					// no lo hizo por su cuenta (p. ej. un único tick final
+					// Red de seguridad: con el vuelo ya ajustado lo necesario
+					// más arriba, esto no debería hacer falta en la
+					// práctica, pero garantiza que onApproaching se dispara
+					// siempre antes de onArrived si por lo que sea no lo
+					// hizo por su cuenta (p. ej. un único tick final
 					// demasiado brusco para medir velocidad).
 					if (!approachFired) {
 						approachFired = true;
-						straightenStart = elapsed;
-						straightenBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
 						onApproaching();
+
+						// Sin margen real para ninguna ventana de enderezado
+						// (se está detectando la llegada en el mismo tick,
+						// sin haber pasado antes por la estimación en vivo de
+						// arriba) -- y una vez arrivedFired se ponga a true
+						// dos líneas más abajo, el bucle ya no vuelve a
+						// llamar a TickSpin/TickSpinStraighten nunca más (ver
+						// el chequeo de arrivedFired al principio del tick),
+						// así que esperar a que el "siguiente tick" complete
+						// el fundido no funciona -- no hay siguiente tick.
+						// Se fuerza aquí mismo el enderezado completo
+						// (blend=1, sin fundido visible) en vez de dejar la
+						// última pose de TickSpin de este mismo tick (ya
+						// calculada más arriba, antes de saber que llegaba):
+						// un salto de rotación sin fundir es preferible a que
+						// el arma se quede definitivamente a mitad de girar
+						// (bug reportado por el usuario, 2026-08-07: "llega
+						// de cualquier manera").
+						const RE::NiMatrix3 handTargetLocal = Math::LocalRotationFromWorld(rootWorld, Animation::GetHandBoneWorldRotation(*a_player));
+						Animation::TickSpinStraighten(a_refr, Animation::GetSpinLocalRotation(a_refr), handTargetLocal, 1.0f);
 					}
 					onArrived();
 					// No se devuelve false aquí -- el bucle sigue vivo
@@ -338,19 +389,44 @@ namespace Return
 			return;
 		}
 
-		// Retardo del sonido de arranque del atrape (Audio::CatchCue),
-		// calculado una única vez aquí -- antes incluso del temblor de
-		// desprendimiento si lo hay -- para que su reloj interno cuente
-		// ese temblor (Constants::kStickShudderDuration) además del
-		// tramo de movimiento, tal como pidió el usuario. Misma distancia/
-		// aceleración/duración prevista que recalculará luego
-		// BeginReturnMovement para la curva real -- duplicado a propósito
-		// (esta es solo una estimación para el sonido, no necesita
-		// compartir estado con el cálculo de la trayectoria real).
+		// Distancia/aceleración/duración prevista del tramo de movimiento --
+		// misma fórmula natural que recalculará luego BeginReturnMovement
+		// para la curva real (duplicado a propósito, esta es solo una
+		// estimación, no necesita compartir estado con el cálculo real).
+		// Ya no se ralentiza para sincronizar con Atrape (ver
+		// BeginReturnMovement/CLAUDE.md, 2026-08-07) -- se usa tal cual,
+		// tanto para el retardo del sonido de arranque del atrape como para
+		// calcular más abajo cuánto hay que alargar el temblor.
 		const float initialDistanceForCue = (GetHandPosition(a_player) - replica->GetPosition()).Length();
 		const float accelerationForCue = ComputeReturnAcceleration(initialDistanceForCue);
 		const float predictedMovementDuration = ComputeReturnDuration(accelerationForCue, initialDistanceForCue);
-		const float shudderDuration = a_wasStuck ? Constants::kStickShudderDuration : 0.0f;
+
+		// Duración real del temblor de desprendimiento (punto 11): antes
+		// fija (Constants::kStickShudderDuration), ahora su suelo -- si el
+		// tramo de movimiento (ya a velocidad natural, sin ralentizar) no
+		// dejaría tiempo suficiente para que la animación de Atrape se
+		// sincronice de verdad, se alarga el temblor lo necesario en vez de
+		// tocar la velocidad del vuelo (cambio de criterio 2026-08-07, ver
+		// CLAUDE.md y BeginReturnMovement). El total (temblor + movimiento)
+		// requerido es el mismo de siempre (Constants::kMinCatchAnimationDelay
+		// + Constants::kCatchAnimationLeadTime, ver el análisis en
+		// BeginReturnMovement de versiones anteriores de este archivo) --
+		// solo cambia qué lado de la suma se ajusta para cubrirlo. Sin
+		// efecto si el arma no estaba clavada (a_wasStuck=false): no hay
+		// temblor que alargar en ese caso (auto-recall a media parábola,
+		// caso raro), así que la sincronización ahí depende solo de la
+		// estimación en vivo de BeginReturnMovement (onApproaching).
+		const float requiredTotalForSettle = Constants::kMinCatchAnimationDelay + Constants::kCatchAnimationLeadTime;
+		const float shudderDeficit = requiredTotalForSettle - predictedMovementDuration;
+		const float shudderDuration = a_wasStuck ?
+		                                   (shudderDeficit > Constants::kStickShudderDuration ? shudderDeficit : Constants::kStickShudderDuration) :
+		                                   0.0f;
+
+		// Retardo del sonido de arranque del atrape (Audio::CatchCue),
+		// calculado una única vez aquí -- antes incluso del temblor de
+		// desprendimiento si lo hay -- para que su reloj interno cuente ese
+		// temblor (ya con su duración real, posiblemente alargada) además
+		// del tramo de movimiento, tal como pidió el usuario.
 		// std::max evitado a propósito: Windows.h define max como macro
 		// (mismo problema ya documentado en el proyecto para std::min en
 		// WeaponTrail.cpp), así que un ternario aquí en su lugar.
@@ -367,11 +443,12 @@ namespace Return
 		// movimiento de vuelta -- sin mover la réplica (posición y Havok
 		// intactos), solo escribe una oscilación de frecuencia y amplitud
 		// crecientes en el nodo de giro visual (ver Animation::TickShudder).
-		// Al agotarse Constants::kStickShudderDuration, este mismo bucle de
-		// tick arranca BeginReturnMovement y termina el suyo devolviendo
-		// false -- WeaponState solo ve un token activo cada vez (primero el
-		// de este temblor, luego el del movimiento), porque ambos pasan por
-		// el mismo a_callbacks.onTickStarted.
+		// Al agotarse shudderDuration (calculado arriba -- Constants::
+		// kStickShudderDuration como mínimo), este mismo bucle de tick
+		// arranca BeginReturnMovement y termina el suyo devolviendo false --
+		// WeaponState solo ve un token activo cada vez (primero el de este
+		// temblor, luego el del movimiento), porque ambos pasan por el
+		// mismo a_callbacks.onTickStarted.
 		//
 		// baseRotation: la rotación del nodo de giro justo en el instante
 		// de clavarse (viene de un ángulo de vuelo arbitrario, congelado
@@ -387,9 +464,9 @@ namespace Return
 			}
 		}
 
-		logs::info("Return::BeginReturn: arma clavada, temblor de desprendimiento ({:.2f}s) antes de regresar.", Constants::kStickShudderDuration);
+		logs::info("Return::BeginReturn: arma clavada, temblor de desprendimiento ({:.2f}s, mínimo {:.2f}s) antes de regresar.", shudderDuration, Constants::kStickShudderDuration);
 
-		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, shudderDuration, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			elapsed += a_deltaSeconds;
 
 			// El arma no se mueve durante el temblor, pero el reloj del
@@ -397,8 +474,8 @@ namespace Return
 			// Return::BeginReturn para el porqué.
 			catchCue->UpdateStart(a_refr.GetPosition(), a_deltaSeconds);
 
-			if (elapsed >= Constants::kStickShudderDuration) {
-				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue), Constants::kStickShudderDuration);
+			if (elapsed >= shudderDuration) {
+				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue), shudderDuration);
 				return false;
 			}
 
@@ -408,7 +485,7 @@ namespace Return
 			// cambia), aquí la réplica no se mueve, así que sin esta
 			// llamada el motor nunca propaga ese cambio a world.rotate y el
 			// temblor no llega a verse aunque el cálculo sea correcto.
-			Animation::TickShudder(a_refr, baseRotation, elapsed);
+			Animation::TickShudder(a_refr, baseRotation, elapsed, shudderDuration);
 			a_refr.Update3DPosition(true);
 			return true;
 		});

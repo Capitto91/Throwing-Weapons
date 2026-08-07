@@ -40,13 +40,14 @@ namespace Return
 		// reales desde que empezó el regreso (temblor de desprendimiento
 		// incluido si lo hubo) -- si la distancia es tan corta que la
 		// física natural no dejaría margen para ninguna de las dos cosas,
-		// BeginReturnMovement ralentiza el propio vuelo (nunca lo acelera,
-		// ver Return::ComputeReturnAccelerationForDuration) para que dure
-		// lo necesario, en vez de desacoplar animación y física. El
-		// llamante debe arrancar aquí el gesto visual de Atrape
-		// (WeaponManager::BeginCatchAnimation). Nunca obligatorio comprobar
-		// si está asignado (mismo contrato que onArrived, ver más abajo),
-		// el único llamante (WeaponManager::BeginReturn) lo asigna siempre.
+		// Return::BeginReturn alarga el temblor de desprendimiento del
+		// punto 11 lo necesario (nunca ralentiza el vuelo en sí, cambio de
+		// criterio 2026-08-07, ver CLAUDE.md), en vez de desacoplar
+		// animación y física. El llamante debe arrancar aquí el gesto
+		// visual de Atrape (WeaponManager::BeginCatchAnimation). Nunca
+		// obligatorio comprobar si está asignado (mismo contrato que
+		// onArrived, ver más abajo), el único llamante
+		// (WeaponManager::BeginReturn) lo asigna siempre.
 		std::function<void()> onApproaching;
 
 		// El arma ha llegado a la mano del jugador (a Constants::kReturnArrivalDistance
@@ -81,9 +82,22 @@ namespace Return
 	// a_wasStuck (punto 11): si el arma estaba clavada (superficie o
 	// actor, el llamante ya liberó a este último antes de llegar aquí)
 	// justo antes de pulsar recuperar, primero se reproduce un breve
-	// temblor de desprendimiento (Constants::kStickShudderDuration, ver
-	// Animation::TickShudder) sin mover la réplica, y solo al terminar
-	// arranca el movimiento de vuelta descrito arriba. Si venía en vuelo
-	// (kThrown), el movimiento arranca de inmediato, sin temblor.
+	// temblor de desprendimiento (Constants::kStickShudderDuration como
+	// mínimo -- BeginReturn puede alargarlo si la distancia es corta, ver
+	// más abajo, ver Animation::TickShudder) sin mover la réplica, y solo
+	// al terminar arranca el movimiento de vuelta descrito arriba. Si venía
+	// en vuelo (kThrown), el movimiento arranca de inmediato, sin temblor.
+	//
+	// El movimiento de vuelta en sí siempre usa la aceleración natural
+	// (Return::ComputeReturnAcceleration, acotada solo por
+	// Constants::kReturnMaxDuration -- sin relación con la animación de
+	// Atrape) -- cambio de criterio 2026-08-07 (ver CLAUDE.md): antes se
+	// ralentizaba el propio vuelo en regresos cortos para dejar tiempo a
+	// que Atrape se sincronizara, pero eso hacía que el regreso se sintiera
+	// lento en distancias medias/cortas. Ahora, si hace falta más tiempo
+	// del que da el vuelo natural, es el temblor de desprendimiento el que
+	// se alarga por encima de su mínimo -- solo aplica si a_wasStuck es
+	// true (si el regreso arranca en pleno vuelo no hay temblor que
+	// alargar, caso raro de auto-recall a media parábola).
 	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, bool a_wasStuck, ReturnCallbacks a_callbacks);
 }

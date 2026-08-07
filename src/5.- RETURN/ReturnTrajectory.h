@@ -35,15 +35,26 @@ namespace Return
 	// Coeficiente de aceleración híbrido (punto 8, cambio de criterio --
 	// ver CLAUDE.md/Constants::kReturnAccelerationExponent): sigue
 	// llamándose "aceleración" por continuidad con el significado físico
-	// del valor (lo que se alcanzaría tras 1s de rampa), pero desde que la
-	// rampa dejó de ser una recta (aceleración constante) para ser una
-	// curva de grado Constants::kReturnAccelerationExponent, este
-	// coeficiente ya no es literalmente la aceleración en todo instante --
-	// ver ComputeTraveledDistance para la fórmula completa. Se usa
-	// Constants::kReturnAcceleration por defecto, salvo que a ese
-	// coeficiente se tardara más de Constants::kReturnMaxDuration en
-	// cubrir a_distance partiendo del reposo — en ese caso se calcula el
-	// mínimo necesario para cumplir ese límite.
+	// del valor, pero desde que la rampa dejó de ser una recta (aceleración
+	// constante) para ser una curva de grado
+	// Constants::kReturnAccelerationExponent, este coeficiente ya no es
+	// literalmente la aceleración en todo instante -- ver
+	// ComputeTraveledDistance para la fórmula completa.
+	//
+	// Cambio de criterio (2026-08-07, ver CLAUDE.md/
+	// Constants::kReturnTargetArrivalSpeed): ya no es una constante fija --
+	// se recalcula por a_distance para que la velocidad justo al llegar a
+	// la mano sea siempre Constants::kReturnTargetArrivalSpeed, sin
+	// importar la distancia recorrida (con una aceleración fija, un
+	// regreso corto se queda todo el trayecto dentro del primer tramo de
+	// la rampa sin llegar a coger velocidad -- se veía desproporcionadamente
+	// lento frente a uno largo, y subir el coeficiente fijo no lo
+	// corregía, solo escalaba la lentitud por igual en todas las
+	// distancias). Salvo que a ese ritmo se tardara más de
+	// Constants::kReturnMaxDuration en cubrir a_distance -- en ese caso se
+	// calcula el mínimo necesario para cumplir ese límite en su lugar,
+	// sacrificando la velocidad de llegada constante a cambio de no superar
+	// la duración máxima.
 	float ComputeReturnAcceleration(float a_distance);
 
 	// Distancia recorrida tras a_elapsedSeconds con el perfil de
@@ -61,15 +72,15 @@ namespace Return
 	// Inversa de ComputeTraveledDistance: duración prevista (segundos)
 	// hasta que el arma recorra a_distance con el perfil de aceleración
 	// a_acceleration -- T = (a_distance·n·(n-1) / a_acceleration)^(1/n).
-	// Válida tanto si a_acceleration es la de Constants::kReturnAcceleration
-	// por defecto como si viene ya recalculada por
-	// ComputeReturnAcceleration para cumplir kReturnMaxDuration (en ese
-	// caso el resultado es exactamente kReturnMaxDuration, por
-	// construcción del propio recálculo -- verificado algebraicamente, no
-	// solo probado). Usada para predecir con antelación el instante de
-	// llegada y poder adelantar sonidos/efectos que necesiten cuadrar con
-	// ese instante exacto (ver Constants::kCatchStartSoundLeadTime,
-	// Return::BeginReturn) en vez de solo detectar la llegada tick a tick.
+	// Válida tanto si a_acceleration viene del régimen por defecto de
+	// ComputeReturnAcceleration (velocidad de llegada constante) como del
+	// recalculado para cumplir kReturnMaxDuration (en ese caso el resultado
+	// es exactamente kReturnMaxDuration, por construcción del propio
+	// recálculo -- verificado algebraicamente, no solo probado). Usada
+	// para predecir con antelación el instante de llegada y poder
+	// adelantar sonidos/efectos que necesiten cuadrar con ese instante
+	// exacto (ver Constants::kCatchStartSoundLeadTime, Return::BeginReturn)
+	// en vez de solo detectar la llegada tick a tick.
 	float ComputeReturnDuration(float a_acceleration, float a_distance);
 
 	// Inversa de ComputeReturnDuration pero despejando la aceleración a
@@ -77,16 +88,23 @@ namespace Return
 	// un coeficiente ya dado: a = d·n·(n-1) / T^n -- mismo despeje que ya
 	// usa ComputeReturnAcceleration internamente para su límite superior
 	// (Constants::kReturnMaxDuration), aquí expuesto para el caso
-	// contrario, un límite *inferior*: Return::BeginReturn lo usa para
-	// ralentizar (nunca acelerar) un regreso cuya distancia sea tan corta
-	// que la aceleración natural (ComputeReturnAcceleration) lo haría
-	// durar menos de lo que necesita el gesto de Atrape para sincronizarse
-	// (Constants::kMinCatchAnimationDelay/kCatchAnimationLeadTime) -- a
-	// petición del usuario (2026-08-03), la sincronización animación/vuelo
-	// no es negociable, así que el vuelo se ralentiza en vez de desacoplar
-	// ambos con temporizadores independientes. a_distance/a_targetDuration
-	// deben ser mayores que cero (sin comprobación defensiva aquí -- el
-	// llamante ya lo garantiza, mismo criterio que el resto de este
-	// módulo).
+	// contrario, un límite *inferior*.
+	//
+	// Reintroducida 2026-08-07 (existió antes, se eliminó por quedar sin
+	// uso al pasar la sincronización animación/física a apoyarse en el
+	// temblor de desprendimiento en vez de en el propio vuelo, ver
+	// CLAUDE.md) para un caso concreto que el temblor no puede cubrir:
+	// Return::BeginReturnMovement, solo cuando el regreso arranca sin haber
+	// pasado por el temblor (a_wasStuck=false en Return::BeginReturn, p.
+	// ej. recuperar el arma en pleno vuelo de ida antes de que impacte) --
+	// ahí no hay ningún temblor que alargar para darle tiempo real a la
+	// animación de Atrape a sincronizarse (Constants::kMinCatchAnimationDelay/
+	// kCatchAnimationLeadTime), así que si la aceleración de llegada
+	// constante (ComputeReturnAcceleration) terminaría el vuelo antes de
+	// ese margen, se ralentiza *solo ese caso* con esta función -- nunca
+	// el caso normal (arma clavada, mucho más frecuente), que sigue
+	// siempre a velocidad natural. a_distance/a_targetDuration deben ser
+	// mayores que cero (sin comprobación defensiva aquí -- el llamante ya
+	// lo garantiza, mismo criterio que el resto de este módulo).
 	float ComputeReturnAccelerationForDuration(float a_distance, float a_targetDuration);
 }
