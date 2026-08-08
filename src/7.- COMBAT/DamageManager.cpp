@@ -7,12 +7,8 @@
 #include "1.- CORE/GameOffsets.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
-#include "8.- ANIMATION/WeaponAnimation.h"
-#include "9.- MATH/RotationMath.h"
 
 #include <SimpleIni.h>
-
-#include <algorithm>
 
 namespace Combat
 {
@@ -179,7 +175,6 @@ namespace Combat
 		RE::Actor*                              a_attacker,
 		RE::Actor*                              a_target,
 		RE::ObjectRefHandle                     a_replicaHandle,
-		const RE::NiPoint3&                     a_travelDirection,
 		std::function<void(RE::ActorHandle)>    a_onStuck,
 		std::function<void()>                   a_onAutoRecall,
 		std::function<void(Physics::TickToken)> a_onTickStarted)
@@ -247,23 +242,12 @@ namespace Combat
 		}
 		RE::ActorHandle targetHandle(a_target);
 
-		// Punto 10 (segunda mitad, caso impacto): igual que
-		// Throw::LaunchWeapon hace para el impacto contra superficie, pero
-		// aquí dentro del propio bucle de seguimiento (no uno aparte) --
-		// ver Animation::ComputeImpactAlignment. rootWorld se lee una
-		// única vez, aquí mismo, por el mismo motivo que en
-		// Throw::LaunchWeapon: el nodo raíz de la réplica no vuelve a
-		// rotar durante el resto de su vida.
-		const RE::NiMatrix3 rootWorld = replica && replica->Get3D() ? replica->Get3D()->world.rotate : RE::NiMatrix3{};
-		const RE::NiMatrix3 impactBlendFromLocal = replica ? Animation::GetSpinLocalRotation(*replica) : RE::NiMatrix3{};
-		const RE::NiMatrix3 impactTargetLocal = Animation::ComputeImpactAlignment(rootWorld, impactBlendFromLocal, a_travelDirection);
-
-		// Duración a velocidad angular constante, no fija -- ver el
-		// comentario de Constants::kImpactStraightenAngularSpeed.
-		const float correctionAngle = Math::RotationAngle(impactBlendFromLocal, impactTargetLocal);
-		const float straightenDuration = std::clamp(correctionAngle / Constants::kImpactStraightenAngularSpeed, Constants::kImpactStraightenMinDuration, Constants::kImpactStraightenMaxDuration);
-
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, impactBlendFromLocal, impactTargetLocal, straightenDuration, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, straightenElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		// Punto 10 (segunda mitad, caso impacto): eliminado el enderezado
+		// al clavarse (decisión del usuario, 2026-08-08, ver
+		// Constants::kSpinStraightenLeadTime para el porqué) -- el arma se
+		// queda congelada en el ángulo de vuelo arbitrario que tuviera al
+		// golpear, sin ningún ajuste posterior.
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
 				// El actor ya no existe (p. ej. la celda se ha
@@ -282,12 +266,6 @@ namespace Combat
 			                         target->GetPosition();
 			a_refr.SetPosition(nextPos);
 			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
-
-			if (straightenElapsed < straightenDuration) {
-				straightenElapsed += a_deltaSeconds;
-				const float blend = straightenElapsed / straightenDuration;
-				Animation::TickSpinStraighten(a_refr, impactBlendFromLocal, impactTargetLocal, blend);
-			}
 
 			totalElapsed += a_deltaSeconds;
 

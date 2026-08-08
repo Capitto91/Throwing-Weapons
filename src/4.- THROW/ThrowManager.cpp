@@ -11,7 +11,6 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "9.- MATH/RotationMath.h"
 
-#include <algorithm>
 #include <cmath>
 #include <optional>
 
@@ -268,12 +267,12 @@ namespace Throw
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
 
-					// Punto 10 (segunda mitad, caso impacto): en vez de
-					// dejar el giro congelado en el ángulo arbitrario que
-					// tuviera al golpear, se endereza hacia la dirección de
-					// vuelo (Constants::kImpactAxisLocal alineado con
-					// travelDir) en una ventana derivada del ángulo a
-					// corregir (Constants::kImpactStraightenAngularSpeed).
+					// Punto 10 (segunda mitad, caso impacto): eliminado el
+					// enderezado al clavarse (decisión del usuario,
+					// 2026-08-08, ver Constants::kSpinStraightenLeadTime
+					// para el porqué) -- el arma se queda congelada en el
+					// ángulo de vuelo arbitrario que tuviera al golpear, sin
+					// ningún ajuste posterior.
 					//
 					// Punto 6: contra un actor, no basta con detenerse — hay
 					// que aplicar daño/parálisis y seguir su posición
@@ -281,37 +280,13 @@ namespace Throw
 					// (Combat::BeginEmbeddedEffect arranca su propio bucle
 					// de tick, sustituyendo a este, y decide si llamar a
 					// onStuck —clavada de verdad— o a onAutoRecall —objetivo
-					// inmune, p. ej. un dragón—; ese mismo bucle nuevo hace
-					// también el enderezado, ver DamageManager.cpp). Contra
-					// una superficie no hay enemigo que seguir, así que el
-					// enderezado se hace aquí mismo con un bucle propio y
-					// corto.
+					// inmune, p. ej. un dragón—). Contra una superficie no
+					// hay enemigo que seguir, así que basta con marcarla
+					// como clavada aquí mismo.
 					if (actor) {
-						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, travelDir, onStuck, onAutoRecall, onTickStarted);
+						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall, onTickStarted);
 					} else {
 						onStuck(RE::ActorHandle{});
-
-						if (auto* node3D = a_refr.Get3D()) {
-							const RE::NiMatrix3 rootWorld = node3D->world.rotate;
-							const RE::NiMatrix3 impactBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
-							const RE::NiMatrix3 impactTargetLocal = Animation::ComputeImpactAlignment(rootWorld, impactBlendFromLocal, travelDir);
-
-							// Duración a velocidad angular constante, no fija
-							// -- ver el comentario de
-							// Constants::kImpactStraightenAngularSpeed.
-							const float correctionAngle = Math::RotationAngle(impactBlendFromLocal, impactTargetLocal);
-							const float straightenDuration = std::clamp(correctionAngle / Constants::kImpactStraightenAngularSpeed, Constants::kImpactStraightenMinDuration, Constants::kImpactStraightenMaxDuration);
-
-							auto straightenToken = Physics::StartTickLoop(a_handle, [impactBlendFromLocal, impactTargetLocal, straightenDuration, straightenElapsed = 0.0f](RE::TESObjectREFR& a_stuckRefr, float a_deltaSeconds) mutable {
-								straightenElapsed += a_deltaSeconds;
-								const float blend = straightenElapsed / straightenDuration;
-								Animation::TickSpinStraighten(a_stuckRefr, impactBlendFromLocal, impactTargetLocal, blend);
-								a_stuckRefr.Update3DPosition(true);
-								return blend < 1.0f;
-							});
-
-							onTickStarted(straightenToken);
-						}
 					}
 
 					return false;

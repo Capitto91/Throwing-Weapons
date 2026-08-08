@@ -480,54 +480,28 @@ namespace Constants
 	// a verse el enderezado en sí -- deliberadamente mucho más corta que
 	// kCatchAnimationLeadTime, para que el giro (Animation::TickSpin) siga
 	// ocupando la mayor parte del trayecto y el enderezado solo se note ya
-	// bastante al final. Mismo criterio de "ajuste corto, no una
-	// reorientación completa desde el principio" que
-	// Constants::kImpactStraightenAngularSpeed para el caso de impacto.
-	// Placeholder, pendiente de calibrar en el juego.
+	// bastante al final. Placeholder, pendiente de calibrar en el juego.
 	inline constexpr float kSpinStraightenLeadTime = 0.2f;  // s, placeholder
 
-	// Segunda mitad del punto 10, caso "impacto" (hasta ahora solo
-	// cubierto el caso "vuelta a la mano", ver kSpinStraightenLeadTime
-	// arriba): "justo antes de alcanzar un objetivo... se endereza para
-	// que el filo/cabeza apunte hacia el objetivo". Arrancado en el mismo
-	// tick del impacto (Throw::LaunchWeapon / Combat::BeginEmbeddedEffect)
-	// -- a diferencia del regreso, no hay forma de anticipar el instante
-	// exacto del golpe para empezar antes.
-	//
-	// Antes era una duración fija (0.15s) sin importar el ángulo a
-	// corregir -- asumía "es un ajuste de pocos grados", pero
-	// Animation::ComputeImpactAlignment solo alinea un eje (el giro
-	// alrededor de él queda libre, ver Math::ShortestArcRotation), así que
-	// el ángulo real depende de en qué fase del giro (Animation::TickSpin)
-	// iba el arma justo al impactar -- puede ser tan pequeño como 0° o
-	// tan grande como 180°, básicamente al azar según cuánto llevara
-	// volando. Con una duración fija, eso se notaba como dos síntomas
-	// reportados por el usuario (2026-08-08): correcciones pequeñas (caso
-	// típico en lanzamientos cortos/medios, con menos giro acumulado) se
-	// veían lentas/perezosas de más para lo poco que había que corregir, y
-	// correcciones grandes (más probables cuanto más tiempo llevara
-	// girando a velocidad máxima) se apelotonaban en la misma ventana
-	// corta y se notaban como un tirón brusco justo al final. En su lugar,
-	// la duración real se deriva del ángulo a corregir (Math::RotationAngle
-	// entre la rotación de partida y la de destino) a esta velocidad
-	// angular constante, acotada entre kImpactStraightenMinDuration (para
-	// que una corrección casi nula no se vea como un salto instantáneo) y
-	// kImpactStraightenMaxDuration (para que una de 180° no se alargue en
-	// exceso) -- ver Throw::LaunchWeapon/Combat::BeginEmbeddedEffect.
-	// Placeholders, pendientes de calibrar en el juego.
-	inline constexpr float kImpactStraightenAngularSpeed = 10.0f;  // rad/s (~pi/2 en 0.15s), placeholder
-	inline constexpr float kImpactStraightenMinDuration = 0.08f;   // s, placeholder
-	inline constexpr float kImpactStraightenMaxDuration = 0.35f;   // s, placeholder
-
-	// Eje local (unitario) que representa "hacia el filo/cabeza" del
-	// modelo -- se alinea con la dirección de vuelo en el instante del
-	// impacto (ver Animation::ComputeImpactAlignment). Mismo criterio que
-	// kSpinAxisLocal: si el mango va a lo largo del eje Y local
-	// (convención habitual, ver ese comentario más arriba), la cabeza
-	// queda hacia +Y o -Y según cómo esté modelado -- sin verificar en
-	// este NIF en concreto, primer valor a revisar si el enderezado
-	// apunta al lado contrario del esperado.
-	inline constexpr RE::NiPoint3 kImpactAxisLocal{ 0.0f, 1.0f, 0.0f };
+	// Segunda mitad del punto 10, caso "impacto" ("justo antes de alcanzar
+	// un objetivo... se endereza para que el filo/cabeza apunte hacia el
+	// objetivo"): se probaron dos versiones -- una duración fija (0.15s) y
+	// después una derivada del ángulo a corregir a velocidad angular
+	// constante -- y ninguna convenció al usuario. El ángulo real a
+	// corregir depende de en qué fase del giro continuo
+	// (Animation::TickSpin) iba el arma justo al impactar, básicamente al
+	// azar entre 0 y 180 grados según cuánto llevara volando: con
+	// cualquiera de las dos versiones, la posición final variaba de forma
+	// poco natural entre lanzamientos, y con la segunda, las correcciones
+	// pequeñas (más probables en lanzamientos cortos/medios, con menos
+	// giro acumulado) se veían como un cambio de orientación instantáneo
+	// en vez de una animación gradual. Decisión del usuario (2026-08-08):
+	// eliminado el enderezado al clavarse por completo -- el arma se
+	// queda congelada en el ángulo de vuelo arbitrario que tuviera en el
+	// instante del impacto (Throw::LaunchWeapon / Combat::BeginEmbeddedEffect
+	// ya no llaman a Animation::TickSpinStraighten en ese punto). El caso
+	// "vuelta a la mano del jugador" (kSpinStraightenLeadTime arriba) no
+	// se ha tocado, sigue igual.
 
 	// -- Impacto en actor (punto 6) --
 	// EditorID del hechizo de parálisis propio (creado en la Creation

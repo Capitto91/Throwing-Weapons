@@ -92,6 +92,19 @@ namespace Weapon
 		weaponState.SetStuckActorHandle({});
 		weaponState.SetActiveTickToken({});
 		weaponState.SetState(State::kInHand);
+
+		// Capturado antes de limpiarlo más abajo -- solo si nuestro propio
+		// código había escrito iRightHandType a mano (BeginCallAnimation)
+		// hace falta revertirlo aquí. Escribirlo siempre a 0 (como se hacía
+		// antes) rompía el caso normal de morir/cargar con el arma
+		// simplemente equipada en la mano (ningún ciclo en marcha): el
+		// personaje aparecía en pose de cuerpo a cuerpo con la animación
+		// vanilla de golpeo hasta forzar al grafo a releer el valor
+		// (bug reportado por el usuario, 2026-08-08) -- mismo mecanismo ya
+		// documentado en PerformCatchReequip/OnLoadingScreenClosed: esta
+		// graph variable no debe tocarse salvo que de verdad hayamos sido
+		// nosotros quienes la desincronizaron del equipado real.
+		const bool wasCallAnimationActive = callAnimationActive;
 		catchAnimationActive = false;
 		catchReequipDone = false;
 		catchPhysicallyArrived = false;
@@ -116,7 +129,9 @@ namespace Weapon
 			Animation::SetThrowTrigger(*player, false);
 			Animation::SetCallTrigger(*player, false);
 			Animation::SetCatchTrigger(*player, false);
-			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+			if (wasCallAnimationActive) {
+				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
+			}
 		}
 	}
 
