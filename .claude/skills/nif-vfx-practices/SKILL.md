@@ -52,12 +52,14 @@ para las APIs de CommonLibSSE-NG.
        futura estela del hacha en vuelo/swing** — ver el patrón dedicado
        más abajo, "Estela de arma".
      - `magic/lightspellprojectile.nif`, `weapons/orcish/orcisharrowprojectile.nif`,
-       `meshes/dlc01/weapons/crossbow/boltprojectile.nif`: mallas
-       **vanilla** de Skyrim (proyectil de hechizo de luz, flecha órcica,
-       virote de ballesta DLC) — la fuente más autorizada posible para
-       "cómo lo hace Bethesda", con la salvedad de que son de una época
-       distinta (formato/estilo pre-SSE en textura de nodos) y pueden no
-       reflejar las convenciones más nuevas de `BSTriShape`/SSE al 100%.
+       `meshes/dlc01/weapons/crossbow/boltprojectile.nif`,
+       `magic/lightningstormhandeffects.nif`, `magic/shockhandeffects.nif`:
+       mallas **vanilla** de Skyrim (proyectil de hechizo de luz, flecha
+       órcica, virote de ballesta DLC, efectos de mano de tormenta/shock) —
+       la fuente más autorizada posible para "cómo lo hace Bethesda", con
+       la salvedad de que son de una época distinta (formato/estilo
+       pre-SSE en textura de nodos) y pueden no reflejar las convenciones
+       más nuevas de `BSTriShape`/SSE al 100%.
      
      Igual que con Kratos, no se ha confirmado que *este usuario* haya
      probado estos ficheros en el juego dentro de este proyecto (a
@@ -302,6 +304,173 @@ releyendo el fichero con los métodos (a)/(c) después.
     tipo sprite/billboard en vez de emisor-por-malla. Confirma que el
     estilo "billboard + caja emisora" también es un patrón vanilla real,
     distinto del emisor-por-malla de Precision/Storm Calling.
+- **Luz dinámica de verdad (el "glow que irradia luz", no solo el shader)** —
+  `magic/lightspellprojectile.nif` (vanilla) tiene un nodo llamado
+  `AttachLight02` (confirmado por grep binario). No es un bloque `NiLight`
+  horneado en el NIF (ninguno de los NIFs de referencia de este repo lleva
+  `NiLight`/`NiPointLight`) — es el punto donde el motor engancha en
+  tiempo de ejecución un form **Light** (`TESObjectLIGH`) real, con su
+  propio radio/color/parpadeo configurados en la Creation Kit, no en el
+  NIF. Confirmado como convención real (no solo por este fichero) vía
+  WebSearch — mods de luz de hechizo tipo Candlelight documentan el mismo
+  nodo `AttachLight` para enganchar la luz de la mano. **No confirmado con
+  precisión**: la regla exacta de qué campo del Magic Effect/formulario
+  enlaza el nombre del nodo con el form Light concreto, ni si hace falta
+  el sufijo numérico (`02`) o vale `AttachLight` a secas — verificarlo en
+  la Creation Kit/CK wiki si hace falta implementarlo. Para una estela de
+  arma esto sería una capa aparte del brillo del shader
+  (`BSEffectShaderProperty`/emissive, ya documentado más abajo) — el
+  `BSEffectShaderProperty` da el brillo de la propia geometría, un `Light`
+  real en `AttachLight` iluminaría el entorno alrededor (paredes, el
+  propio jugador) además.
+- **Composición modular vía `BSValueNode`/AddOnNode** — visto en
+  `orcisharrowprojectile.nif`/`boltprojectile.nif` (vanilla): el mecanismo
+  nativo de Bethesda para montar un efecto a partir de varias piezas NIF
+  reutilizables (chispas/humo/luz cada una en su propio fichero, referenciadas
+  por ID) en vez de hornearlo todo junto — ver `references/nifxml-excerpts.md`
+  para el detalle. Alternativa real al patrón de "todo en un nodo hijo del
+  NIF del arma" que ya usa este proyecto para el giro; probablemente no
+  compensa el coste de introducir un tipo de form nuevo solo para la
+  estela, pero es la referencia de "cómo lo hace Bethesda de verdad" si el
+  efecto crece mucho en piezas.
+- **Efectos de mano ("handeffect") — arquitectura multi-fase, distinta de
+  todo lo anterior.** Fuente:
+  `_reference/Nif examples/meshes/magic/lightningstormhandeffects.nif` y
+  `shockhandeffects.nif` (vanilla, los efectos de mano reales de los
+  hechizos de tormenta/shock). Mecanismo CK (confirmado vía WebSearch,
+  `ck.uesp.net/wiki/MagicEffect_Script` — la página del Magic Effect en sí
+  bloqueó el fetch directo, cita basada en el resumen de búsqueda): el
+  registro **Magic Effect** de la Creation Kit tiene un campo de "arte de
+  fundido"/casting art — el `MagicEffect Script` expone funciones para
+  leer/poner "el arte que se muestra en las manos mientras se lanza el
+  hechizo" — ese NIF es el que se engancha ahí, no algo que decida el
+  propio NIF por sí solo.
+  
+  Estructura real de estos dos ficheros (inspeccionados 2026-08-07,
+  métodos (a) y (c)):
+  - `BSFadeNode` raíz, con `NiControllerManager` +
+    `NiMultiTargetTransformController` y **varias `NiControllerSequence`
+    con nombres que son fases reales de lanzar un hechizo**: `mIntro`,
+    `mIdle`, `mCharge`, `mReadyTrans` (solo tormenta), `mReady`, `mCast`,
+    `mCastCon` (solo shock, "cast continuo" — hechizos de concentración),
+    `mIdleStaff`. No es una animación suelta, es un set de fases
+    encadenadas.
+  - `BSBehaviorGraphExtraData` ("BGED") con `Behaviour Graph File` =
+    `Magic\CastingRitualBody.hkx` (tormenta) / `Magic\CastingWithIntro.hkx`
+    (shock) — confirmado en `nif.xml`: este bloque "Links a nif with a
+    Havok Behavior .hkx animation file". Es el mismo tipo de bloque que ya
+    lleva el propio NIF del hacha de Kratos (`BGED`, visto en la primera
+    inspección de este proyecto) — ahora con su función exacta confirmada:
+    sincroniza qué `NiControllerSequence` se reproduce con la máquina de
+    estados de animación real del hechizo.
+  - Composición en capas, mismos nombres reveladores que en Storm
+    Calling/Precision: una malla de brillo central (`BrightGlowMesh`,
+    `pFireballCore04`) + emisores de partículas con sufijo `-Emitter`
+    (`Sparks02-Emitter`, `pFireballCore04-Emitter`) — núcleo brillante +
+    chispas alrededor, no una única pieza.
+  - **Valores reales decodificados (método (c))** — contraste útil con la
+    estela de rayos: aquí **no hay scroll de UV**, los
+    `BSEffectShaderPropertyFloatController` animan `Alpha Transparency`
+    (los dos ficheros) y `EmissiveMultiple` (solo shock, pulso de brillo).
+    El "fluir" de un handeffect se consigue con partículas + fundido de
+    alpha, no con textura que se desplaza — técnica distinta a la del
+    trail de rayo, aunque el bloque sea el mismo tipo.
+  - `AttachLight` reaparece en `shockhandeffects.nif`, esta vez **sin**
+    sufijo numérico (`AttachLight` a secas, no `AttachLight02` como en
+    `lightspellprojectile.nif`) — el sufijo no es obligatorio.
+  - Tres bloques nuevos, ya extraídos de `nif.xml`
+    (`references/nifxml-excerpts.md`): `BSPSysInheritVelocityModifier`
+    (las partículas heredan velocidad de otro objeto — relevante si las
+    chispas del hacha en vuelo deben arrastrar algo de su propia
+    velocidad en vez de quedarse flotando donde nacieron),
+    `NiPSysEmitterInitialRadiusCtlr`/`NiPSysEmitterLifeSpanCtlr` (animan
+    el tamaño/duración del emisor con el tiempo — el efecto de "carga"
+    creciendo mientras se mantiene pulsado el hechizo).
+  - Nodo `BillboardHelperHACK` visto en `lightningstormhandeffects.nif` —
+    nombre real tal cual, función exacta no investigada, no asumir para
+    qué es.
+  
+  **Importante para este proyecto**: esto es la arquitectura real detrás
+  de un efecto "que se carga y luego se dispara" (Intro→Charge→Ready→Cast),
+  no solo un VFX estático — si lo que se busca es replicar *esa técnica*
+  (fases encadenadas, activadas por código en el momento justo) aplicada al
+  hacha, encaja con el patrón `Start()`/`Stop()` ya verificado del giro,
+  extendido a varias fases en vez de una sola. Si en cambio se busca un
+  efecto literalmente enganchado a la mano del jugador (no al arma), hace
+  falta un form Magic Effect/Spell nuevo — eso ya no es este skill de NIFs,
+  es diseño de formularios de la Creation Kit **+ API de
+  CommonLibSSE-NG (dominio de `verify-commonlibsse-api`, no de esta
+  skill)**.
+
+  **Mecanismo C++ real del "efecto literal en la mano", verificado
+  2026-08-07 contra `lib/commonlibsse-ng/include` (no de memoria):**
+  - `RE::EffectSetting::Data` tiene `castingArt`/`hitEffectArt` (dos
+    `BGSArtObject*` distintos, offsets `0x80`/`0x88`,
+    `EffectSetting.h:95-96`) — confirma que es el registro **Magic
+    Effect** el que enlaza el NIF con el hechizo, como ya decía la fuente
+    3 (WebSearch), ahora confirmado contra el header real.
+  - `RE::ActorMagicCaster` (`ActorMagicCaster.h`) es el "lanzador" real
+    por mano de un actor: tiene `MagicSystem::CastingSource
+    castingSource` (`kLeftHand`/`kRightHand`/`kOther`/`kInstant`), un
+    `BGSArtObject* castingArt` propio, y **virtuales que son exactamente
+    las fases del NIF**: `StartChargeImpl()`, `StartReadyImpl()`,
+    `StartCastImpl()`, `FinishCastImpl()`, `InterruptCastImpl()` — mismo
+    nombre de concepto que `mCharge`/`mReady`/`mCast` en las
+    `NiControllerSequence` de los NIFs de handeffect. Confirma que el
+    diseño del NIF y la máquina de estados de C++ están pensados juntos,
+    no son cosas separadas.
+  - `ActorMagicCaster::light` (`NiPointer<BSLight>`, offset `0xC8`) — una
+    luz dinámica real gestionada por el propio caster. Confirma con más
+    fuerza el hallazgo de `AttachLight`: el "glow que irradia luz" de un
+    efecto de mano no es solo shader, es literalmente un `BSLight` que el
+    motor crea y adjunta.
+  - **No verificado todavía**: la función pública para *disparar* un cast
+    desde fuera (algo tipo `Actor::CastSpellImmediate`, sin confirmar que
+    exista con ese nombre/firma) ni cómo obtener el `ActorMagicCaster` de
+    una mano concreta desde un `Actor*`. Eso hace falta investigarlo con
+    `verify-commonlibsse-api` cuando se vaya a implementar de verdad —
+    esta skill llega hasta "cómo se construye el NIF y por qué encaja con
+    esta máquina de estados", no hasta el código C++ que lo dispara.
+
+  **Cómo "sabe" el NIF que va a la mano y qué lo envuelve — respuesta
+  corta: no lo sabe, y no lo envuelve (no hay rigging).** Verificado
+  decodificando el bloque raíz y los emisores de partículas de los dos
+  ficheros (método (c), 2026-08-07):
+  - **Sin skinning en absoluto**: ninguno de los dos lleva
+    `NiSkinData`/`NiSkinInstance`/`NiSkinPartition` (comprobado por grep
+    binario — cero coincidencias de "Skin" en ambos ficheros). No hay
+    ningún hueso de la mano/dedos referenciado dentro del NIF. El efecto
+    no se deforma con la pose de la mano, es geometría/partículas rígidas.
+  - **El nodo raíz (`BSFadeNode`) está en el origen local**: `Translation
+    = (0, 0, 0)`, `Scale = 1.0` en los dos ficheros (y, para contraste, en
+    el propio NIF del hacha de Kratos también) — sin ningún offset
+    horneado. Esto es la clave real: el NIF no necesita "saber" dónde
+    está la mano porque no lleva ninguna posición propia — asume que
+    quien lo cargue lo va a colgar (mismo primitivo `NiNode::AttachChild`
+    ya usado en este proyecto para el arma equipada, `CLAUDE.md`) de un
+    nodo que YA está en el sitio correcto (el `magicNode` que resuelve
+    `ActorMagicCaster` según la mano — ver más arriba), y hereda esa
+    posición/orientación automáticamente por jerarquía de escena, sin
+    ningún cálculo propio.
+  - **El "envolver" es solo la forma del volumen emisor, centrada en ese
+    mismo origen** — decodificados los valores reales: en
+    `lightningstormhandeffects.nif`, `NiPSysCylinderEmitter` con radio
+    ~1.5-2.5 y altura 16-24 (unidades Skyrim); en `shockhandeffects.nif`,
+    `NiPSysBoxEmitter` de ~5-26 de ancho por ~2-5 de alto/profundo. Son
+    volúmenes pequeños centrados en `(0,0,0)`, del tamaño aproximado de
+    un puño/antebrazo — de ahí que "envuelva" la mano visualmente una vez
+    colgado del hueso correcto: las partículas nacen dentro de ese
+    volumen pequeño alrededor del punto de enganche, no porque el NIF
+    conozca la forma de la mano.
+  - **Conclusión práctica para construir uno**: el NIF de un handeffect es
+    tan agnóstico de "ser un efecto de mano" como el NIF del arma es
+    agnóstico de "estar equipada" — es un `BSFadeNode` raíz en el origen,
+    con el mismo tipo de contenido ya documentado arriba (núcleo de
+    brillo + emisores de partículas con `BSEffectShaderProperty`,
+    fases `NiControllerSequence` si se quiere el ciclo
+    Intro/Charge/Ready/Cast) dimensionado a mano alzada/puño. Quién lo
+    clasifica como "de mano" y quién decide a qué hueso colgarlo es
+    trabajo del Magic Effect/`ActorMagicCaster` — no vive en el fichero.
 - **Brillo/emisivo en un arma** — visto en
   `_reference/Kratos Combat - 2.8.6a/meshes/hmmWorks/Mjolnir/Blade_of_Chaos_custom.nif`
   (mod publicado, plantilla obligatoria del proyecto): un

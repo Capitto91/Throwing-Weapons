@@ -5,7 +5,6 @@
 
 #include "1.- CORE/Constants.h"
 #include "12.- AUDIO/CatchSound.h"
-#include "12.- AUDIO/FlightSound.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
@@ -30,6 +29,71 @@ namespace Return
 			}
 
 			return a_player->GetPosition();
+		}
+
+		// Tiempo real que falta de verdad hasta la llegada, simulando hacia
+		// delante en pasos de Constants::kTickDeltaSeconds con las mismas
+		// fórmulas que el bucle de tick real (perfil de aceleración +
+		// suavizado del tramo final, ComputeTraveledDistance/
+		// Math::EvaluateQuadraticBezier) -- a_handPos se asume fija durante
+		// la simulación (aproximación razonable para el horizonte corto que
+		// hace falta aquí, nunca más de a_maxLookahead).
+		//
+		// Reemplaza a un cálculo cerrado de un solo paso (tiempo de
+		// progreso restante / timeRate de este mismo tick, descartado --
+		// bug reportado por el usuario, 2026-08-08, ver CLAUDE.md): asumir
+		// que timeRate se queda constante para el resto del vuelo
+		// subestimaba el tiempo real que falta de verdad, porque timeRate
+		// sigue bajando según la réplica se acerca más
+		// (Constants::kReturnTailMinRate es un suelo que se alcanza al
+		// final, no un valor ya alcanzado a mitad de trayecto). Esa
+		// subestimación disparaba onApproaching demasiado pronto en la
+		// práctica: la anotación de Catch.hkx (temporizada sobre esa
+		// subestimación) llegaba antes de que la réplica hubiera llegado de
+		// verdad a la mano, cortando la animación de Atrape a medias y
+		// cancelando el bucle de tick de este archivo antes de que
+		// detectara la llegada física por su cuenta -- por eso tampoco
+		// llegaba a sonar nunca Audio::CatchCue::PlayEnd (solo se dispara
+		// desde dentro de ese bucle, al detectar la llegada). Simular paso
+		// a paso con las fórmulas reales, en vez de asumir una tasa
+		// constante, no tiene ese sesgo.
+		//
+		// a_maxLookahead acota la simulación (rendimiento y para no tener
+		// que simular el vuelo entero cuando falta mucho de verdad): no
+		// hace falta precisión más allá del mayor de los umbrales que
+		// consultan los llamantes (Constants::kCatchAnimationLeadTime), así
+		// que al alcanzar el límite se devuelve directamente ese límite --
+		// cualquier valor por encima del umbral real usado por el llamante
+		// sirve igual para una comparación "<=".
+		float SimulateRemainingReturnTime(const RE::NiPoint3& a_currentPos, const RE::NiPoint3& a_handPos, const RE::NiPoint3& a_start, const RE::NiPoint3& a_controlPoint, float a_acceleration, float a_initialDistance, float a_progressElapsed, float a_maxLookahead)
+		{
+			float        progressElapsed = a_progressElapsed;
+			RE::NiPoint3 currentPos = a_currentPos;
+			float        remaining = 0.0f;
+
+			while (remaining < a_maxLookahead) {
+				const float distanceToHand = (a_handPos - currentPos).Length();
+				if (distanceToHand <= Constants::kReturnArrivalDistance) {
+					return remaining;
+				}
+
+				const float tailBlend = Constants::kReturnTailDistance > 0.0f ? std::clamp(distanceToHand / Constants::kReturnTailDistance, 0.0f, 1.0f) : 1.0f;
+				const float smoothTailBlend = tailBlend * tailBlend * (3.0f - 2.0f * tailBlend);
+				const float timeRate = Constants::kReturnTailMinRate + (1.0f - Constants::kReturnTailMinRate) * smoothTailBlend;
+
+				progressElapsed += Constants::kTickDeltaSeconds * timeRate;
+				remaining += Constants::kTickDeltaSeconds;
+
+				const float traveled = ComputeTraveledDistance(a_acceleration, progressElapsed);
+				const float t = a_initialDistance > 0.0f ? std::clamp(traveled / a_initialDistance, 0.0f, 1.0f) : 1.0f;
+				currentPos = Math::EvaluateQuadraticBezier(a_start, a_controlPoint, a_handPos, t);
+
+				if (t >= 1.0f) {
+					return remaining;
+				}
+			}
+
+			return a_maxLookahead;
 		}
 
 		// Cuerpo real de BeginReturn (trayectoria curva + aceleración
@@ -100,15 +164,11 @@ namespace Return
 				"Return::BeginReturnMovement: distancia inicial {:.1f}, aceleración {:.1f}, duración estimada {:.2f}s",
 				initialDistance, acceleration, estimatedDuration);
 
-			// Sonido (ver 12.- AUDIO/FlightSound): mismo criterio que
-			// Throw::LaunchWeapon -- silbido suelto al iniciar el tramo de
-			// movimiento del regreso más el loop posicional que sigue a la
-			// réplica mientras dura la curva de vuelta.
-			auto flightSound = std::make_shared<Audio::FlightSound>();
-			if (auto* node3D = replica->Get3D()) {
-				Audio::PlaySoundOneShot(start, Constants::kThrowLaunchSoundLocalFormID);
-				flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
-			}
+			// Sin silbido de lanzamiento aquí (retirado 2026-08-08, a
+			// petición del usuario): sonaba a la vez que el propio sonido
+			// de arranque del atrape (Audio::CatchCue), duplicando/
+			// solapando innecesariamente -- el silbido queda reservado
+			// solo para el lanzamiento real (Throw::LaunchWeapon).
 
 			// Punto de partida real del giro para este tramo (ver
 			// CLAUDE.md, "Arquitectura de física de proyectiles"): lo que
@@ -125,7 +185,7 @@ namespace Return
 			const RE::NiMatrix3 rootWorld = replica->Get3D() ? replica->Get3D()->world.rotate : RE::NiMatrix3{};
 			const RE::NiMatrix3 movementBaseLocal = Animation::GetSpinLocalRotation(*replica);
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, approachFired = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenDuration, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, flightSound, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, catchTriggered = false, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -158,30 +218,22 @@ namespace Return
 
 				// Punto 10: se calcula y escribe el giro a mano cada tick
 				// (ver Animation::TickSpin), igual que en la ida -- salvo
-				// durante la ventana de enderezado (arrancada junto con
-				// onApproaching, ver más abajo), donde
-				// Animation::TickSpinStraighten la sustituye para que el
-				// giro llegue frenado y alineado con la orientación real
-				// de la mano en vez de en mitad de una vuelta cualquiera
-				// (segunda mitad del punto 10, bug reportado por el
-				// usuario, 2026-08-04: el cambio a la pose real se notaba
-				// como un salto brusco de rotación). El objetivo se
-				// recalcula cada tick (GetHandBoneWorldRotation, no una
-				// foto fija tomada al empezar la ventana) porque el
+				// durante la ventana de enderezado (más abajo,
+				// Constants::kSpinStraightenLeadTime antes de la llegada
+				// real -- disparador independiente de onApproaching, ver
+				// CLAUDE.md 2026-08-07), donde Animation::TickSpinStraighten
+				// la sustituye para que el giro llegue frenado y alineado
+				// con la orientación real de la mano en vez de en mitad de
+				// una vuelta cualquiera (segunda mitad del punto 10, bug
+				// reportado por el usuario, 2026-08-04: el cambio a la pose
+				// real se notaba como un salto brusco de rotación). El
+				// objetivo se recalcula cada tick (GetHandBoneWorldRotation,
+				// no una foto fija tomada al empezar la ventana) porque el
 				// jugador puede seguir girando mientras dura -- así el
 				// enderezado siempre converge a la orientación real en el
 				// instante exacto de la llegada, no a la que tuviera la
 				// mano medio segundo antes.
-				if (approachFired) {
-					// straightenDuration ya no es siempre Constants::kSpinStraightenDuration
-					// (bug reportado por el usuario, 2026-08-07, ver más abajo
-					// dónde se recalcula): con la aceleración de llegada
-					// constante (Constants::kReturnTargetArrivalSpeed), un
-					// regreso corto puede durar menos que esa constante fija,
-					// así que forzar siempre esa ventana dejaba el arma a
-					// mitad de enderezar cuando la llegada física ya se había
-					// disparado -- llegaba "de cualquier manera" en vez de
-					// con el mango orientado a la mano.
+				if (straightening) {
 					const float         blend = (elapsed - straightenStart) / straightenDuration;
 					const RE::NiMatrix3 handTargetLocal = Math::LocalRotationFromWorld(rootWorld, Animation::GetHandBoneWorldRotation(*a_player));
 					Animation::TickSpinStraighten(a_refr, straightenBlendFromLocal, handTargetLocal, blend);
@@ -261,69 +313,73 @@ namespace Return
 				// Sincronización en vivo del gesto de Atrape con el vuelo
 				// real (a petición del usuario, 2026-08-03: nunca
 				// desacoplar animación y física con un temporizador
-				// precalculado de antemano -- diverge de la trayectoria
-				// real a medida que avanza el regreso, sobre todo por el
-				// suavizado del tramo final, que alarga la duración real
-				// más allá de lo que predice ComputeReturnDuration, ver
-				// Constants::kReturnTailDistance/kReturnTailMinRate).
-				// Se mide la velocidad real de este mismo tick (distancia
-				// cerrada / tiempo) para estimar cuánto falta de verdad en
-				// segundos reales, en vez de fiarse de una predicción hecha
-				// al principio del regreso -- esto absorbe automáticamente
-				// el suavizado del tramo final y cualquier desviación por
-				// que el jugador se haya movido mientras tanto (handPos se
-				// recalcula cada tick). shudderDuration + elapsed cubre el
-				// margen de asentado del grafo tras Llamada
-				// (Constants::kMinCatchAnimationDelay) -- ya garantizado
-				// por construcción una vez el vuelo se ha ralentizado lo
-				// necesario más arriba, comprobado aquí igualmente por si
-				// acaso.
-				if (!approachFired) {
-					const float closedThisTick = previousDistanceToHand - distanceToHand;
-					const float speed = a_deltaSeconds > 0.0f && closedThisTick > 0.0f ? closedThisTick / a_deltaSeconds : 0.0f;
+				// precalculado de antemano) -- tiempo real que falta de
+				// verdad calculado por simulación hacia delante
+				// (SimulateRemainingReturnTime, ver ese comentario para el
+				// porqué de simular en vez de estimar con una fórmula de un
+				// solo paso), exacto en vez de aproximado.
+				//
+				// Dos disparadores independientes a partir del mismo tiempo
+				// restante simulado (cambio de criterio 2026-08-07, ver
+				// CLAUDE.md): onApproaching (arranca el gesto de Atrape,
+				// Constants::kCatchAnimationLeadTime antes de la llegada --
+				// atado a la duración real de Catch.hkx, no negociable) y el
+				// inicio visual del enderezado (Constants::kSpinStraightenLeadTime
+				// antes, deliberadamente mucho más tarde/corto) ya NO
+				// comparten instante. Compartirlo hacía que la ventana de
+				// enderezado (kCatchAnimationLeadTime, 0,5s) consumiera la
+				// mayor parte -- o la totalidad -- de un regreso corto o
+				// medio, y el arma apenas llegaba a girar (bug reportado por
+				// el usuario: "el enderezado se produce desde muy lejos").
+				if (!catchTriggered || !straightening) {
+					// Por encima del mayor umbral real que se consulta más
+					// abajo (kCatchAnimationLeadTime + kCatchApproachSafetyMargin)
+					// con su propio margen -- si el valor devuelto fuera
+					// exactamente igual al umbral (limitado por este tope en
+					// vez de calculado de verdad), una comparación "<=" podría
+					// disparar por error.
+					constexpr float kLookaheadCap = Constants::kCatchAnimationLeadTime + Constants::kCatchApproachSafetyMargin + 0.1f;
+					const float     estimatedTimeToArrival = SimulateRemainingReturnTime(nextPos, handPos, start, controlPoint, acceleration, initialDistance, progressElapsed, kLookaheadCap);
 
-					// Objetivo: no distanceToHand==0, sino el mismo umbral
-					// que de verdad usa la condición de llegada dos bloques
-					// más abajo (Constants::kReturnArrivalDistance) -- si no,
-					// la estimación apunta a una llegada "completa" que el
-					// propio bucle nunca espera: el bucle congela la réplica
-					// en cuanto cruza ese umbral, antes de que
-					// distanceToHand llegue a 0, así que apuntar a 0 dispara
-					// onApproaching demasiado tarde y la réplica se queda
-					// visiblemente quieta esperando el resto del margen
-					// (bug reportado por el usuario, 2026-08-03: "el arma se
-					// detiene un momento muy corto pero visible justo antes
-					// de llegar a la mano").
-					const float remainingDistance = distanceToHand - Constants::kReturnArrivalDistance;
-					// std::numeric_limits<float>::max() evitado a propósito:
-					// Windows.h define max como macro (mismo problema ya
-					// documentado en el proyecto para std::min/std::max, ver
-					// BeginReturn más abajo) -- un literal centinela
-					// "efectivamente infinito" en su lugar, solo hace falta
-					// ser mayor que Constants::kCatchAnimationLeadTime.
-					constexpr float kEffectivelyInfinite = 1.0e9f;
-					const float     estimatedTimeToArrival = remainingDistance <= 0.0f ? 0.0f : (speed > 0.0f ? remainingDistance / speed : kEffectivelyInfinite);
-					const bool      settledSinceCall = shudderDuration + elapsed >= Constants::kMinCatchAnimationDelay;
-					if (settledSinceCall && estimatedTimeToArrival <= Constants::kCatchAnimationLeadTime) {
-						approachFired = true;
+					if (!catchTriggered) {
+						const bool settledSinceCall = shudderDuration + elapsed >= Constants::kMinCatchAnimationDelay;
+						// + Constants::kCatchApproachSafetyMargin (2026-08-08,
+						// ver CLAUDE.md y ese comentario): confirmado con logs
+						// reales que, sin este margen, la anotación real de
+						// Catch.hkx (temporización fija) y la detección
+						// interna de llegada física de este mismo bucle
+						// competían por quién llegaba primero -- la simulación
+						// es exacta a pocos milisegundos, pero eso no basta
+						// frente al jitter real de un tick, y la anotación
+						// ganaba la carrera con la frecuencia suficiente como
+						// para que Audio::CatchCue::PlayEnd casi nunca sonara.
+						if (settledSinceCall && estimatedTimeToArrival <= Constants::kCatchAnimationLeadTime + Constants::kCatchApproachSafetyMargin) {
+							catchTriggered = true;
+							logs::info(
+								"Return::BeginReturnMovement: onApproaching disparado -- elapsed={:.3f}s, distanceToHand={:.1f}, estimatedTimeToArrival={:.3f}s.",
+								elapsed, distanceToHand, estimatedTimeToArrival);
+							onApproaching();
+						}
+					}
+
+					if (!straightening && estimatedTimeToArrival <= Constants::kSpinStraightenLeadTime) {
+						straightening = true;
 						straightenStart = elapsed;
 						// La ventana de enderezado dura lo que quede de
-						// verdad hasta la llegada (estimación en vivo de
-						// arriba), no siempre Constants::kSpinStraightenDuration
-						// (bug reportado por el usuario, 2026-08-07): con la
-						// aceleración de llegada constante
+						// verdad hasta la llegada (misma estimación en vivo
+						// de arriba), no siempre Constants::kSpinStraightenLeadTime
+						// tal cual: con la aceleración de llegada constante
 						// (Constants::kReturnTargetArrivalSpeed), un regreso
-						// corto puede tener menos tiempo real restante que esa
-						// constante fija, y forzarla igual dejaba el
+						// muy corto puede tener menos tiempo real restante
+						// que esa constante, y forzarla igual dejaría el
 						// enderezado a medias cuando la llegada física ya se
-						// había disparado. Suelo pequeño para evitar una
-						// ventana de longitud ~0 (blend saltando prácticamente
-						// de golpe en vez de con la curva suave de
-						// TickSpinStraighten).
+						// hubiera disparado. Suelo pequeño para evitar una
+						// ventana de longitud ~0 (blend saltando
+						// prácticamente de golpe en vez de con la curva
+						// suave de TickSpinStraighten).
 						constexpr float kMinStraightenBlendDuration = 0.05f;
 						straightenDuration = estimatedTimeToArrival > kMinStraightenBlendDuration ? estimatedTimeToArrival : kMinStraightenBlendDuration;
 						straightenBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
-						onApproaching();
 					}
 				}
 
@@ -333,33 +389,38 @@ namespace Return
 					// Audio::CatchCue::PlayEnd), no depende de que el
 					// arranque haya llegado a sonar.
 					Audio::CatchCue::PlayEnd(handPos);
-					// Red de seguridad: con el vuelo ya ajustado lo necesario
-					// más arriba, esto no debería hacer falta en la
-					// práctica, pero garantiza que onApproaching se dispara
-					// siempre antes de onArrived si por lo que sea no lo
-					// hizo por su cuenta (p. ej. un único tick final
-					// demasiado brusco para medir velocidad).
-					if (!approachFired) {
-						approachFired = true;
+					// Redes de seguridad: con el vuelo ya ajustado lo
+					// necesario más arriba, esto no debería hacer falta en
+					// la práctica, pero garantiza que tanto onApproaching
+					// como el enderezado visual se disparen siempre antes de
+					// onArrived si por lo que sea no lo hicieron por su
+					// cuenta (p. ej. un tramo tan corto que ni un solo tick
+					// intermedio llegó a evaluar el disparador en vivo).
+					if (!catchTriggered) {
+						catchTriggered = true;
 						onApproaching();
+					}
+					if (!straightening) {
+						straightening = true;
 
 						// Sin margen real para ninguna ventana de enderezado
-						// (se está detectando la llegada en el mismo tick,
-						// sin haber pasado antes por la estimación en vivo de
-						// arriba) -- y una vez arrivedFired se ponga a true
-						// dos líneas más abajo, el bucle ya no vuelve a
-						// llamar a TickSpin/TickSpinStraighten nunca más (ver
-						// el chequeo de arrivedFired al principio del tick),
-						// así que esperar a que el "siguiente tick" complete
-						// el fundido no funciona -- no hay siguiente tick.
-						// Se fuerza aquí mismo el enderezado completo
-						// (blend=1, sin fundido visible) en vez de dejar la
-						// última pose de TickSpin de este mismo tick (ya
-						// calculada más arriba, antes de saber que llegaba):
-						// un salto de rotación sin fundir es preferible a que
-						// el arma se quede definitivamente a mitad de girar
-						// (bug reportado por el usuario, 2026-08-07: "llega
-						// de cualquier manera").
+						// progresivo (se está detectando la llegada en el
+						// mismo tick, sin haber pasado antes por la
+						// estimación en vivo de arriba) -- y una vez
+						// arrivedFired se ponga a true dos líneas más abajo,
+						// el bucle ya no vuelve a llamar a
+						// TickSpin/TickSpinStraighten nunca más (ver el
+						// chequeo de arrivedFired al principio del tick), así
+						// que esperar a que el "siguiente tick" complete el
+						// fundido no funciona -- no hay siguiente tick. Se
+						// fuerza aquí mismo el enderezado completo (blend=1,
+						// sin fundido visible) en vez de dejar la última pose
+						// de TickSpin de este mismo tick (ya calculada más
+						// arriba, antes de saber que llegaba): un salto de
+						// rotación sin fundir es preferible a que el arma se
+						// quede definitivamente a mitad de girar (bug
+						// reportado por el usuario, 2026-08-07: "llega de
+						// cualquier manera").
 						const RE::NiMatrix3 handTargetLocal = Math::LocalRotationFromWorld(rootWorld, Animation::GetHandBoneWorldRotation(*a_player));
 						Animation::TickSpinStraighten(a_refr, Animation::GetSpinLocalRotation(a_refr), handTargetLocal, 1.0f);
 					}

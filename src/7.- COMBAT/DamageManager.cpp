@@ -8,8 +8,11 @@
 #include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <SimpleIni.h>
+
+#include <algorithm>
 
 namespace Combat
 {
@@ -255,7 +258,12 @@ namespace Combat
 		const RE::NiMatrix3 impactBlendFromLocal = replica ? Animation::GetSpinLocalRotation(*replica) : RE::NiMatrix3{};
 		const RE::NiMatrix3 impactTargetLocal = Animation::ComputeImpactAlignment(rootWorld, impactBlendFromLocal, a_travelDirection);
 
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, impactBlendFromLocal, impactTargetLocal, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, straightenElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		// Duración a velocidad angular constante, no fija -- ver el
+		// comentario de Constants::kImpactStraightenAngularSpeed.
+		const float correctionAngle = Math::RotationAngle(impactBlendFromLocal, impactTargetLocal);
+		const float straightenDuration = std::clamp(correctionAngle / Constants::kImpactStraightenAngularSpeed, Constants::kImpactStraightenMinDuration, Constants::kImpactStraightenMaxDuration);
+
+		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, impactBlendFromLocal, impactTargetLocal, straightenDuration, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, straightenElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
 				// El actor ya no existe (p. ej. la celda se ha
@@ -275,9 +283,9 @@ namespace Combat
 			a_refr.SetPosition(nextPos);
 			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
 
-			if (straightenElapsed < Constants::kImpactStraightenDuration) {
+			if (straightenElapsed < straightenDuration) {
 				straightenElapsed += a_deltaSeconds;
-				const float blend = straightenElapsed / Constants::kImpactStraightenDuration;
+				const float blend = straightenElapsed / straightenDuration;
 				Animation::TickSpinStraighten(a_refr, impactBlendFromLocal, impactTargetLocal, blend);
 			}
 

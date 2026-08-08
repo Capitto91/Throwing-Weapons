@@ -24,23 +24,9 @@ namespace Math
 	// nunca para una matriz con escala.
 	RE::NiMatrix3 LocalRotationFromWorld(const RE::NiMatrix3& a_parentWorld, const RE::NiMatrix3& a_desiredWorld);
 
-	// Rotación de ángulo mínimo que lleva a_from a coincidir exactamente
-	// con a_to (ambos vectores del mundo, no hace falta normalizarlos de
-	// antemano). El giro alrededor del propio eje a_to queda sin
-	// determinar a propósito -- no hay una única solución posible para
-	// eso, válido para alinear un eje del modelo con una dirección sin
-	// importar el "roll" resultante (ver
-	// Animation::ComputeImpactAlignment). Si a_from y a_to son
-	// antiparalelos, el eje de giro es ambiguo en teoría -- se elige uno
-	// perpendicular arbitrario, caso límite no esperado en la práctica (el
-	// arma no llega nunca exactamente de espaldas a su propia dirección de
-	// vuelo).
-	RE::NiMatrix3 ShortestArcRotation(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to);
-
 	// Curva suave 0->1 (3t²-2t³), a_t fuera de [0,1] se acota -- extraída
 	// aquí porque WeaponAnimation la necesita en varios sitios distintos
 	// para el mismo tipo de transición de fundido (ver
-	// Constants::kSpinRampDuration/kSpinStraightenDuration/
-	// kImpactStraightenDuration).
+	// Constants::kSpinRampDuration/kSpinStraightenLeadTime).
 	float SmoothStep01(float a_t);
 }

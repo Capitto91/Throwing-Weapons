@@ -60,50 +60,33 @@ namespace Animation
 	// de a_refr -- identidad si el nodo no existe todavía. Pensado para
 	// capturar "lo que llevara el giro en este instante" como a_baseLocal
 	// de un TickSpin posterior (p. ej. al empezar el regreso tras un
-	// temblor de desprendimiento), como a_blendFromLocal de un
-	// TickSpinStraighten posterior (al detectarse un impacto), o como
-	// a_currentLocal de ComputeImpactAlignment -- sin que el llamante
-	// necesite conocer el nombre del nodo.
+	// temblor de desprendimiento) o como a_blendFromLocal de un
+	// TickSpinStraighten posterior (al iniciar el regreso) -- sin que el
+	// llamante necesite conocer el nombre del nodo.
 	RE::NiMatrix3 GetSpinLocalRotation(RE::TESObjectREFR& a_refr);
 
-	// Punto 10 (segunda mitad, giro): "justo antes de... alcanzar un
-	// objetivo o de volver a la mano del jugador, se endereza". Funde
+	// Punto 10 (segunda mitad, giro, caso "vuelta a la mano del jugador"):
+	// "justo antes de... volver a la mano del jugador, se endereza". Funde
 	// (Math::SlerpRotation, curva suave) la rotación LOCAL del nodo de
 	// giro desde a_blendFromLocal (capturada una única vez por el
 	// llamante al empezar la ventana -- lo que llevara el giro en ese
-	// instante, ver Return::BeginReturnMovement/Throw::LaunchWeapon) hacia
-	// a_targetLocal, según a_blend avanza de 0 (recién empezada la
-	// ventana) a 1 (terminada, coincidiendo exactamente con el objetivo).
-	// a_targetLocal lo calcula el llamante -- puede recalcularse cada tick
-	// (caso del regreso: la mano puede seguir girando mientras dura la
-	// ventana, ver Math::LocalRotationFromWorld + GetHandBoneWorldRotation
-	// más abajo) o mantenerse fijo (caso del impacto, ver
-	// ComputeImpactAlignment: una vez clavada, nada vuelve a cambiar).
+	// instante, ver Return::BeginReturnMovement) hacia a_targetLocal,
+	// según a_blend avanza de 0 (recién empezada la ventana) a 1
+	// (terminada, coincidiendo exactamente con el objetivo). a_targetLocal
+	// lo calcula el llamante -- puede recalcularse cada tick, ya que la
+	// mano puede seguir girando mientras dura la ventana (ver
+	// Math::LocalRotationFromWorld + GetHandBoneWorldRotation más abajo).
 	// a_blend fuera de [0,1] se acota. Sin efecto si el nodo de giro no
 	// existe todavía.
+	//
+	// El caso "justo antes de alcanzar un objetivo" (segunda mitad de este
+	// mismo punto 10) que usaba esta misma función ya no existe -- ver
+	// Constants::kImpactAxisLocal (eliminada, decisión del usuario
+	// 2026-08-08: el enderezado al clavarse se notaba mal, con la posición
+	// final variando de forma poco convincente entre lanzamientos, así que
+	// se prefirió no enderezar nada y dejar el arma congelada en el ángulo
+	// de vuelo que tuviera al impactar).
 	void TickSpinStraighten(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_blendFromLocal, const RE::NiMatrix3& a_targetLocal, float a_blend);
-
-	// Rotación LOCAL objetivo (respecto al nodo de giro) que alinea
-	// Constants::kImpactAxisLocal con a_travelDirection en el instante del
-	// impacto -- ver Math::ShortestArcRotation. a_currentLocal es la
-	// rotación LOCAL que lleva el nodo de giro en este instante (ver
-	// GetSpinLocalRotation) -- se parte de hacia dónde apunta
-	// kImpactAxisLocal AHORA MISMO (a_rootWorld * a_currentLocal *
-	// kImpactAxisLocal), no de una referencia de "reposo" asumida: el nodo
-	// de giro puede tener su propia rotación local de partida distinta de
-	// identidad (el offset que le diera NifSkope al montarlo, ver
-	// CLAUDE.md), y desde el fix de TickSpin (2026-08-06) casi nunca está
-	// en identidad durante el vuelo, así que asumir "reposo == identidad"
-	// aquí habría medido la dirección equivocada -- posible causa real
-	// (más allá de una posible corrección de signo pendiente en
-	// Constants::kImpactAxisLocal) del bug reportado por el usuario de
-	// quedar clavada por el mango en vez de por la cabeza. a_rootWorld es
-	// la rotación mundial (constante durante toda la vida de la réplica)
-	// del nodo raíz de a_refr, ver Math::LocalRotationFromWorld. Pensado
-	// para usarse como a_targetLocal de TickSpinStraighten justo al
-	// detectarse un impacto (punto 10, caso "objetivo": el filo/cabeza
-	// debe apuntar hacia donde golpeó).
-	RE::NiMatrix3 ComputeImpactAlignment(const RE::NiMatrix3& a_rootWorld, const RE::NiMatrix3& a_currentLocal, const RE::NiPoint3& a_travelDirection);
 
 	// Rotación mundial actual de la malla real del arma equipada en
 	// a_actor -- mismo nodo que SetEquippedWeaponHidden (el/los

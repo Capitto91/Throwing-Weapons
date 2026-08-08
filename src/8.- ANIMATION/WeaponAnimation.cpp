@@ -89,21 +89,6 @@ namespace Animation
 		return spinNode ? spinNode->local.rotate : RE::NiMatrix3{};
 	}
 
-	RE::NiMatrix3 ComputeImpactAlignment(const RE::NiMatrix3& a_rootWorld, const RE::NiMatrix3& a_currentLocal, const RE::NiPoint3& a_travelDirection)
-	{
-		// Dirección mundial hacia la que apunta Constants::kImpactAxisLocal
-		// AHORA MISMO (con la rotación local real que lleve el nodo de
-		// giro en este instante, no una referencia de "reposo" asumida --
-		// ver el comentario del header) -- punto de partida para calcular
-		// cuánto hay que girar para que esa dirección coincida con
-		// a_travelDirection.
-		const RE::NiMatrix3 currentWorld = a_rootWorld * a_currentLocal;
-		const RE::NiPoint3  currentHeadWorldDir = currentWorld * Constants::kImpactAxisLocal;
-		const RE::NiMatrix3 align = Math::ShortestArcRotation(currentHeadWorldDir, a_travelDirection);
-		const RE::NiMatrix3 targetWorld = align * currentWorld;
-		return Math::LocalRotationFromWorld(a_rootWorld, targetWorld);
-	}
-
 	RE::NiMatrix3 GetEquippedWeaponWorldRotation(RE::Actor& a_actor)
 	{
 		// "WEAPON" es el hueso de enganche, no la malla -- mismo criterio

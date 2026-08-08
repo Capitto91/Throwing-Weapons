@@ -1,6 +1,6 @@
 // Resolución compartida de Sound Descriptor por FormID -- ver Constants.h
-// ("Sonido de lanzamiento/vuelo/atrape") para el porqué de resolver por
-// FormID en vez de por EditorID.
+// ("Sonido de lanzamiento/atrape") para el porqué de resolver por FormID
+// en vez de por EditorID.
 
 #pragma once
 
@@ -8,7 +8,7 @@ namespace Audio
 {
 	// Resuelve el RE::BGSSoundDescriptorForm identificado por
 	// a_localFormID dentro del plugin a_modName -- usado tanto por
-	// Audio::FlightSound/PlaySoundOneShot como por Audio::CatchCue.
+	// Audio::PlayReliableOneShot como por Audio::CatchCue.
 	//
 	// Prueba primero RE::TESDataHandler::LookupForm<RE::BGSSoundDescriptorForm>
 	// directamente; si a_localFormID resulta ser el de un Sound Marker

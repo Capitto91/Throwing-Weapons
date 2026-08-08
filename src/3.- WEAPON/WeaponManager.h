@@ -90,9 +90,28 @@ namespace Weapon
 		// mientras se reproduce Call.hkx -- o desde la red de seguridad por
 		// tiempo si esa anotación nunca llega (ver
 		// Constants::kCallReleaseFallbackWindow). También dispara el sonido
-		// del chasquido (Audio::PlayReliableOneShot). Sin efecto si el
+		// del chasquido (Audio::PlayReliableOneShot) y arranca
+		// Return::BeginReturn -- ambos deben ocurrir exactamente en este
+		// instante (sincronizados con la anotación real). Sin efecto si el
 		// estado ya cambió por otra vía antes de que llegara.
+		//
+		// A diferencia de antes (2026-08-08, ver CLAUDE.md/
+		// Constants::kCallAnimationTailDuration), ya NO desatasca el grafo
+		// aquí mismo -- eso lo hace FinishCallAnimation, diferida ese
+		// margen, para no cortar la cola visual del clip.
 		void OnCallReleaseAnimationEvent();
+
+		// Diferida desde OnCallReleaseAnimationEvent (ver
+		// Constants::kCallAnimationTailDuration): desatasca el grafo
+		// (Constants::kAttackStopAnimationEvent) y suelta el bloqueo de
+		// movimiento/AnimationDriven/el trigger de OAR de Llamada, una vez
+		// que la cola visual de Call.hkx ya ha tenido tiempo de terminar.
+		// callAnimationActive (con el mismo papel que catchAnimationActive
+		// para Atrape) trackea si esta limpieza sigue pendiente,
+		// independiente de weaponState -- comprobado también en
+		// OnLoadingScreenClosed/ResetToInHand por si una pantalla de carga
+		// interrumpe justo durante este margen de espera.
+		void FinishCallAnimation();
 
 		// Llamado desde Events::OARFunctions::CatchReleaseFunction::RunImpl,
 		// ya horneada en Catch.hkx desde el principio, exactamente Constants::kCatchAnimationLeadTime
@@ -100,12 +119,57 @@ namespace Weapon
 		// sobre el propio clip) mientras se reproduce Catch.hkx -- o desde
 		// la red de seguridad por tiempo si esa anotación nunca llega
 		// (Constants::kCatchReleaseFallbackWindow). Esta anotación, no la
-		// llegada física en sí (ver Return::ReturnCallbacks::onArrived), es
-		// la que gatea el reequipado real (ReequipAndReset) -- marca el
-		// instante exacto en que la mano se cierra sobre el arma en el
-		// propio clip. Sin efecto si el gesto ya se cerró por otra vía
-		// (catchAnimationActive a false) antes de que llegara.
+		// llegada física en sí, es la que gatea el reequipado real
+		// (ReequipAndReset, ver PerformCatchReequip) y el temblor de
+		// cámara -- marca el instante exacto en que la mano se cierra sobre
+		// el arma en el propio clip. Sin efecto si el gesto ya se cerró por
+		// otra vía (catchAnimationActive a false) o si el reequipado ya se
+		// disparó por otra vía (catchReequipDone) antes de que llegara --
+		// esto último para que la red de seguridad por tiempo no repita el
+		// reequipado si la anotación real llega tarde mientras ya está en
+		// marcha.
+		//
+		// Cambio de criterio (2026-08-08, a petición del usuario, ver
+		// CLAUDE.md/catchPhysicallyArrived): esta anotación tiene
+		// temporización fija, calculada sobre una predicción de cuándo va
+		// a llegar la réplica -- en regresos largos esa predicción puede
+		// quedarse corta (confirmado con logs reales del juego). Si la
+		// llegada física real todavía no se ha confirmado
+		// (catchPhysicallyArrived), el reequipado se difiere
+		// (catchReequipPending) hasta que OnPhysicalArrival la confirme, en
+		// vez de reequipar a ciegas mientras la réplica sigue visiblemente
+		// en vuelo.
+		//
+		// A diferencia de antes (2026-08-08, ver CLAUDE.md/
+		// Constants::kCatchAnimationTailDuration), ya NO desatasca el grafo
+		// aquí mismo -- eso lo hace FinishCatchAnimation, diferida ese
+		// margen, para no cortar la cola visual del clip.
 		void OnCatchReleaseAnimationEvent();
+
+		// Llamado desde Return::ReturnCallbacks::onArrived (ver
+		// WeaponManager::BeginReturn): confirma que la réplica ha llegado
+		// de verdad a la mano, físicamente -- si OnCatchReleaseAnimationEvent
+		// ya había querido reequipar antes de esta confirmación
+		// (catchReequipPending), completa aquí el reequipado diferido.
+		void OnPhysicalArrival();
+
+		// Cuerpo real del reequipado del gesto de Atrape (temblor de
+		// cámara + ReequipAndReset + arranque del margen de
+		// Constants::kCatchAnimationTailDuration) -- extraído de
+		// OnCatchReleaseAnimationEvent para poder llamarlo tanto de
+		// inmediato (caso normal) como diferido, desde OnPhysicalArrival
+		// (ver catchReequipPending).
+		void PerformCatchReequip();
+
+		// Diferida desde PerformCatchReequip (ver
+		// Constants::kCatchAnimationTailDuration): desatasca el grafo
+		// (Constants::kAttackStopAnimationEvent) y suelta el bloqueo de
+		// movimiento/AnimationDriven/CatchTrigger, una vez que la cola
+		// visual de Catch.hkx ya ha tenido tiempo de terminar. Sin efecto
+		// si el gesto ya se cerró por otra vía (catchAnimationActive a
+		// false, p. ej. una pantalla de carga a mitad de este margen de
+		// espera, ver OnLoadingScreenClosed).
+		void FinishCatchAnimation();
 
 		// Consultado por Events::EquipGuard: si true, no debe deshacer el
 		// último equipado del jugador aunque el estado no sea kInHand -- ver
@@ -258,14 +322,58 @@ namespace Weapon
 		bool suppressEquipGuard{ false };
 
 		// True mientras dura el gesto visual de Atrape (desde
-		// BeginCatchAnimation hasta OnCatchReleaseAnimationEvent) --
-		// deliberadamente independiente de weaponState.GetState(), que para
-		// entonces puede ya haber vuelto a kInHand (el reequipado real no
-		// espera a este gesto, ver BeginCatchAnimation). Comprobado también
-		// en OnLoadingScreenClosed/ResetToInHand para no dejar los flags del
-		// grafo (CatchTrigger/AnimationDriven/iRightHandType/movimiento
+		// BeginCatchAnimation hasta FinishCatchAnimation, ver esa función --
+		// ya no hasta OnCatchReleaseAnimationEvent, desde que la limpieza
+		// del grafo se difiere Constants::kCatchAnimationTailDuration, ver
+		// CLAUDE.md 2026-08-08) -- deliberadamente independiente de
+		// weaponState.GetState(), que puede haber vuelto a kInHand mucho
+		// antes (el reequipado real no espera a este gesto, ver
+		// BeginCatchAnimation/OnCatchReleaseAnimationEvent). Comprobado
+		// también en OnLoadingScreenClosed/ResetToInHand para no dejar los
+		// flags del grafo (CatchTrigger/AnimationDriven/movimiento
 		// bloqueado) encendidos para siempre si una pantalla de carga o una
-		// partida nueva interrumpe el gesto a mitad.
+		// partida nueva interrumpe el gesto a mitad -- incluido ahora el
+		// margen de espera de FinishCatchAnimation, no solo el clip en sí.
 		bool catchAnimationActive{ false };
+
+		// True desde que PerformCatchReequip dispara el reequipado real
+		// (ReequipAndReset) hasta que FinishCatchAnimation limpia el resto
+		// del gesto -- evita que la red de seguridad por tiempo
+		// (Constants::kCatchReleaseFallbackWindow) repita el reequipado si
+		// llega tarde, ya con catchAnimationActive todavía en true durante
+		// el margen de espera de la cola del clip. Reseteado junto con
+		// catchAnimationActive (BeginCatchAnimation, FinishCatchAnimation,
+		// OnLoadingScreenClosed, ResetToInHand).
+		bool catchReequipDone{ false };
+
+		// True una vez que Return::ReturnCallbacks::onArrived confirma que
+		// la réplica ha llegado de verdad, físicamente, a la mano (ver
+		// OnPhysicalArrival) -- necesario porque la anotación de Catch.hkx
+		// (OnCatchReleaseAnimationEvent, temporización fija) se calcula
+		// sobre una predicción que puede quedarse corta en regresos largos
+		// (bug reportado por el usuario, 2026-08-08, confirmado con logs
+		// reales: la anotación llegaba antes que la propia llegada física
+		// con la frecuencia suficiente para que el sonido de atrape casi
+		// nunca sonara). Reseteado a false al arrancar cada regreso
+		// (WeaponManager::BeginReturn).
+		bool catchPhysicallyArrived{ false };
+
+		// True si OnCatchReleaseAnimationEvent quiso reequipar (la
+		// anotación real, o su red de seguridad) mientras
+		// catchPhysicallyArrived todavía era false -- OnPhysicalArrival
+		// completa el reequipado diferido (PerformCatchReequip) en cuanto
+		// se confirma la llegada, en vez de perderlo. Reseteado a false al
+		// arrancar cada regreso (WeaponManager::BeginReturn) y al
+		// completarse (OnPhysicalArrival).
+		bool catchReequipPending{ false };
+
+		// Mismo papel que catchAnimationActive pero para Llamada -- true
+		// desde BeginCallAnimation hasta FinishCallAnimation (ver esa
+		// función y Constants::kCallAnimationTailDuration). No hace falta
+		// un equivalente a catchReequipDone aquí: la parte "inmediata" de
+		// OnCallReleaseAnimationEvent (BeginReturn) ya es idempotente por
+		// su cuenta -- se guarda tras el cambio de weaponState a
+		// State::kCalling, que BeginReturn deja atrás de inmediato.
+		bool callAnimationActive{ false };
 	};
 }

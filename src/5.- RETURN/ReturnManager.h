@@ -27,25 +27,39 @@ namespace Return
 		// BeginReturnMovement), no por un temporizador precalculado de
 		// antemano -- a petición del usuario (2026-08-03): la
 		// sincronización entre la animación de Atrape y el vuelo físico
-		// real no es negociable, así que se mide la velocidad real de la
-		// réplica cada tick para estimar cuánto falta de verdad hasta la
-		// llegada (en segundos reales, no una predicción hecha al
-		// principio), y se dispara en cuanto esa estimación cae por debajo
-		// de Constants::kCatchAnimationLeadTime -- absorbe automáticamente
-		// el suavizado del tramo final (Constants::kReturnTailDistance/
+		// real no es negociable. El tiempo real que falta hasta la llegada
+		// se calcula de forma analítica (progreso acumulado/duración
+		// prevista/ritmo del suavizado final, todos ya conocidos por el
+		// propio bucle -- no una medición de velocidad, ver
+		// BeginReturnMovement para el porqué de ese cambio, 2026-08-07),
+		// exacto en vez de estimado -- absorbe automáticamente el
+		// suavizado del tramo final (Constants::kReturnTailDistance/
 		// kReturnTailMinRate, que alarga la duración real más allá de lo
-		// que predice una fórmula cerrada) y cualquier desviación por que
-		// el jugador se haya movido durante el regreso. También exige que
-		// hayan pasado al menos Constants::kMinCatchAnimationDelay segundos
-		// reales desde que empezó el regreso (temblor de desprendimiento
-		// incluido si lo hubo) -- si la distancia es tan corta que la
-		// física natural no dejaría margen para ninguna de las dos cosas,
-		// Return::BeginReturn alarga el temblor de desprendimiento del
-		// punto 11 lo necesario (nunca ralentiza el vuelo en sí, cambio de
-		// criterio 2026-08-07, ver CLAUDE.md), en vez de desacoplar
-		// animación y física. El llamante debe arrancar aquí el gesto
-		// visual de Atrape (WeaponManager::BeginCatchAnimation). Nunca
-		// obligatorio comprobar si está asignado (mismo contrato que
+		// que predice una fórmula cerrada) y no depende de que el jugador
+		// se haya movido durante el regreso. Se dispara en cuanto ese
+		// tiempo restante cae por debajo de Constants::kCatchAnimationLeadTime.
+		// También exige que hayan pasado al menos
+		// Constants::kMinCatchAnimationDelay segundos reales desde que
+		// empezó el regreso (temblor de desprendimiento incluido si lo
+		// hubo) -- si la distancia es tan corta que la física natural no
+		// dejaría margen para ninguna de las dos cosas, Return::BeginReturn
+		// alarga el temblor de desprendimiento del punto 11 lo necesario
+		// (nunca ralentiza el vuelo en sí, cambio de criterio 2026-08-07,
+		// ver CLAUDE.md), en vez de desacoplar animación y física. El
+		// llamante debe arrancar aquí el gesto visual de Atrape
+		// (WeaponManager::BeginCatchAnimation).
+		//
+		// Disparador independiente del enderezado visual del arma (punto
+		// 10, Animation::TickSpinStraighten): ese usa el mismo tiempo
+		// restante analítico pero comparado contra
+		// Constants::kSpinStraightenLeadTime, deliberadamente mucho más
+		// corto que kCatchAnimationLeadTime -- compartir el mismo instante
+		// (como antes del 2026-08-07) hacía que la ventana de enderezado
+		// consumiera la mayor parte de un regreso corto o medio, sin apenas
+		// dejar ver el giro. No confundir ambos disparadores solo porque
+		// comparten el mismo cálculo de tiempo restante.
+		//
+		// Nunca obligatorio comprobar si está asignado (mismo contrato que
 		// onArrived, ver más abajo), el único llamante
 		// (WeaponManager::BeginReturn) lo asigna siempre.
 		std::function<void()> onApproaching;

@@ -80,14 +80,14 @@ namespace Audio
 		}
 
 		RE::BSSoundHandle primingHandle;
-		if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kFlightSoundHandleFlags)) {
+		if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kSoundHandleFlags)) {
 			primingHandle.FadeInPlay(0);
 		}
 
 		RE::PlaySound(a_editorID);
 
 		RE::BSSoundHandle handle;
-		if (audioManager->GetSoundHandle(handle, descriptor, Constants::kFlightSoundHandleFlags)) {
+		if (audioManager->GetSoundHandle(handle, descriptor, Constants::kSoundHandleFlags)) {
 			handle.SetPosition(a_position);
 			handle.SetVolume(Constants::kSoundHandleVolume);
 			const bool played = handle.FadeInPlay(0);
@@ -102,7 +102,7 @@ namespace Audio
 			return;
 		}
 
-		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kFlightLoopSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID, Constants::kCallReleaseSoundLocalFormID }) {
+		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID, Constants::kCallReleaseSoundLocalFormID }) {
 			if (auto* descriptor = ResolveSoundDescriptor(localFormID)) {
 				audioManager->PrecacheDescriptor(descriptor, 0);
 				logs::info("Audio::PrecacheAll: precacheado FormID local 0x{:06X}.", localFormID);

@@ -93,6 +93,10 @@ namespace Weapon
 		weaponState.SetActiveTickToken({});
 		weaponState.SetState(State::kInHand);
 		catchAnimationActive = false;
+		catchReequipDone = false;
+		catchPhysicallyArrived = false;
+		catchReequipPending = false;
+		callAnimationActive = false;
 
 		// Por si el estado anterior era kAiming (sin esto, el offset de zoom
 		// se quedaría aplicado para siempre) -- desactivar un zoom que ya
@@ -242,6 +246,9 @@ namespace Weapon
 		// movimiento), que sin esto se quedarían encendidos para siempre.
 		if (catchAnimationActive) {
 			catchAnimationActive = false;
+			catchReequipDone = false;
+			catchPhysicallyArrived = false;
+			catchReequipPending = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 				Animation::SetCatchTrigger(*player, false);
 				Animation::SetAnimationDriven(*player, false);
@@ -252,6 +259,28 @@ namespace Weapon
 				// en pose de cuerpo a cuerpo hasta la siguiente acción que
 				// fuerce al grafo a releerla (bug reportado por el
 				// usuario, 2026-08-04).
+			}
+			Input::SetMovementLocked(false);
+		}
+
+		// Mismo motivo que el bloque de catchAnimationActive de arriba, para
+		// Llamada (2026-08-08, ver CLAUDE.md/Constants::kCallAnimationTailDuration):
+		// desde que FinishCallAnimation se difiere, hay una ventana (tras la
+		// anotación de liberación de Call.hkx, antes de que se cumpla ese
+		// margen) en la que weaponState ya ha salido de kCalling (a
+		// kReturning, vía BeginReturn) pero CallTrigger/AnimationDriven/el
+		// bloqueo de movimiento siguen encendidos -- el caso kReturning del
+		// switch de arriba ya llama a RecallWeapon() para esa ventana, pero
+		// no toca estos flags. Redundante-pero-inofensivo si la interrupción
+		// llegó en cambio mientras weaponState todavía era kCalling (el
+		// case de ahí arriba ya los había limpiado) -- desactivar algo que
+		// ya estaba desactivado no hace nada.
+		if (callAnimationActive) {
+			callAnimationActive = false;
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Animation::SetCallTrigger(*player, false);
+				Animation::SetAnimationDriven(*player, false);
+				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 			}
 			Input::SetMovementLocked(false);
 		}
@@ -393,6 +422,7 @@ namespace Weapon
 		// kStuck.
 		wasStuckBeforeCalling = weaponState.GetState() == State::kStuck;
 		weaponState.SetState(State::kCalling);
+		callAnimationActive = true;
 
 		// Mismo motivo que en BeginThrowAnimation: evitar que moverse
 		// durante el gesto de Llamada escale a un power attack direccional
@@ -444,6 +474,35 @@ namespace Weapon
 		}
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			// El sonido del chasquido ya no depende de un SoundPlay vanilla
+			// (descartado, ver CHANGELOG.md) -- se dispara aquí mismo, en el
+			// mismo instante que el regreso físico real.
+			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
+		}
+
+		// Debe ocurrir exactamente en este instante, sincronizado con la
+		// anotación real -- el resto del gesto (desatascar el grafo) se
+		// difiere, ver FinishCallAnimation.
+		BeginReturn(wasStuckBeforeCalling);
+
+		std::thread([this]() {
+			std::this_thread::sleep_for(Constants::kCallAnimationTailDuration);
+			SKSE::GetTaskInterface()->AddTask([this]() {
+				FinishCallAnimation();
+			});
+		}).detach();
+	}
+
+	void WeaponManager::FinishCallAnimation()
+	{
+		if (!callAnimationActive) {
+			// Ya limpiado por otra vía (p. ej. pantalla de carga a mitad de
+			// este margen de espera, ver OnLoadingScreenClosed) -- no repetir.
+			return;
+		}
+		callAnimationActive = false;
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetCallTrigger(*player, false);
 			Animation::SetAnimationDriven(*player, false);
 
@@ -453,20 +512,17 @@ namespace Weapon
 			// graph variable que se puso a mano en BeginCallAnimation.
 			player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 
-			// El sonido del chasquido ya no depende de un SoundPlay vanilla
-			// (descartado, ver CHANGELOG.md) -- se dispara aquí mismo, en el
-			// mismo instante que el regreso físico real.
-			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
-
 			// Ver Constants::kAttackStopAnimationEvent: confirmado en el
 			// juego que desatasca el grafo de AttackRight_State (el submod de
 			// OAR de Llamada ignora los triggers horneados en el clip
-			// vainilla sustituido, ver ahí el porqué).
+			// vainilla sustituido, ver ahí el porqué). Disparado aquí, tras
+			// Constants::kCallAnimationTailDuration, en vez de en el mismo
+			// instante que la anotación de liberación -- para no cortar la
+			// cola visual de Call.hkx (bug reportado por el usuario,
+			// 2026-08-08: "la animación de Llamada queda cortada").
 			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 		}
 		Input::SetMovementLocked(false);
-
-		BeginReturn(wasStuckBeforeCalling);
 	}
 
 	void WeaponManager::BeginCatchAnimation()
@@ -497,6 +553,7 @@ namespace Weapon
 		// OnCatchReleaseAnimationEvent) puede llegar antes o después de que
 		// weaponState ya haya cambiado de estado por su cuenta.
 		catchAnimationActive = true;
+		catchReequipDone = false;
 
 		// Mismo motivo que en BeginCallAnimation: evitar que moverse durante
 		// el gesto de Atrape escale a un power attack direccional vanilla en
@@ -528,10 +585,10 @@ namespace Weapon
 		// Red de seguridad: el reequipado real debe ocurrir siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
 		// BeginThrowAnimation/BeginCallAnimation. Constants::kCatchReleaseFallbackWindow
-		// (1.5s) debe ser mayor que Constants::kCatchAnimationLeadTime
-		// (0.9s, medido por el usuario sobre el propio clip) con margen de
-		// sobra, o esta red de seguridad podría dispararse antes de que la
-		// réplica llegue de verdad a la mano.
+		// (1.5s) debe ser mayor que Constants::kCatchAnimationLeadTime (0,5s,
+		// ver Constants.h para la medición sobre el propio clip) con margen
+		// de sobra, o esta red de seguridad podría dispararse antes de que
+		// la réplica llegue de verdad a la mano.
 		std::thread([this]() {
 			std::this_thread::sleep_for(Constants::kCatchReleaseFallbackWindow);
 			SKSE::GetTaskInterface()->AddTask([this]() {
@@ -545,43 +602,64 @@ namespace Weapon
 
 	void WeaponManager::OnCatchReleaseAnimationEvent()
 	{
-		if (!catchAnimationActive) {
+		if (!catchAnimationActive || catchReequipDone) {
 			return;
 		}
-		catchAnimationActive = false;
+		logs::info("WeaponManager::OnCatchReleaseAnimationEvent: anotación de liberación recibida.");
+
+		// Cambio de criterio (2026-08-08, a petición del usuario, tras
+		// confirmar con logs reales del juego): esta anotación tiene
+		// temporización fija (ver Constants::kCatchAnimationLeadTime),
+		// calculada sobre una predicción de Return::BeginReturnMovement de
+		// cuándo va a llegar la réplica -- en regresos largos, donde el
+		// jugador ha tenido más tiempo para moverse, esa predicción puede
+		// quedarse corta y esta anotación llegar antes de que la réplica
+		// haya llegado de verdad a la mano. Reequipar en ese caso cortaba
+		// la animación a medias y cancelaba el bucle de tick de
+		// Return::BeginReturnMovement antes de que este detectara la
+		// llegada física por su cuenta -- por eso tampoco sonaba
+		// Audio::CatchCue::PlayEnd (solo se dispara al detectarla). En vez
+		// de seguir afinando esa predicción (ya van dos rondas), se
+		// comprueba aquí la confirmación real de llegada física
+		// (catchPhysicallyArrived, ver Return::ReturnCallbacks::onArrived/
+		// OnPhysicalArrival) -- si todavía no ha llegado, se difiere el
+		// reequipado hasta que sí (catchReequipPending), en vez de fiarse a
+		// ciegas de esta temporización. En el caso normal (la réplica ya
+		// ha llegado, o llega antes que esta anotación -- la mayoría de las
+		// veces) no cambia nada, PerformCatchReequip se llama exactamente
+		// igual de inmediato.
+		if (!catchPhysicallyArrived) {
+			logs::info("WeaponManager::OnCatchReleaseAnimationEvent: la réplica todavía no ha llegado de verdad -- reequipado diferido hasta que llegue.");
+			catchReequipPending = true;
+			return;
+		}
+
+		PerformCatchReequip();
+	}
+
+	void WeaponManager::OnPhysicalArrival()
+	{
+		catchPhysicallyArrived = true;
+		if (catchReequipPending) {
+			catchReequipPending = false;
+			PerformCatchReequip();
+		}
+	}
+
+	void WeaponManager::PerformCatchReequip()
+	{
+		catchReequipDone = true;
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			Animation::SetCatchTrigger(*player, false);
-			Animation::SetAnimationDriven(*player, false);
-
-			// A diferencia de OnCallReleaseAnimationEvent (que sí vuelve
-			// iRightHandType a 0 -- el jugador se queda genuinamente
-			// desarmado, sin ningún reequipado real a continuación), aquí
-			// NO se toca -- justo debajo, ReequipAndReset reequipa el arma
-			// real de verdad, y es esa llamada real a
-			// RE::ActorEquipManager::EquipObject la que debe quedarse como
-			// dueña de esta graph variable a partir de ahora. Bug
-			// reportado por el usuario (2026-08-04): resetear a 0 aquí y
-			// reequipar de verdad justo después dejaba al personaje en
-			// pose de cuerpo a cuerpo hasta la siguiente acción (ataque,
-			// etc.) que forzara al grafo a releer el valor -- el
-			// reequipado real no parece disparar por sí solo ese
-			// refresco. Ya está en el valor correcto
-			// (Constants::kRightHandTypeOneHanded, puesto en
-			// BeginCatchAnimation) para lo que va a ser cierto de verdad
-			// en un instante, así que tocarlo aquí sobra.
-
-			// Ver Constants::kAttackStopAnimationEvent -- mismo motivo que
-			// OnCallReleaseAnimationEvent.
-			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
-
 			// Temblor de cámara al cerrar la mano sobre el arma -- ver
-			// Constants::kCatchShakeStrength/kCatchShakeDuration. Epicentro
-			// en el propio jugador para que la atenuación por distancia del
-			// motor no le reste fuerza a su propia cámara.
+			// Constants::kCatchShakeStrength/kCatchShakeDuration. Debe
+			// coincidir con el reequipado real de abajo (el instante en que
+			// la mano se cierra de verdad en el clip), no con el final del
+			// gesto -- epicentro en el propio jugador para que la
+			// atenuación por distancia del motor no le reste fuerza a su
+			// propia cámara.
 			RE::ShakeCamera(Constants::kCatchShakeStrength, player->GetPosition(), Constants::kCatchShakeDuration);
 		}
-		Input::SetMovementLocked(false);
 
 		// A diferencia de la llegada física en sí (BeginReturn, callback
 		// onArrived, que deja la réplica quieta pero no reequipa nada): la
@@ -589,8 +667,67 @@ namespace Weapon
 		// instante exacto en que la mano se cierra sobre el arma en el
 		// propio clip -- confiar en ella en vez de en el umbral de
 		// distancia de la llegada física es lo que sincroniza de verdad el
-		// reequipado visual con el gesto de la animación.
+		// reequipado visual con el gesto de la animación (salvo el caso
+		// diferido de arriba, donde la llegada física real llegó tarde).
+		//
+		// iRightHandType NO se toca aquí (a diferencia de
+		// OnCallReleaseAnimationEvent/FinishCallAnimation, que sí lo vuelve
+		// a 0): la llamada real a RE::ActorEquipManager::EquipObject de
+		// dentro de ReequipAndReset debe quedarse como dueña de esa graph
+		// variable a partir de ahora. Bug reportado por el usuario
+		// (2026-08-04): resetear a 0 aquí y reequipar de verdad justo
+		// después dejaba al personaje en pose de cuerpo a cuerpo hasta la
+		// siguiente acción (ataque, etc.) que forzara al grafo a releer el
+		// valor -- el reequipado real no parece disparar por sí solo ese
+		// refresco. Ya está en el valor correcto
+		// (Constants::kRightHandTypeOneHanded, puesto en
+		// BeginCatchAnimation) para lo que va a ser cierto de verdad en un
+		// instante, así que tocarlo aquí sobra.
 		ReequipAndReset();
+
+		// Cambio de criterio (2026-08-08, a petición del usuario, ver
+		// CLAUDE.md/Constants::kCatchAnimationTailDuration): el resto del
+		// gesto (desatascar el grafo, soltar el bloqueo de movimiento) se
+		// difiere en vez de hacerse aquí mismo -- Catch.hkx sigue teniendo
+		// fotogramas propios sin reproducir después de esta anotación
+		// (mide ~1s total, la anotación cae a los
+		// Constants::kCatchAnimationLeadTime, 0,5s), y cortarlo con
+		// attackStop en el mismo instante que el reequipado descartaba esa
+		// segunda mitad del clip siempre, no solo a veces (reportado por el
+		// usuario: "la animación de Atrape queda cortada"). Mismo patrón
+		// que Throw::ThrowWeapon ya usa para su propio hueco
+		// (Constants::kThrowReleaseVisualHoldDuration).
+		std::thread([this]() {
+			std::this_thread::sleep_for(Constants::kCatchAnimationTailDuration);
+			SKSE::GetTaskInterface()->AddTask([this]() {
+				FinishCatchAnimation();
+			});
+		}).detach();
+	}
+
+	void WeaponManager::FinishCatchAnimation()
+	{
+		if (!catchAnimationActive) {
+			// Ya limpiado por otra vía (p. ej. pantalla de carga a mitad de
+			// este margen de espera, ver OnLoadingScreenClosed) -- no repetir.
+			return;
+		}
+		catchAnimationActive = false;
+		catchReequipDone = false;
+		catchPhysicallyArrived = false;
+		catchReequipPending = false;
+
+		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			Animation::SetCatchTrigger(*player, false);
+			Animation::SetAnimationDriven(*player, false);
+
+			// Ver Constants::kAttackStopAnimationEvent -- mismo motivo que
+			// OnCallReleaseAnimationEvent/FinishCallAnimation. Disparado aquí,
+			// tras Constants::kCatchAnimationTailDuration, no en el instante
+			// de la anotación de liberación (ver OnCatchReleaseAnimationEvent).
+			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
+		}
+		Input::SetMovementLocked(false);
 	}
 
 	void WeaponManager::EquipGestureWeapon()
@@ -772,6 +909,11 @@ namespace Weapon
 
 		weaponState.SetState(State::kReturning);
 
+		// Reseteados al arrancar cada regreso -- ver OnPhysicalArrival/
+		// OnCatchReleaseAnimationEvent.
+		catchPhysicallyArrived = false;
+		catchReequipPending = false;
+
 		Return::ReturnCallbacks callbacks;
 		callbacks.onTickStarted = [this](Physics::TickToken a_token) {
 			weaponState.SetActiveTickToken(a_token);
@@ -779,12 +921,19 @@ namespace Weapon
 		callbacks.onApproaching = [this]() {
 			BeginCatchAnimation();
 		};
-		callbacks.onArrived = []() {
-			// Sin efecto a propósito: el reequipado real no ocurre aquí --
-			// ver OnCatchReleaseAnimationEvent, gatillado por la anotación
-			// PIE.ThorMjolnirCatch (o su red de seguridad), no por este
-			// umbral de distancia. La réplica se queda quieta junto a la
-			// mano hasta entonces (el bucle de tick ya se detiene solo).
+		callbacks.onArrived = [this]() {
+			// El reequipado real en sí sigue gatillado por la anotación de
+			// Catch.hkx (PIE.ThorMjolnirCatch), no por este umbral de
+			// distancia -- eso no cambia (ver OnCatchReleaseAnimationEvent),
+			// para que el gesto de la mano en el clip siga sincronizado con
+			// el reequipado visual. Lo que sí hace este callback (cambio de
+			// criterio 2026-08-08, ver CLAUDE.md): confirmar que la llegada
+			// física ya ha pasado de verdad -- OnCatchReleaseAnimationEvent
+			// comprueba esta confirmación antes de reequipar, y la difiere
+			// si todavía no ha llegado (ver catchReequipPending) en vez de
+			// confiar ciegamente en que la predicción de tiempo restante de
+			// Return::BeginReturnMovement acertara.
+			OnPhysicalArrival();
 		};
 
 		Return::BeginReturn(player, replicaHandle, a_wasStuck, std::move(callbacks));

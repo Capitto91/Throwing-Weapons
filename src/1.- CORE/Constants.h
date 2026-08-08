@@ -164,10 +164,10 @@ namespace Constants
 	// (RE::TESSound), no un Sound Descriptor directo -- Audio::ResolveSoundDescriptor
 	// ya resuelve ambos tipos indistintamente (ver SoundResolver.h). Se
 	// reutiliza Audio::PlayReliableOneShot (movido de CatchSound.cpp a
-	// SoundResolver.h/.cpp para compartirlo) en vez del más simple
-	// Audio::PlaySoundOneShot -- este último nunca se ha confirmado fiable en
-	// el juego, mientras que el mecanismo triple de PlayReliableOneShot sí
-	// (ver Constants::kFlightSoundHandleFlags).
+	// SoundResolver.h/.cpp para compartirlo) -- el mecanismo simple de un
+	// solo RE::BSSoundHandle nunca se ha confirmado fiable en el juego
+	// (reporta éxito en cada paso pero no llega a sonar), mientras que el
+	// mecanismo triple de PlayReliableOneShot sí (ver Constants::kSoundHandleFlags).
 	inline constexpr RE::FormID  kCallReleaseSoundLocalFormID = 0x011579;
 	inline constexpr const char* kCallReleaseSoundEditorID = "CAP_ThorMjolnir_MarkSound_FingerSnap";
 
@@ -459,52 +459,65 @@ namespace Constants
 	// antes). Placeholder, pendiente de ajustar en el juego.
 	inline constexpr float kSpinRampDuration = 0.3f;  // s, placeholder
 
-	// Punto 10 (segunda mitad, todavía sin implementar hasta ahora):
-	// "justo antes de... volver a la mano del jugador, se endereza para
-	// que... el mango quede orientado para que el jugador pueda
-	// agarrarla". Duración de esa ventana de enderezado -- ver
-	// Animation::TickSpinStraighten, llamada desde
-	// Return::BeginReturnMovement en vez de Animation::TickSpin durante
-	// los últimos instantes del regreso (arrancada en el mismo momento
-	// que Return::ReturnCallbacks::onApproaching, ver esa función, así
-	// que ambas terminan a la vez cerca de la llegada real). Bug
-	// reportado por el usuario (2026-08-04): sin enderezar, el nodo de
-	// giro llegaba a la mano en mitad de una vuelta cualquiera y el
-	// cambio a la pose de agarre real (sin rotación extra sobre este
-	// nodo) se notaba como un salto brusco de rotación, no de posición
-	// (el hueco de posición ya se resolvió aparte, ver
-	// Return::BeginReturnMovement/arrivedFired). Mismo valor que
-	// Constants::kCatchAnimationLeadTime de momento (no hay una medida
-	// propia de cuánto debería durar un enderezado que se note natural,
-	// a diferencia de los tiempos de los clips de animación) -- constante
-	// propia en vez de reutilizar esa directamente, para poder recalibrar
-	// una sin tocar la otra si hace falta.
+	// Punto 10 (segunda mitad): "justo antes de... volver a la mano del
+	// jugador, se endereza para que... el mango quede orientado para que
+	// el jugador pueda agarrarla" -- ver Animation::TickSpinStraighten,
+	// llamada desde Return::BeginReturnMovement en vez de
+	// Animation::TickSpin durante los últimos instantes del regreso.
 	//
-	// Cambio de criterio (2026-08-07, ver CLAUDE.md): ya no es la duración
-	// real de la ventana en todos los casos -- solo el valor inicial con el
-	// que arranca el bucle de tick de Return::BeginReturnMovement, antes de
-	// que se dispare `onApproaching` la primera vez (nunca llega a usarse
-	// tal cual). En cuanto se dispara, la duración real se recalcula a
-	// partir del tiempo que quede de verdad hasta la llegada (estimación en
-	// vivo ya existente) -- con la aceleración de llegada constante
-	// (Constants::kReturnTargetArrivalSpeed) un regreso corto puede tener
-	// menos de 0,5s reales por delante, y forzar esta constante igual
-	// dejaba el enderezado a medias cuando la llegada física ya se había
-	// disparado (bug reportado por el usuario: "llega de cualquier
-	// manera").
-	inline constexpr float kSpinStraightenDuration = 0.5f;  // s, placeholder
+	// Cambio de criterio (2026-08-07, ver CLAUDE.md): esta ventana ya NO
+	// arranca en el mismo instante que Return::ReturnCallbacks::onApproaching
+	// (Constants::kCatchAnimationLeadTime, 0,5s antes de la llegada real,
+	// atado a la duración de Catch.hkx -- eso no cambia, sigue disparando
+	// el gesto de Atrape a esa distancia temporal fija) -- son dos
+	// disparadores independientes ahora. Antes, al compartir instante con
+	// onApproaching, la ventana de 0,5s consumía la mayor parte (o la
+	// totalidad) de un regreso corto o medio, y el arma apenas llegaba a
+	// girar antes de empezar a frenar el giro (bug reportado por el
+	// usuario, 2026-08-07: "el enderezado se produce desde muy lejos,
+	// haciendo que el arma no gire en regresos cortos o medios"). Esta
+	// constante marca en su lugar cuánto antes de la llegada real empieza
+	// a verse el enderezado en sí -- deliberadamente mucho más corta que
+	// kCatchAnimationLeadTime, para que el giro (Animation::TickSpin) siga
+	// ocupando la mayor parte del trayecto y el enderezado solo se note ya
+	// bastante al final. Mismo criterio de "ajuste corto, no una
+	// reorientación completa desde el principio" que
+	// Constants::kImpactStraightenAngularSpeed para el caso de impacto.
+	// Placeholder, pendiente de calibrar en el juego.
+	inline constexpr float kSpinStraightenLeadTime = 0.2f;  // s, placeholder
 
 	// Segunda mitad del punto 10, caso "impacto" (hasta ahora solo
-	// cubierto el caso "vuelta a la mano", ver kSpinStraightenDuration
+	// cubierto el caso "vuelta a la mano", ver kSpinStraightenLeadTime
 	// arriba): "justo antes de alcanzar un objetivo... se endereza para
 	// que el filo/cabeza apunte hacia el objetivo". Arrancado en el mismo
 	// tick del impacto (Throw::LaunchWeapon / Combat::BeginEmbeddedEffect)
 	// -- a diferencia del regreso, no hay forma de anticipar el instante
-	// exacto del golpe para empezar antes. Duración corta a propósito: es
-	// un ajuste de pocos grados sobre el giro que ya llevaba, no una
-	// reorientación completa como al volver a la mano. Placeholder,
-	// pendiente de ajustar en el juego.
-	inline constexpr float kImpactStraightenDuration = 0.15f;  // s, placeholder
+	// exacto del golpe para empezar antes.
+	//
+	// Antes era una duración fija (0.15s) sin importar el ángulo a
+	// corregir -- asumía "es un ajuste de pocos grados", pero
+	// Animation::ComputeImpactAlignment solo alinea un eje (el giro
+	// alrededor de él queda libre, ver Math::ShortestArcRotation), así que
+	// el ángulo real depende de en qué fase del giro (Animation::TickSpin)
+	// iba el arma justo al impactar -- puede ser tan pequeño como 0° o
+	// tan grande como 180°, básicamente al azar según cuánto llevara
+	// volando. Con una duración fija, eso se notaba como dos síntomas
+	// reportados por el usuario (2026-08-08): correcciones pequeñas (caso
+	// típico en lanzamientos cortos/medios, con menos giro acumulado) se
+	// veían lentas/perezosas de más para lo poco que había que corregir, y
+	// correcciones grandes (más probables cuanto más tiempo llevara
+	// girando a velocidad máxima) se apelotonaban en la misma ventana
+	// corta y se notaban como un tirón brusco justo al final. En su lugar,
+	// la duración real se deriva del ángulo a corregir (Math::RotationAngle
+	// entre la rotación de partida y la de destino) a esta velocidad
+	// angular constante, acotada entre kImpactStraightenMinDuration (para
+	// que una corrección casi nula no se vea como un salto instantáneo) y
+	// kImpactStraightenMaxDuration (para que una de 180° no se alargue en
+	// exceso) -- ver Throw::LaunchWeapon/Combat::BeginEmbeddedEffect.
+	// Placeholders, pendientes de calibrar en el juego.
+	inline constexpr float kImpactStraightenAngularSpeed = 10.0f;  // rad/s (~pi/2 en 0.15s), placeholder
+	inline constexpr float kImpactStraightenMinDuration = 0.08f;   // s, placeholder
+	inline constexpr float kImpactStraightenMaxDuration = 0.35f;   // s, placeholder
 
 	// Eje local (unitario) que representa "hacia el filo/cabeza" del
 	// modelo -- se alinea con la dirección de vuelo en el instante del
@@ -637,7 +650,7 @@ namespace Constants
 	// juego.
 	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
 
-	// -- Sonido de lanzamiento/vuelo/atrape (12.- AUDIO) --
+	// -- Sonido de lanzamiento/atrape (12.- AUDIO) --
 	// Resolución por FormID local + nombre de plugin
 	// (RE::TESDataHandler::LookupForm<T>, verificado en TESDataHandler.h,
 	// ver Audio::ResolveSoundDescriptor en 12.- AUDIO/SoundResolver.cpp) --
@@ -661,20 +674,29 @@ namespace Constants
 	inline constexpr std::string_view kSoundPluginName = "ThorMjolnirOAR.esp";
 
 	// FormID local (visto en xEdit, sin el byte de índice de carga) del
-	// Sound Descriptor/Sound Marker del silbido de lanzamiento -- sonado
-	// tanto al arrojar el arma (Throw::LaunchWeapon) como al iniciar el
-	// tramo de movimiento del regreso (Return::BeginReturnMovement).
-	// Placeholder en 0 pendiente de que el usuario lo mire en xEdit -- si
-	// no resuelve, Audio::PlaySoundOneShot simplemente avisa por log y no
-	// suena nada, mismo criterio defensivo que Constants::kEmbeddedParalysisSpell.
-	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x000000;
+	// Sound Marker del silbido de lanzamiento -- sonado tanto al arrojar el
+	// arma (Throw::LaunchWeapon) como al iniciar el tramo de movimiento del
+	// regreso (Return::BeginReturnMovement). Dado por el usuario como
+	// 0x01014092 (visto en xEdit/CK, con el byte de índice de carga
+	// incluido) -- `ThorMjolnirOAR.esp` tiene el flag ESL activo (ver
+	// CLAUDE.md, "Errores comunes a vigilar"), así que el valor real de 12
+	// bits se obtiene enmascarando los últimos 3 dígitos hex
+	// (0x01014092 & 0xFFF = 0x092), independientemente de si se enmascara
+	// el valor completo o solo su parte local de 6 dígitos (0x014092) --
+	// el resultado es el mismo, el índice de carga cae siempre fuera de
+	// los 12 bits bajos.
+	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x092;
 
-	// FormID local del Sound Descriptor/Sound Marker en bucle mientras el
-	// arma vuela (ida y vuelta) -- el propio Sound Descriptor debe
-	// configurarse como bucle en la Creation Kit, el código
-	// (Audio::FlightSound) solo lo arranca y lo para. Mismo criterio de
-	// placeholder que el anterior.
-	inline constexpr RE::FormID kFlightLoopSoundLocalFormID = 0x000000;
+	// EditorID del mismo Sound Marker, dado por el usuario -- necesario
+	// para el RE::PlaySound de refuerzo de Audio::PlayReliableOneShot (ver
+	// SoundResolver.h). Cambio de criterio (2026-08-08, ver CLAUDE.md): el
+	// silbido de lanzamiento usaba Audio::PlaySoundOneShot (ya retirada),
+	// el mecanismo más simple de un solo RE::BSSoundHandle -- confirmado
+	// en el juego que, igual que ya pasaba con los sonidos de Atrape/
+	// Llamada antes de este mismo cambio, GetSoundHandle/FadeInPlay()
+	// reportaban éxito en el log pero no sonaba nada. Movido al mecanismo
+	// triple ya confirmado fiable para esos otros dos.
+	inline constexpr const char* kThrowLaunchSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirThrow";
 
 	// -- Sonido de atrape, en dos partes (12.- AUDIO/CatchSound) --
 	// Rediseño completo a petición del usuario, sustituyendo por completo
@@ -708,7 +730,7 @@ namespace Constants
 	// EditorID de cada Sound Descriptor -- no un std::string_view como
 	// kSoundPluginName porque RE::PlaySound(const char*) exige una cadena
 	// terminada en nulo (ver el porqué de esta llamada en el comentario de
-	// kFlightSoundHandleFlags más abajo).
+	// kSoundHandleFlags más abajo).
 	inline constexpr const char* kCatchStartSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_Start";
 	inline constexpr const char* kCatchEndSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_End";
 
@@ -733,6 +755,35 @@ namespace Constants
 	// (cuándo puede empezar a reproducirse Catch.hkx, no cuánto dura).
 	inline constexpr float kCatchAnimationLeadTime = 0.5f;
 
+	// Margen de seguridad añadido al umbral de disparo de onApproaching
+	// (Return::BeginReturnMovement: dispara cuando el tiempo real restante
+	// simulado cae a kCatchAnimationLeadTime + este margen, no exactamente
+	// kCatchAnimationLeadTime). Diagnosticado en el juego (2026-08-08, ver
+	// CLAUDE.md): con log de diagnóstico activado, la estimación por
+	// simulación (Return::SimulateRemainingReturnTime) predecía el tiempo
+	// restante con un error de solo unos pocos milisegundos frente a la
+	// duración real de Catch.hkx hasta su propia anotación (p. ej.
+	// estimado 0.496s vs. los 0.5s reales del clip) -- suficientemente
+	// exacta en la mayoría de casos, pero ese margen de pocos milisegundos
+	// es más estrecho que un solo tick (Constants::kTickDeltaSeconds,
+	// ~16ms) y que el jitter real del hilo-que-duerme-y-reencola del
+	// bucle de tick: en distancias medias/largas, la anotación real de
+	// Catch.hkx (con temporización fija) y la detección interna de
+	// llegada física (Return::BeginReturnMovement, que depende de que el
+	// bucle ejecute un tick más) competían por quién llegaba primero, y la
+	// anotación ganaba esa carrera con la frecuencia suficiente como para
+	// que Audio::CatchCue::PlayEnd casi nunca llegara a dispararse (bug
+	// reportado por el usuario) -- confirmado con logs reales: en varios
+	// casos, "la réplica ha llegado a la mano" nunca llegaba a aparecer
+	// antes de que WeaponManager::OnCatchReleaseAnimationEvent cancelara
+	// el bucle desde fuera. Este margen adelanta el disparo de
+	// onApproaching lo suficiente para que la llegada física gane esa
+	// carrera con margen de sobra, a costa de un desajuste igual de
+	// pequeño (y ya aceptado de antemano, ver el resto de este archivo)
+	// entre el inicio de Catch.hkx y la llegada real. Placeholder,
+	// pendiente de calibrar en el juego si hiciera falta más margen.
+	inline constexpr float kCatchApproachSafetyMargin = 0.1f;
+
 	// Cuánto sigue reproduciéndose Call.hkx, en tiempo real, después de su
 	// propia anotación de liberación (la que dispara
 	// WeaponManager::OnCallReleaseAnimationEvent y arranca el regreso
@@ -756,6 +807,65 @@ namespace Constants
 	// independientes (a petición del usuario: la sincronización no es
 	// negociable).
 	inline constexpr float kMinCatchAnimationDelay = 0.5f;
+
+	// Cuánto sigue reproduciéndose Call.hkx/Catch.hkx, en tiempo real,
+	// después de su propia anotación de liberación hasta que el propio
+	// clip termina del todo -- mismos 0.5s de cola ya medidos y descritos
+	// en el comentario de kMinCatchAnimationDelay (Call, 25 fotogramas a
+	// 30 FPS, anotación en el 10) y en el de kCatchAnimationLeadTime más
+	// arriba (Catch, 30 fotogramas, anotación en el 15) respectivamente --
+	// constantes propias en vez de reutilizar esas directamente (aunque
+	// coincidan en valor) porque describen un concepto distinto: cuánto
+	// hay que ESPERAR después de la anotación antes de desatascar el grafo
+	// (WeaponManager::FinishCallAnimation/FinishCatchAnimation), no cuándo
+	// puede dispararse la propia anotación ni cuánto debe esperar Return
+	// para la sincronización física.
+	//
+	// Cambio de criterio (2026-08-08, a petición del usuario): antes,
+	// WeaponManager::OnCallReleaseAnimationEvent/OnCatchReleaseAnimationEvent
+	// disparaban Constants::kAttackStopAnimationEvent en el mismo instante
+	// que la propia anotación de liberación -- necesario para el
+	// reequipado/inicio del regreso físico (deben ocurrir exactamente ahí,
+	// eso no cambia), pero cortaba el clip a mitad de esta cola, que nunca
+	// llegaba a reproducirse (bug reportado por el usuario: "la animación
+	// de Atrape/Llamada queda cortada, no se reproduce entera"). Ahora
+	// attackStop (y el resto de la limpieza del grafo -- bloqueo de
+	// movimiento, AnimationDriven, el propio trigger de OAR) se difiere
+	// este margen, dejando que la cola visual del clip termine de verdad
+	// antes de desatascar el grafo -- mismo patrón que
+	// Throw::ThrowWeapon ya usa para su propio hueco
+	// (Constants::kThrowReleaseVisualHoldDuration), que no necesita este
+	// cambio porque no dispara attackStop en absoluto (ver CLAUDE.md).
+	//
+	// std::chrono::milliseconds, no float como kCatchAnimationLeadTime/
+	// kMinCatchAnimationDelay -- a diferencia de esas dos (comparadas
+	// contra tiempos calculados en coma flotante dentro de 5.- RETURN),
+	// estas dos solo se usan como argumento de std::this_thread::sleep_for,
+	// mismo tipo que el resto de márgenes de espera del proyecto
+	// (kThrowReleaseFallbackWindow, kCallReleaseFallbackWindow, etc.).
+	//
+	// kCatchAnimationTailDuration se deja en los 0,5s completos medidos
+	// (funciona bien tal cual, confirmado por el usuario). kCallAnimationTailDuration
+	// bajada a propósito por debajo de su cola completa (2026-08-08, a
+	// petición del usuario) -- distinto problema, solo en Llamada: si el
+	// jugador ya llevaba movimiento al pulsar el botón, Call.hkx "se
+	// vuelve a reproducir" y el personaje desliza un poco durante el
+	// clip -- mismo síntoma que el power attack direccional vanilla ya
+	// documentado (ver kAnimationDrivenGraphVariable), que
+	// Animation::SetAnimationDriven no está evitando del todo aquí pese a
+	// activarse durante todo State::kCalling. Sin causa raíz confirmada
+	// todavía (no se ha determinado si el propio grafo reevalúa el input
+	// de movimiento retenido en algún punto concreto de la cola, ni si
+	// existe tal punto) -- experimento pedido por el usuario: adelantar
+	// attackStop (y el resto de la limpieza, ver FinishCallAnimation) a
+	// medio camino de la cola en vez de al final, con la esperanza de que
+	// evite lo que sea que dispare la reevaluación, a costa de perder la
+	// mitad final de la cola visual del clip (mejor que perderla entera,
+	// que era el bug original). Pendiente de confirmar en el juego si esto
+	// arregla el deslizamiento, y de recalibrar el valor en cualquier
+	// dirección según el resultado.
+	inline constexpr std::chrono::milliseconds kCallAnimationTailDuration{ 250 };
+	inline constexpr std::chrono::milliseconds kCatchAnimationTailDuration{ 500 };
 
 	// Temblor de cámara al cerrar la mano sobre el arma, disparado en el
 	// mismo instante que el reequipado real (WeaponManager::
@@ -831,10 +941,10 @@ namespace Constants
 	// RE::BSSoundHandle real arrancado con FadeInPlay(0) en vez de Play().
 	// Sin explicación firme de por qué -- documentado como comportamiento
 	// empírico confirmado, no como diagnóstico pendiente de limpiar.
-	inline constexpr std::uint32_t kFlightSoundHandleFlags = 0x0;
+	inline constexpr std::uint32_t kSoundHandleFlags = 0x0;
 
 	// Volumen explícito aplicado a todo RE::BSSoundHandle antes de
-	// FadeInPlay() (ver 12.- AUDIO/FlightSound.cpp, CatchSound.cpp) -- un
+	// FadeInPlay() (ver 12.- AUDIO/SoundResolver.cpp, CatchSound.cpp) -- un
 	// handle recién obtenido de GetSoundHandle no tiene garantizado
 	// arrancar a volumen audible por defecto (sin documentar en
 	// commonlibsse-ng). 1.0 = volumen máximo sin atenuar, antes de

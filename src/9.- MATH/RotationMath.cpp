@@ -79,44 +79,6 @@ namespace Math
 		return a_parentWorld.Transpose() * a_desiredWorld;
 	}
 
-	RE::NiMatrix3 ShortestArcRotation(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to)
-	{
-		const float fromLength = a_from.Length();
-		const float toLength = a_to.Length();
-		if (fromLength <= 0.0f || toLength <= 0.0f) {
-			return RE::NiMatrix3{};  // identidad -- entrada degenerada
-		}
-
-		const RE::NiPoint3 from = a_from / fromLength;
-		const RE::NiPoint3 to = a_to / toLength;
-
-		const float cosAngle = std::clamp(from.Dot(to), -1.0f, 1.0f);
-
-		// Prácticamente ya alineados: identidad, evita normalizar un eje
-		// casi nulo más abajo.
-		if (cosAngle > 0.99999f) {
-			return RE::NiMatrix3{};
-		}
-
-		RE::NiPoint3 axis = from.Cross(to);
-
-		// Antiparalelos: el producto cruzado es (casi) nulo -- cualquier
-		// eje perpendicular a "from" sirve, ver comentario del header.
-		if (cosAngle < -0.99999f) {
-			const RE::NiPoint3 arbitrary = std::abs(from.x) < 0.9f ? RE::NiPoint3{ 1.0f, 0.0f, 0.0f } : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
-			axis = from.Cross(arbitrary);
-		}
-
-		const float axisLength = axis.Length();
-		if (axisLength <= 0.0f) {
-			return RE::NiMatrix3{};
-		}
-
-		RE::NiMatrix3 result;
-		result.MakeRotation(std::acos(cosAngle), axis / axisLength);
-		return result;
-	}
-
 	float SmoothStep01(float a_t)
 	{
 		const float t = std::clamp(a_t, 0.0f, 1.0f);

@@ -16,7 +16,7 @@
 namespace Audio
 {
 	// Sin RE::BSSoundHandle como miembro: cada sonido se dispara una sola
-	// vez y se deja sonar por su cuenta (igual que Audio::PlaySoundOneShot
+	// vez y se deja sonar por su cuenta (igual que Audio::PlayReliableOneShot
 	// -- el motor sigue reproduciéndolo aunque el handle local que lo
 	// arrancó se destruya al momento), así que esta clase no gestiona
 	// ningún recurso que liberar, no hace falta RAII ni restringir copia/

@@ -4,13 +4,14 @@
 #include "4.- THROW/ThrowManager.h"
 
 #include "1.- CORE/Constants.h"
-#include "12.- AUDIO/FlightSound.h"
+#include "12.- AUDIO/SoundResolver.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "9.- MATH/RotationMath.h"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 
@@ -149,6 +150,15 @@ namespace Throw
 		const auto         direction = ComputeAimedDirection(a_shooter, origin);
 		const RE::NiPoint3 velocity0 = direction * Constants::kThrowInitialSpeed;
 
+		// Sonido del silbido de lanzamiento: disparado aquí mismo, síncrono,
+		// en vez de dentro del callback de Physics::SpawnReplica más abajo
+		// (bug reportado por el usuario, 2026-08-08: sonaba demasiado
+		// tarde) -- solo necesita origin, ya conocido en este punto, no
+		// hace falta esperar a que el 3D de la réplica cargue (~unos pocos
+		// Constants::kTickInterval de retraso real, ver Physics::SpawnReplica)
+		// para reproducirlo.
+		Audio::PlayReliableOneShot(origin, Constants::kThrowLaunchSoundLocalFormID, Constants::kThrowLaunchSoundEditorID);
+
 		// Punto de partida real del giro (ver CLAUDE.md, "Arquitectura de
 		// física de proyectiles"): la rotación mundial que tenía la malla
 		// del arma equipada un instante antes de convertirse en réplica --
@@ -168,13 +178,6 @@ namespace Throw
 			}
 
 			logs::info("Throw::LaunchWeapon: réplica lista, iniciando vuelo parabólico.");
-
-			// Sonido (ver 12.- AUDIO/FlightSound): silbido suelto al soltar
-			// el arma más el loop posicional que la sigue durante todo el
-			// vuelo -- en std::shared_ptr porque Physics::TickCallback es
-			// un std::function, que exige que su objetivo sea copiable, y
-			// FlightSound deliberadamente no lo es (ver FlightSound.h).
-			auto flightSound = std::make_shared<Audio::FlightSound>();
 
 			// Rotación LOCAL (respecto al nodo raíz de la réplica) que
 			// reproduce exactamente la pose capturada -- ver
@@ -197,9 +200,6 @@ namespace Throw
 					// hueco real (~un Constants::kTickInterval) hasta que
 					// el bucle de abajo dispare su primer tick.
 					Animation::TickSpin(*replica, 0.0f, launchBaseLocal);
-
-					Audio::PlaySoundOneShot(origin, Constants::kThrowLaunchSoundLocalFormID);
-					flightSound->Start(node3D, Constants::kFlightLoopSoundLocalFormID);
 				}
 			}
 
@@ -208,7 +208,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, launchBaseLocal, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, flightSound, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, launchBaseLocal, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -272,8 +272,8 @@ namespace Throw
 					// dejar el giro congelado en el ángulo arbitrario que
 					// tuviera al golpear, se endereza hacia la dirección de
 					// vuelo (Constants::kImpactAxisLocal alineado con
-					// travelDir) en una ventana corta
-					// (Constants::kImpactStraightenDuration).
+					// travelDir) en una ventana derivada del ángulo a
+					// corregir (Constants::kImpactStraightenAngularSpeed).
 					//
 					// Punto 6: contra un actor, no basta con detenerse — hay
 					// que aplicar daño/parálisis y seguir su posición
@@ -296,9 +296,15 @@ namespace Throw
 							const RE::NiMatrix3 impactBlendFromLocal = Animation::GetSpinLocalRotation(a_refr);
 							const RE::NiMatrix3 impactTargetLocal = Animation::ComputeImpactAlignment(rootWorld, impactBlendFromLocal, travelDir);
 
-							auto straightenToken = Physics::StartTickLoop(a_handle, [impactBlendFromLocal, impactTargetLocal, straightenElapsed = 0.0f](RE::TESObjectREFR& a_stuckRefr, float a_deltaSeconds) mutable {
+							// Duración a velocidad angular constante, no fija
+							// -- ver el comentario de
+							// Constants::kImpactStraightenAngularSpeed.
+							const float correctionAngle = Math::RotationAngle(impactBlendFromLocal, impactTargetLocal);
+							const float straightenDuration = std::clamp(correctionAngle / Constants::kImpactStraightenAngularSpeed, Constants::kImpactStraightenMinDuration, Constants::kImpactStraightenMaxDuration);
+
+							auto straightenToken = Physics::StartTickLoop(a_handle, [impactBlendFromLocal, impactTargetLocal, straightenDuration, straightenElapsed = 0.0f](RE::TESObjectREFR& a_stuckRefr, float a_deltaSeconds) mutable {
 								straightenElapsed += a_deltaSeconds;
-								const float blend = straightenElapsed / Constants::kImpactStraightenDuration;
+								const float blend = straightenElapsed / straightenDuration;
 								Animation::TickSpinStraighten(a_stuckRefr, impactBlendFromLocal, impactTargetLocal, blend);
 								a_stuckRefr.Update3DPosition(true);
 								return blend < 1.0f;

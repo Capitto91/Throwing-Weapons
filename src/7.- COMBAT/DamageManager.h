@@ -41,8 +41,9 @@ namespace Combat
 	// impacto (ver Throw::LaunchWeapon) -- punto 10 (segunda mitad, caso
 	// impacto): el mismo bucle de seguimiento endereza el giro
 	// (Constants::kImpactAxisLocal alineado con a_travelDirection) durante
-	// los primeros Constants::kImpactStraightenDuration segundos, en vez
-	// de dejarlo congelado en el ángulo arbitrario que tuviera al golpear.
+	// una ventana derivada del ángulo a corregir (ver
+	// Constants::kImpactStraightenAngularSpeed), en vez de dejarlo congelado
+	// en el ángulo arbitrario que tuviera al golpear.
 	void BeginEmbeddedEffect(
 		RE::Actor*                              a_attacker,
 		RE::Actor*                              a_target,

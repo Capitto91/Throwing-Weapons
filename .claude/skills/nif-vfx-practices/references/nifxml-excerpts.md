@@ -488,7 +488,76 @@ Otros dos bloques nuevos, vistos en las mallas vanilla:
 
 `NiBillboardNode` envuelve los emisores en `lightspellprojectile.nif`
 (sprites que siempre miran a cámara). `BSValueNode` aparece en
-`orcisharrowprojectile.nif`/`boltprojectile.nif` — el propio `nif.xml` dice
-"Found on fxFire effects", sin más detalle sobre para qué se usa
-exactamente aquí; no se ha investigado más a fondo, no asumir su función
-sin comprobarlo si hace falta usarlo.
+`orcisharrowprojectile.nif`/`boltprojectile.nif`.
+
+**`BSValueNode` resuelto (2026-08-07, vía WebSearch, `ck.uesp.net/wiki/AddOnNode`
+— fetch directo de la página bloqueado por el sitio, cita basada en el
+resumen que devolvió la búsqueda, no en el HTML completo, así que
+confírmalo tú mismo en la wiki si el detalle exacto importa):** es el
+mecanismo de composición modular de efectos de Bethesda. Su campo `Value`
+(uint) es el ID numérico de un form **AddOnNode** de la Creation Kit; en
+tiempo de ejecución el motor busca ese form, carga el NIF que referencia, y
+copia su contenido en el punto donde está el `BSValueNode`. Ejemplo citado:
+`Effects\CWFXCatapultProjectile.nif` usa varios `BSValueNode` con IDs
+distintos (5, 6, 71, 74) para incluir, solo por referencia, los efectos de
+chispas/humo/llamas/estela de humo de un proyectil de catapulta de la
+Guerra Civil — cada pieza es un NIF reutilizable aparte, no todo horneado
+en un único fichero. Alternativa real a "todo en un nodo hijo del propio
+NIF del arma" (el patrón que ya usa este proyecto para el giro) — para el
+caso de la estela del hacha, probablemente no compensa introducir un tipo
+de form nuevo (`AddOnNode`) en el pipeline solo por esto, pero es la forma
+"nativa" en que Bethesda compone efectos con varias piezas.
+
+## Efectos de mano ("handeffect") — bloques nuevos vistos en NIFs vanilla
+
+**Fuente de los NIFs:** `_reference/Nif examples/meshes/magic/lightningstormhandeffects.nif`
+y `shockhandeffects.nif` (vanilla, efectos de mano de tormenta/shock).
+Inspeccionados el 2026-08-07 con los métodos (a) y (c) de `SKILL.md`. Ver
+la sección "Efectos de mano" de `SKILL.md` para la lectura completa
+(arquitectura multi-fase, `BSBehaviorGraphExtraData`, valores decodificados).
+
+```
+<niobject name="BSPSysInheritVelocityModifier" inherit="NiPSysModifier" module="BSParticle" versions="#BETHESDA#">
+    <field name="Inherit Object" type="Ptr" template="NiAVObject" />
+    <field name="Chance To Inherit" type="float" default="100.0" />
+    <field name="Velocity Multiplier" type="float" default="0.5" />
+    <field name="Velocity Variation" type="float" />
+</niobject>
+
+<niobject name="NiPSysEmitterInitialRadiusCtlr" inherit="NiPSysModifierFloatCtlr" module="NiParticle">
+    Animates the size value on an NiPSysEmitter object.
+</niobject>
+
+<niobject name="NiPSysEmitterLifeSpanCtlr" inherit="NiPSysModifierFloatCtlr" module="NiParticle">
+    Animates the lifespan value on an NiPSysEmitter object.
+</niobject>
+
+<niobject name="BSBehaviorGraphExtraData" inherit="NiExtraData" module="BSMain" versions="#SKY_AND_LATER#">
+    Links a nif with a Havok Behavior .hkx animation file
+    <field name="Behaviour Graph File" type="NiFixedString">Name of the hkx file.</field>
+    <field name="Controls Base Skeleton" type="bool">Unknown, has to do with blending appended bones onto an actor.</field>
+</niobject>
+```
+
+`BSPSysInheritVelocityModifier`: hace que las partículas hereden parte del
+movimiento de otro objeto (`Inherit Object`) — relevante si las chispas de
+una estela de arma en vuelo deben arrastrar algo de la velocidad del arma
+en vez de quedarse flotando en el punto donde nacieron.
+
+`BSBehaviorGraphExtraData` (visto también, sin resolver su función exacta
+hasta ahora, en el propio NIF del hacha de Kratos como "BGED"): confirma
+que su propósito real es enlazar el NIF con un `.hkx` de Havok concreto —
+en los handeffects, sincroniza qué `NiControllerSequence` (`mIntro`,
+`mCharge`, `mReady`, `mCast`...) se reproduce con la máquina de estados de
+animación real del hechizo.
+
+## Mecanismo CK de un "handeffect" (Magic Effect → Casting Art)
+
+**Fuente:** WebSearch, resumen de `ck.uesp.net/wiki/MagicEffect_Script`
+(fetch directo de la página bloqueado por el sitio — cita basada en el
+resumen de búsqueda, no en el HTML completo; confirmar en la wiki si el
+nombre exacto del campo importa). El script `MagicEffect` expone funciones
+para leer/escribir "el arte que se muestra en las manos mientras se lanza
+el hechizo" — es el registro **Magic Effect** de la Creation Kit el que
+enlaza un NIF de handeffect con un hechizo concreto, no algo que decida el
+NIF por sí solo.
