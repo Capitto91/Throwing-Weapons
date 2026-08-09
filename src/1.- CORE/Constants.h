@@ -925,4 +925,52 @@ namespace Constants
 	// cualquier atenuación por distancia/categoría que aplique el propio
 	// motor.
 	inline constexpr float kSoundHandleVolume = 1.0f;
+
+	// -- VFX de movimiento (chispas), puro polish sin punto numerado en
+	// Mecanica del arma.txt -- activo mientras el arma se mueve de verdad
+	// (State::kAiming/kThrowing/kThrown/kCalling/kReturning, a petición del
+	// usuario), apagado en reposo (kInHand) o clavada (kStuck). Ver
+	// 8.- ANIMATION/WeaponVFX.h/.cpp.
+	//
+	// Historial de arquitectura (ver CHANGELOG.md para el detalle completo
+	// de cada ronda): 1) RE::BSTempEffectParticle::Spawn -- cargaba el
+	// modelo de verdad pero nunca renderizó nada; 2) Activator real vía
+	// PlaceObjectAtMe + RE::NiNode::AttachChild -- probado incluso con un
+	// objeto garantizado bueno (copia del arma equipada), tampoco renderizó
+	// nada; 3) Activator real + bucle de tick manual (confirmado que SÍ
+	// renderiza -- la prueba con el arma equipada se vio en el juego) pero,
+	// con el .nif editado para no depender de "fToggleBlend" (manager y
+	// secuencias borrados), tampoco mostraba las chispas ni en el propio
+	// preview de la Creation Kit (el vanilla sin tocar sí se ve ahí) --
+	// borrar el manager rompe algo que el formato no explica por sí solo.
+	//
+	// Arquitectura actual: el .nif vuelve a ser una copia vanilla de
+	// fxsparkfountaintoggle.nif sin tocar (manager + secuencias partA/partB
+	// intactas). En vez de depender del script FXSetBlendVariableScript
+	// (Papyrus, solo se ejecuta sobre una referencia real cargada por el
+	// motor normal, no aplicable aquí), Animation::StartTicking llama a
+	// RE::IAnimationGraphManagerHolder::SetGraphVariableFloat("fToggleBlend", ...)
+	// directamente en C++ sobre la referencia recién colocada -- mismo
+	// mecanismo que el script, sin pasar por Papyrus. Ahora sí es una
+	// referencia real (TESObjectREFR, vía PlaceObjectAtMe) con grafo de
+	// animación propio -- a diferencia del primer intento
+	// (BSTempEffectParticle, sin grafo), esta llamada es válida.
+	//
+	// Activator propio, creado por el usuario en la Creation Kit copiando
+	// el vanilla FXSparkFountainToggleHeavy: EditorID
+	// CAP_ThorMjolnir_Activator_Sparkles, FormID dado por el usuario tal
+	// cual en xEdit/CK (0x01014B57) -- ThorMjolnirOAR.esp tiene el flag ESL
+	// activo (ver CLAUDE.md), así que se enmascara a 12 bits: 0x01014B57 &
+	// 0xFFF = 0xB57.
+	inline constexpr RE::FormID kMovementVfxActivatorLocalFormID = 0xB57;
+
+	// Graph variable que el script vanilla (FXSetBlendVariableScript) pone
+	// en OnLoad() -- ver arriba. Sin confirmar todavía qué extremo (0.0 o
+	// 1.0) corresponde a la variante "Heavy" (más partículas, más rápidas)
+	// frente a la más floja -- 1.0 es la primera prueba, a falta de
+	// verificarlo en el juego contra las dos.
+	inline constexpr const char* kMovementVfxToggleBlendVariable = "fToggleBlend";
+	inline constexpr float       kMovementVfxToggleBlendValue = 1.0f;
+
+	inline constexpr float kMovementVfxScale = 1.0f;  // placeholder, pendiente de ajustar en el juego
 }

@@ -235,6 +235,35 @@ concreto, no asumas que el campo no existe en el formato — puede ser solo
 que esta build no lo conoce todavía; contrástalo contra el extracto local
 antes de descartarlo.
 
+### e) Scripts adicionales, validados 2026-08-09 (sesión de `fxsparkfountaintoggle.nif`/spark fountain)
+
+- `scripts/nif_sequence_decode.py`: decodifica `NiControllerManager` (secuencias
+  que referencia, `Object Palette`) y cada `NiControllerSequence` (`Cycle
+  Type`/`Frequency`/`Start Time`/`Stop Time` + su lista `Controlled Blocks`
+  completa, con el `Interpolator`/`Controller` de cada entrada y sus nombres
+  reales vía tabla de strings — `Node Name`/`Controller Type`/`Interpolator
+  ID`). Es la herramienta correcta para "¿qué anima esta secuencia y con qué
+  interpolador?" sin tener que teclear los offsets a mano cada vez. Uso:
+  `python nif_sequence_decode.py fichero.nif`.
+- `scripts/nif_keydata_decode.py`: decodifica un `NiFloatData` (`KeyGroup<float>`)
+  entero — número de claves, tipo de interpolación (`LINEAR_KEY`/`QUADRATIC_KEY`)
+  y cada clave con `Time`/`Value` (+ `Forward`/`Backward` si es
+  `QUADRATIC_KEY`). Uso: `python nif_keydata_decode.py fichero.nif
+  <índice_bloque> [índice_bloque...]`.
+- `scripts/nif_psysdata_maxparticles.py`: decodifica `NiPSysData`, en
+  particular **`BS Max Vertices`** (ver más abajo, "El límite de partículas
+  simultáneas") — específico de la versión 20.2.0.7/`bs_version`≥100
+  (macro `#BS202#` de `nif.xml`). Uso: `python nif_psysdata_maxparticles.py
+  fichero.nif`.
+
+Los tres siguen el mismo patrón que los anteriores (importan
+`nif_header_walk`, hay que ejecutarlos desde `scripts/` o con esa carpeta en
+`PYTHONPATH`) y están validados contra un fichero real de este proyecto
+(comprobado que el tamaño de bloque calculado cuadra con el real, o — para
+`NiPSysData`, donde varios campos finales no aplican en BS202 y el cuadre no
+es exacto — que los datos que sí caen dentro de la parte calculada tienen
+sentido real, ver el comentario del propio script).
+
 ### Sobre editar un NIF por script (no solo leer)
 
 Técnicamente es posible escribir bytes en un `.nif` con Python (PyFFI
@@ -570,6 +599,224 @@ releyendo el fichero con los métodos (a)/(c) después.
   (generación, mutación, subdivisión, nº de ramas y su variación, longitud
   y su variación, ancho, offset de arco) — específico de efectos de rayo,
   no aplicable a un trail de arma sin más.
+
+## Activación de partículas Bethesda vía `NiControllerManager` + graph variable (sesión larga, 2026-08-09 — `fxsparkfountaintoggle.nif`/`ThorMjolnirSparks.nif`)
+
+Caso de estudio completo, con muchas rondas de prueba real en el juego y en
+el preview de la Creation Kit — el patrón más importante que ha salido de
+esta skill hasta ahora, porque es genérico a **cualquier NIF de partículas
+"toggle" de Bethesda** (nombre típico `FXSparkFountainToggle*`,
+`FX*Toggle*`), no solo a este fichero.
+
+**El error de fondo, cometido y corregido dos veces en esta sesión (con dos
+NIFs distintos): borrar `NiControllerManager` + sus `NiControllerSequence`
+no es la forma de conseguir que un NIF de partículas se reproduzca solo.**
+Aunque la cadena de controladores "real" del sistema de partículas
+(`NiPSysUpdateCtlr`/`NiPSysEmitterCtlr`/etc., colgada directamente del
+campo `Controller` del propio `NiParticleSystem`, independiente del
+manager) quede estructuralmente intacta y con el flag `kActive` puesto,
+**no se reproduce nada** — ni en el preview de la CK, ni en el juego real.
+Confirmado sustituyendo también el mecanismo de carga (de
+`RE::BSTempEffectParticle::Spawn` a un `Activator` real colocado con
+`PlaceObjectAtMe`) para descartar que fuera el mecanismo de C++: con el
+`.nif` editado (sin manager) seguía sin verse nada incluso con la
+referencia colocada y confirmada correctamente.
+
+**Por qué (diagnóstico verificado, no solo teoría)**: `NiControllerManager`
+no tiene ningún campo en el formato que diga "reproduce esta secuencia por
+defecto" (`Cumulative`/`Num Controller Sequences`/`Controller
+Sequences`/`Object Palette`, ver `nif.xml`) — la selección de qué secuencia
+suena, y con qué peso, es **siempre externa**, vía una graph variable con
+nombre (`fToggleBlend` en este fichero) que un script Papyrus adjunto al
+`Activator` vanilla (`FXSetBlendVariableScript`, encontrado en
+`Data\Scripts\Source\FXSetBlendVariableScript.psc` del propio juego)
+escribe en su evento `OnLoad()`:
+
+```papyrus
+Event OnLoad()
+    SetAnimationVariableFloat("fToggleBlend", myfToggleBlend)
+EndEvent
+```
+
+Sin manager, no hay nada que seleccionar. Con manager pero sin que nadie
+ponga esa variable, tampoco se selecciona nada — el resultado visual es el
+mismo (nada) en los dos casos, lo que hace fácil confundir "el manager
+sobra" con "falta activarlo". **La solución correcta: dejar el `.nif`
+exactamente como vino (manager + secuencias intactas) y poner la graph
+variable a mano** — o bien reproduciendo el script vanilla en una
+referencia real colocada por el mod (recomendado si el objeto se coloca
+como `Activator`/`TESObjectREFR`, ver la sección de C++ más abajo), o bien
+(si de verdad hace falta que el NIF se autoactive sin ningún actor
+Papyrus/C++ de por medio) explorando si `Object Palette`/algún flag
+adicional del manager permite fijar una secuencia por defecto — no
+investigado en esta sesión porque la vía de la graph variable resultó
+suficiente.
+
+### Estructura interna de un `NiControllerManager` con variantes ("Heavy"/"Light", `partA`/`partB`)
+
+Cada `NiControllerSequence` (`partA`, `partB` en este fichero) tiene su
+**propia** lista `Controlled Blocks`, con un `Interpolator`/`Data`
+**dedicado** para cada parámetro animado (`NiPSysEmitterLifeSpanCtlr`,
+`NiPSysEmitterInitialRadiusCtlr`, `NiPSysEmitterSpeedCtlr`,
+`NiPSysEmitterCtlr`→`BirthRate`, `NiPSysEmitterCtlr`→`EmitterActive`) — **no
+comparte los interpoladores** con la cadena "real"/directa del
+`NiParticleSystem` (esos, los que cuelgan de `Controller` en el propio
+`NiParticleSystem`, suelen ser `NiBlendFloatInterpolator`/`NiBlendBoolInterpolator`
+con `Manager Controlled=true` y `Value` inválido — `-3.4e38`, el marcador de
+"sin valor propio, lo rellena el manager en tiempo real" — no editar esos
+directamente, nunca tienen efecto). **Para cambiar el valor real de un
+parámetro (velocidad, tasa de nacimiento, vida, radio inicial...) de una
+variante concreta, edita el `NiFloatData` de ESA secuencia** (localízalo con
+`nif_sequence_decode.py`, columna `Interp=...`, sigue su `Data`). En este
+fichero, valores reales decodificados del vanilla sin tocar:
+
+| | `partA` ("Heavy") | `partB` (floja) |
+|---|---|---|
+| LifeSpan | 2.0 | 1.0 |
+| InitialRadius | 2.0 | 1.0 |
+| Speed | 300.0 | 90.0 |
+| BirthRate | 30.0 | 9.0 |
+| Cycle Type / Stop Time | LOOP / 0.333s | LOOP / 0.3s |
+
+Ambas secuencias vienen con un **bucle muy corto (~0.3s)** — pensado para
+mezclarse en tiempo real entre las dos según `fToggleBlend` varía
+continuamente (uso vanilla: una fuente que "respira" entre floja y fuerte),
+no para usarse a intensidad fija y bucle largo como necesita este proyecto.
+
+### Trampa de las tangentes al alargar el bucle de una secuencia
+
+Si se alarga `Stop Time` de una secuencia (p. ej. de 0.3s a 40s para que el
+bucle casi no se note) hace falta **también** actualizar el `Time` de la
+última clave de cada `NiFloatData` que uses — si se deja en el valor
+antiguo, la interpolación queda indefinida/mantenida más allá de la última
+clave según el motor, no necesariamente plana. Y aunque se actualice el
+`Time` correctamente, si el tipo de interpolación es `QUADRATIC_KEY`
+(Hermite, con tangentes `Forward`/`Backward` por clave), **las tangentes no
+se reescalan solas** al mover las claves en el tiempo — una tangente
+calculada para un tramo de 0.3s, aplicada ahora sobre un tramo de 40s,
+sigue produciendo una curva real (no plana) aunque los dos extremos tengan
+el mismo `Value`, y ese "bache" en medio del tramo puede leerse como un
+pulso/parpadeo periódico si el valor afecta a birth rate/velocidad/vida.
+Confirmado en el juego: con `Backward=-4800` sin corregir en la segunda
+clave de `LifeSpan`, el efecto seguía pulsando pese a que `Speed`/`BirthRate`
+ya estaban arregladas.
+
+**Arreglo más robusto, no solo "poner las tangentes a 0"**: si el valor
+debe ser constante durante todo el bucle, **reduce `Num Keys` a 1** (una
+sola clave en `Time=0.0`) — con una sola clave no hay nada que interpolar,
+el valor se mantiene fijo indefinidamente sin depender de que la duración
+del bucle coincida con ningún `Time` de clave. Cambia también
+`Interpolation` a `LINEAR_KEY` (con una sola clave da igual el tipo, pero
+así no quedan campos `Forward`/`Backward` sueltos). Usa
+`nif_keydata_decode.py` para confirmar antes/después.
+
+### El límite de partículas simultáneas — `BS Max Vertices`, el campo más fácil de pasar por alto
+
+**Síntoma característico, para reconocerlo sin tener que redescubrirlo**: al
+subir el `Birth Rate` de un sistema, las partículas salen a ráfagas en vez
+de en flujo continuo — un tramo "encendido" corto seguido de un tramo
+"apagado" mucho más largo, en bucle regular. **El tramo apagado dura
+aproximadamente lo mismo que el `Life Span` de la partícula**; el tramo
+encendido dura aproximadamente `limite / BirthRate` segundos. Si el patrón
+encaja con esa proporción, no es un problema de la secuencia/manager (ver
+más arriba) — es este límite.
+
+**Causa**: `NiPSysData` (la data del `NiParticleSystem`, no del emisor)
+lleva un campo que en versiones antiguas del formato se llama `Num
+Vertices` pero que, específicamente en Bethesda 20.2.0.7 (Skyrim SE/AE, la
+macro `#BS202#` de `nif.xml`), se renombra a **`BS Max Vertices`** y pasa a
+significar el número máximo de partículas vivas a la vez — no es un dato
+sobre la malla (`NiPSysData` en BS202 no reserva vértices/normales/UVs
+propios pese a llevar los flags `Has Vertices`/`Has Normals`/etc., ver el
+comentario del propio `nif.xml`: "Vertices, Normals, Tangents, Colors, and
+UV arrays do not have length for NiPSysData regardless of 'Num' or
+booleans"). Si `Birth Rate × Life Span` (la demanda en régimen permanente)
+supera este límite, el sistema se llena casi al instante y deja de nacer
+nada hasta que las partículas más viejas mueran y liberen hueco —
+exactamente el patrón de ráfagas descrito arriba. En
+`fxsparkfountaintoggle.nif` vanilla, este límite venía en **`62`** —
+suficiente para las tasas de nacimiento vanilla (9-30/s con vida 1-2s, unas
+9-60 partículas en régimen permanente) pero no para valores mucho más
+altos.
+
+**Cómo verlo en NifSkope**: bloque `NiPSysData` (el hijo `Data` del
+`NiParticleSystem`), dentro de su sub-estructura `Data`/`BS Max Vertices`
+(puede aparecer etiquetado igual que `Num Vertices` en builds de NifSkope
+con un `nif.xml` embebido más antiguo que no conozca el renombrado BS202 —
+si ves `Num Vertices` en un `NiPSysData` de un NIF de Skyrim SE, es este
+mismo campo). **Arreglo**: súbelo por encima de tu demanda real
+(`BirthRate × LifeSpan`, con margen) — no hay motivo para no dejarlo
+generoso (500, 1000...) salvo coste de rendimiento en sistemas con miles de
+partículas reales, irrelevante para un VFX de arma.
+
+**Decodificación real, verificada 2026-08-09**: ver `scripts/nif_psysdata_maxparticles.py`
+— el offset hasta este campo (`Group ID` 4 bytes + `BS Max Vertices` ushort
+2 bytes, justo al principio del bloque) se validó comprobando que los
+campos que vienen varios pasos después en el mismo bloque (`Num Subtexture
+Offsets`/`Subtexture Offsets`) salían con sentido real (una cuadrícula UV
+4×4 coherente, offsets de 0.25 en patrón regular) en vez de basura — señal
+de que el layout intermedio (incluido `BS Max Vertices`) está bien
+calculado, no solo que "compila".
+
+## Enganchar un VFX de partículas a un objeto en movimiento, por código (C++) — qué funciona y qué no
+
+Fuera del ámbito estricto de "editar el `.nif`", pero surgido directamente
+de intentar hacer visible un NIF de partículas Bethesda desde un plugin
+SKSE — documentado aquí porque condiciona qué diseño de NIF tiene sentido
+(p. ej., si vas a usar `BSTempEffectParticle`, un NIF que dependa de una
+graph variable externa nunca va a funcionar, sea cual sea su contenido).
+Tres mecanismos probados en el juego real, por este orden, cada uno
+descartado con evidencia concreta antes de pasar al siguiente:
+
+1. **`RE::BSTempEffectParticle::Spawn`** (carga un `.nif` suelto por ruta,
+   sin formulario de por medio) — **descartado**: el modelo carga de
+   verdad (confirmado con `particleObject` no nulo tras un margen real,
+   comprobado con logging), pero nunca llega a renderizar nada, con
+   ninguna combinación de `a_flags` (probado `0` y `7`, este último
+   recuperado del historial de git de un intento anterior del propio
+   proyecto) ni de escala. Sospecha razonada y no descartada: esta API no
+   tiene grafo de animación propio (no es una `TESObjectREFR`, no hereda
+   `IAnimationGraphManagerHolder`), así que no hay forma de poner la graph
+   variable que un NIF de partículas Bethesda "toggle" necesita (ver
+   sección anterior) — coherente con que el modelo cargue pero no se
+   active nunca.
+2. **`RE::TESObjectREFR::PlaceObjectAtMe` (Activator real) + `RE::NiNode::AttachChild`**
+   sobre el hueso/nodo objetivo — **descartado con una prueba decisiva**:
+   probado incluso enganchando, en vez del Activator de partículas, una
+   copia de un objeto garantizado bueno (el arma que el proyecto ya
+   renderiza sin problema en todo el resto del código) — tampoco se vio
+   nada, sosteniendo la prueba 15+ segundos reales. Confirma que el fallo
+   no es del Activator/NIF de partículas en absoluto, es del propio
+   `AttachChild` para este uso. Sospecha razonada, no confirmada:
+   `AttachChild` mueve el nodo 3D de verdad, pero la referencia
+   (`TESObjectREFR`) puede seguir creyendo, a efectos de
+   culling/streaming/visibilidad de alto nivel, que sigue en las
+   coordenadas donde la colocó `PlaceObjectAtMe` originalmente — mismo tipo
+   de desajuste "posición lógica vs. nodo 3D real" ya documentado en
+   `CLAUDE.md` para Havok (`SetPosition`/`SetAngle` no actualizan el
+   `bhkRigidBody` por sí solos), aquí quizás a nivel de renderizado.
+3. **`PlaceObjectAtMe` + control manual por tick** (`SetPosition` +
+   sincronizar Havok + refrescar el nodo visual cada ~16ms, el mismo patrón
+   ya usado y probado en el proyecto para mover la réplica del arma) —
+   **funciona, confirmado con la misma prueba del arma equipada**: sí se
+   vio, siguiendo al objetivo con fluidez. Es el único de los tres que
+   renderiza de forma fiable. Con el Activator real (en vez del arma de
+   prueba) + la graph variable puesta a mano (ver siguiente punto), el
+   efecto de partículas se vio por fin correctamente.
+
+**Cómo poner la graph variable desde C++** (equivalente exacto al script
+Papyrus `FXSetBlendVariableScript`, sin pasar por Papyrus): `RE::TESObjectREFR`
+hereda `IAnimationGraphManagerHolder` (confirmado contra el header real,
+`lib/commonlibsse-ng/include/RE/T/TESObjectREFR.h`), que expone
+`SetGraphVariableFloat(const BSFixedString& a_variableName, float a_in)`
+(`RE/I/IAnimationGraphManagerHolder.h`) — llamar esto sobre la referencia
+recién colocada, justo después de confirmar que tiene 3D cargado (mismo
+momento en que se pondría en modo Havok `kKeyframed`), reproduce
+exactamente lo que el script hace en `OnLoad()`. Solo es posible sobre una
+referencia real (`TESObjectREFR`) — es la razón concreta por la que el
+intento 1 (`BSTempEffectParticle`) no podía funcionar para este tipo de
+NIF, y otra razón más para preferir el mecanismo 3 sobre el 1 siempre que
+el NIF dependa de una graph variable.
 
 ## Formato de salida al responder
 

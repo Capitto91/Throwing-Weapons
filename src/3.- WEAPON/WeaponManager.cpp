@@ -11,15 +11,77 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponVFX.h"
 
 #include <thread>
 
 namespace Weapon
 {
+	namespace
+	{
+		// Ver el comentario de TransitionState en el header.
+		enum class VfxTarget
+		{
+			kNone,
+			kRealWeapon,
+			kReplica
+		};
+
+		VfxTarget GetVfxTargetForState(State a_state)
+		{
+			switch (a_state) {
+			case State::kAiming:
+			case State::kThrowing:
+				return VfxTarget::kRealWeapon;
+			case State::kThrown:
+			case State::kCalling:
+			case State::kReturning:
+				return VfxTarget::kReplica;
+			default:
+				return VfxTarget::kNone;  // kInHand, kStuck
+			}
+		}
+	}
+
 	WeaponManager* WeaponManager::GetSingleton()
 	{
 		static WeaponManager singleton;
 		return &singleton;
+	}
+
+	void WeaponManager::TransitionState(State a_newState)
+	{
+		const auto oldTarget = GetVfxTargetForState(weaponState.GetState());
+		weaponState.SetState(a_newState);
+		const auto newTarget = GetVfxTargetForState(a_newState);
+
+		logs::info("WeaponManager::TransitionState: -> {} (oldTarget={}, newTarget={}).",
+			static_cast<int>(a_newState), static_cast<int>(oldTarget), static_cast<int>(newTarget));
+
+		if (newTarget == oldTarget) {
+			return;
+		}
+
+		Animation::StopMovementVFX();
+
+		switch (newTarget) {
+		case VfxTarget::kRealWeapon:
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Animation::StartMovementVFXOnActor(*player);
+			}
+			break;
+		case VfxTarget::kReplica:
+			// Excepción kThrowing->kThrown, ver el comentario del header:
+			// si el handle todavía no es válido, la réplica no existe
+			// todavía -- ThrowWeapon lo arranca a mano en cuanto
+			// onSpawned confirme un handle real.
+			if (auto handle = weaponState.GetActiveReplicaHandle(); handle.get()) {
+				Animation::StartMovementVFXOnReplica(handle);
+			}
+			break;
+		case VfxTarget::kNone:
+			break;
+		}
 	}
 
 	void WeaponManager::OnAimButtonDown()
@@ -48,7 +110,7 @@ namespace Weapon
 			// una pantalla de carga a mitad de la pulsación): no hay nada
 			// que deshacer todavía, así que reiniciamos el ciclo con la
 			// pulsación actual en vez de quedarnos atascados.
-			weaponState.SetState(State::kInHand);
+			TransitionState(State::kInHand);
 			BeginAiming();
 			break;
 		default:
@@ -91,7 +153,7 @@ namespace Weapon
 		weaponState.SetActiveReplicaHandle({});
 		weaponState.SetStuckActorHandle({});
 		weaponState.SetActiveTickToken({});
-		weaponState.SetState(State::kInHand);
+		TransitionState(State::kInHand);
 
 		// Capturado antes de limpiarlo más abajo -- solo si nuestro propio
 		// código había escrito iRightHandType a mano (BeginCallAnimation)
@@ -216,7 +278,7 @@ namespace Weapon
 			// El arma sigue en la mano (el desequipar solo pasa al soltar);
 			// solo reordenamos el estado por si la pulsación de soltar se
 			// perdió durante la carga.
-			weaponState.SetState(State::kInHand);
+			TransitionState(State::kInHand);
 			Animation::SetAimZoom(false);
 			break;
 		case State::kThrowing:
@@ -232,7 +294,7 @@ namespace Weapon
 				Animation::SetAnimationDriven(*player, false);
 			}
 			Input::SetMovementLocked(false);
-			weaponState.SetState(State::kInHand);
+			TransitionState(State::kInHand);
 			break;
 		case State::kCalling:
 			// A diferencia de kThrowing, el arma sigue fuera de la mano
@@ -325,7 +387,7 @@ namespace Weapon
 		}
 
 		weaponState.SetActiveWeapon(boundWeapon);
-		weaponState.SetState(State::kAiming);
+		TransitionState(State::kAiming);
 
 		// Zoom de cámara mientras dura el apuntado -- puro polish, no cubierto
 		// por Mecanica del arma.txt (ver Constants::kAimZoomThirdPersonOffset).
@@ -351,7 +413,7 @@ namespace Weapon
 			return;
 		}
 
-		weaponState.SetState(State::kThrowing);
+		TransitionState(State::kThrowing);
 
 		// Fin del zoom de apuntado (ver BeginAiming) -- el gesto de Lanzar ya
 		// no es "apuntando".
@@ -436,7 +498,7 @@ namespace Weapon
 		// leerlo de weaponState.GetState() una vez aquí es kCalling, no
 		// kStuck.
 		wasStuckBeforeCalling = weaponState.GetState() == State::kStuck;
-		weaponState.SetState(State::kCalling);
+		TransitionState(State::kCalling);
 		callAnimationActive = true;
 
 		// Mismo motivo que en BeginThrowAnimation: evitar que moverse
@@ -858,6 +920,18 @@ namespace Weapon
 			Throw::LaunchCallbacks callbacks;
 			callbacks.onSpawned = [this](RE::ObjectRefHandle a_handle) {
 				weaponState.SetActiveReplicaHandle(a_handle);
+
+				// Excepción documentada en TransitionState (ver el header
+				// de WeaponManager): en el instante en que ThrowWeapon
+				// llamó a TransitionState(kThrown), la réplica todavía no
+				// existía -- se engancha aquí, en cuanto el handle real
+				// está listo. Comprobado el estado por si el ciclo ya se
+				// completó/reinició antes de que el 3D terminara de cargar
+				// (mismo criterio que el resto de callbacks async de este
+				// archivo).
+				if (a_handle.get() && weaponState.GetState() == State::kThrown) {
+					Animation::StartMovementVFXOnReplica(a_handle);
+				}
 			};
 			callbacks.onTickStarted = [this](Physics::TickToken a_token) {
 				weaponState.SetActiveTickToken(a_token);
@@ -869,7 +943,7 @@ namespace Weapon
 				// estado) antes de que el impacto se detectase.
 				if (weaponState.GetState() == State::kThrown) {
 					weaponState.SetStuckActorHandle(a_actor);
-					weaponState.SetState(State::kStuck);
+					TransitionState(State::kStuck);
 				}
 			};
 			callbacks.onAutoRecall = [this]() {
@@ -890,7 +964,7 @@ namespace Weapon
 			Throw::LaunchWeapon(player, weapon->As<RE::TESObjectWEAP>(), std::move(callbacks));
 		}
 
-		weaponState.SetState(State::kThrown);
+		TransitionState(State::kThrown);
 	}
 
 	void WeaponManager::BeginReturn(bool a_wasStuck)
@@ -922,7 +996,7 @@ namespace Weapon
 			return;
 		}
 
-		weaponState.SetState(State::kReturning);
+		TransitionState(State::kReturning);
 
 		// Reseteados al arrancar cada regreso -- ver OnPhysicalArrival/
 		// OnCatchReleaseAnimationEvent.
@@ -969,6 +1043,17 @@ namespace Weapon
 
 	void WeaponManager::ReequipAndReset()
 	{
+		// Antes de destruir la réplica: si el VFX de movimiento estaba
+		// colgado de su nodo (State::kReturning, ver TransitionState), hay
+		// que desengancharlo primero -- Physics::DestroyReplica de abajo no
+		// lo sabe, y desenganchar de un nodo que el propio Disable/SetDelete
+		// ya haya empezado a desmontar es justo el tipo de orden a evitar
+		// (ver Animation::StopMovementVFX). TransitionState(kInHand), más
+		// abajo, volvería a llamarlo de todas formas, pero ya sin nada que
+		// cortar -- no-op inofensivo, mismo criterio que el resto del
+		// proyecto.
+		Animation::StopMovementVFX();
+
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
 		weaponState.SetActiveTickToken({});
 
@@ -1019,6 +1104,6 @@ namespace Weapon
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
-		weaponState.SetState(State::kInHand);
+		TransitionState(State::kInHand);
 	}
 }
