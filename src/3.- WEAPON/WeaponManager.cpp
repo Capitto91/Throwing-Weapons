@@ -30,7 +30,6 @@ namespace Weapon
 		VfxTarget GetVfxTargetForState(State a_state)
 		{
 			switch (a_state) {
-			case State::kAiming:
 			case State::kThrowing:
 				return VfxTarget::kRealWeapon;
 			case State::kThrown:
@@ -38,7 +37,7 @@ namespace Weapon
 			case State::kReturning:
 				return VfxTarget::kReplica;
 			default:
-				return VfxTarget::kNone;  // kInHand, kStuck
+				return VfxTarget::kNone;  // kInHand, kAiming, kStuck
 			}
 		}
 	}
@@ -53,6 +52,7 @@ namespace Weapon
 	{
 		const auto oldTarget = GetVfxTargetForState(weaponState.GetState());
 		weaponState.SetState(a_newState);
+
 		const auto newTarget = GetVfxTargetForState(a_newState);
 
 		logs::info("WeaponManager::TransitionState: -> {} (oldTarget={}, newTarget={}).",
@@ -1052,6 +1052,14 @@ namespace Weapon
 		// abajo, volvería a llamarlo de todas formas, pero ya sin nada que
 		// cortar -- no-op inofensivo, mismo criterio que el resto del
 		// proyecto.
+		//
+		// Intento descartado (2026-08-10, ver CHANGELOG.md): dejar que las
+		// partículas ya nacidas murieran solas (Animation::FadeOutMovementVFX,
+		// apagando el modificador emisor en vivo) -- confirmado con log real
+		// que el motor no respeta ese flag para decidir si nacen partículas
+		// nuevas, así que solo conseguía que siguiera naciendo más tiempo
+		// antes de un corte igual de brusco. Revertido a este corte
+		// inmediato.
 		Animation::StopMovementVFX();
 
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());

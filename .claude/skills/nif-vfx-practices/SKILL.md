@@ -818,6 +818,83 @@ intento 1 (`BSTempEffectParticle`) no podía funcionar para este tipo de
 NIF, y otra razón más para preferir el mecanismo 3 sobre el 1 siempre que
 el NIF dependa de una graph variable.
 
+## Detener la emisión de un `NiParticleSystem` en vivo — vía descartada con evidencia real (2026-08-10)
+
+Objetivo que se intentó: al cortar el VFX (atrape, o clavarse), dejar que
+las partículas ya nacidas murieran solas según su propio `LifeSpan` en vez
+de que `Physics::DestroyReplica` las borrara todas de golpe.
+
+**Enfoque probado**: recorrer la jerarquía 3D en vivo de la referencia
+colocada (`NiAVObject::AsNode()`/`GetChildren()`, hasta encontrar un nodo
+cuyo `AsParticlesGeom()` no sea nulo — no hay ningún `AsParticleSystem()`
+específico en `NiObject`, hay que usar la base `NiParticles`), acceder a su
+`NiParticleSystem::GetParticleSystemRuntimeData().modifierList`
+(`NiTPointerList<NiPointer<NiPSysModifier>>`, iterable con range-for),
+localizar el modificador cuyo `order == NiPSysModifier::ORDER::kEmitter`
+(campo real `NiPSysModifier::order`, no hace falta la clase concreta del
+emisor — `commonlibsse-ng` no expone `NiPSysBoxEmitter`/`NiPSysEmitter`,
+pero `SetActive`/`active` ya están en la base `NiPSysModifier`, que sí
+existe) y llamar a su `SetActive(false)` (virtual, `RE/N/NiPSysModifier.h`).
+
+**Resultado, confirmado con log real del juego** (`logs::info` justo
+después de la llamada, releyendo `modifier->active`): el flag se pone
+correctamente a `false` y se queda así — pero el motor sigue naciendo
+partículas nuevas de todas formas. **El motor de Bethesda no usa `active`
+de `NiPSysModifier` para decidir si el emisor se actualiza cada frame**, al
+contrario de lo que sugeriría el comportamiento genérico documentado para
+el SDK NetImmerse. No hay forma de saber esto sin probarlo en el juego —
+la API existe, compila, se ejecuta sin error, y aun así no tiene el efecto
+esperado.
+
+**Efecto secundario a evitar si se reintenta algo parecido**: congelar el
+VFX en su sitio (cancelar su bucle de tick) y esperar antes de destruirlo,
+mientras el emisor sigue naciendo partículas sin que nada lo frene, es
+**peor** que cortar de inmediato — el VFX queda flotando desenganchado más
+tiempo, acumulando más partículas, para acabar cortándolas todas igual de
+golpe al final del margen. Si se prueba una vía de "dejar morir solas las
+partículas", hay que confirmar primero que la emisión realmente se
+detiene antes de añadir cualquier margen de espera.
+
+**Vía alternativa sin probar todavía**: en vez de tocar el modificador por
+C++, bajar el propio graph variable `fToggleBlend` (el mismo mecanismo ya
+usado para encenderlo, ver la sección de arriba) hacia un valor distinto
+de `1.0`. Sin garantías — con `partB` borrado del `.nif`, el manager solo
+tiene una secuencia registrada (`NumSequences=1`), así que no está claro
+qué hace el blend al no tener una segunda secuencia hacia la que
+interpolar (podría no tener ningún efecto, o dejar los interpoladores
+"vivos" en su valor placeholder inválido, `-3.4e38`, ver la sección de
+`NiControllerManager` más arriba).
+
+## Chuleta de bloques — `ThorMjolnirSparks.nif` (valores confirmados 2026-08-10)
+
+Referencia rápida para no tener que repreguntar cada sesión. Todos los
+valores son los que había en el fichero en la fecha indicada — antes de
+fiarte de un valor "actual" aquí, re-decodifica con los scripts de
+`scripts/` (`nif_keydata_decode.py`, `nif_sequence_decode.py`,
+`nif_psysdata_maxparticles.py`), el usuario los sigue editando en
+NifSkope. La numeración de bloque puede cambiar si se borra/añade algo
+(pasó al borrar `partB`) — confirmar con `nif_sequence_decode.py`/grep
+binario antes de dar por buena una tabla vieja.
+
+| # | Bloque | Campo | Efecto | Valor (2026-08-10) |
+|---|--------|-------|--------|---------------------|
+| 7 | `NiFloatData` (partA→`NiPSysEmitterLifeSpanCtlr`) | única key | **Duración de vida de cada partícula** (segundos) | `2.0` |
+| 19 | `NiFloatData` (partA→`NiPSysEmitterInitialRadiusCtlr`) | única key | **Tamaño/radio inicial** (uniforme, ambos ejes) | `2.0` |
+| 21 | `NiFloatData` (partA→`NiPSysEmitterSpeedCtlr`) | única key | **Velocidad inicial** de la partícula al nacer | `40.0` |
+| 23 | `NiFloatData` (partA→`NiPSysEmitterCtlr`, BirthRate) | única key | **Partículas nacidas por segundo** | `150.0` |
+| 31 | `NiPSysData` | `BS Max Vertices` | **Tope duro de partículas simultáneas** — si `BirthRate × LifeSpan` se acerca/supera esto, aparece pulsado a ráfagas (ver sección de más arriba) | `500` |
+| 31 | `NiPSysData` | `Aspect Ratio` / `Aspect Flags` (bit8 `Speed to Aspect Enabled`) / `Aspect2` / `Speed 1` / `Speed 2` | **Forma alargada dependiente de la velocidad**: por debajo de `Speed 1` usa `Aspect Ratio` (cuadrado), por encima de `Speed 2` usa `Aspect2` (alargado), interpola entre medias. `Aspect Flags` bit0 `Velocity Orientation` = el quad se orienta según la dirección de vuelo | `AspectRatio=1.0, Flags=0x101 (VelocityOrientation+SpeedToAspect ON), Aspect2=0.25, Speed1=15.0, Speed2=60.0` |
+| 33 | `BSEffectShaderProperty` | `Source Texture` | **Forma/silueta** de la partícula (textura en escala de grises) | `textures\effects\IceShards01.dds` |
+| 33 | `BSEffectShaderProperty` | `Greyscale Texture` | **Paleta de color** — con el flag `Greyscale_To_PaletteColor` activo, el gris de `Source Texture` indexa esta imagen para sacar el color final | `textures\effects\gradients\GradGreybeardTeach.dds` (candidatas vanilla para azul eléctrico: `GradVioBright.dds`, `GradShockExplosion.dds`, ver sección de color más abajo) |
+| 33 | `BSEffectShaderProperty` | `Base Color` / `Base Color Scale` | Multiplica el resultado de la paleta (blanco = neutro, no tiñe) | `RGBA=(1,1,1,1)`, `Scale=1.25` |
+| 33 | `BSEffectShaderProperty` | `Shader Flags 1` | bit4 = `Greyscale_To_PaletteColor` (activo, es lo que hace funcionar el mecanismo de paleta de arriba) | `0x80000010` |
+| 37 | `NiPSysBoxEmitter` | `Declination` | Dirección del cono de disparo (eje 1). `0`=un sentido, `π`=opuesto, `π/2`=perpendicular | `1.5708` (π/2, 90°) |
+| 37 | `NiPSysBoxEmitter` | `Declination Variation` | Dispersión aleatoria alrededor de `Declination` | `0.1745` rad (~10°) |
+| 37 | `NiPSysBoxEmitter` | `Planar Angle Variation` | **Dispersión cónica alrededor del eje de disparo** (segundo eje) — con `π` (180°) da un abanico casi completo, es el principal responsable de que las partículas salgan "en cono" en vez de compactas | `3.14159` rad (180°) |
+| 37 | `NiPSysBoxEmitter` | `Width` / `Depth` | Tamaño del área rectangular de la que nacen las partículas (footprint del emisor, no de cada partícula) | `Width=20.0, Depth=20.0, Height=0.0` |
+| 37 | `NiPSysBoxEmitter` | `Speed`/`InitialRadius`/`LifeSpan` (estáticos) | **No usar** — estos campos existen pero los pisa el controlador de `partA` cada frame (bloques 21/19/7 de arriba); editarlos aquí no tiene efecto visible | — |
+| 42 | `NiPSysGravityModifier` | `Strength` | Fuerza que tira de la partícula tras nacer — si es mucho mayor que `Speed` (21), domina la trayectoria real y enmascara cambios en `Speed` | `180.0` (`ForceType=planar`, `Axis=(0,0,1)`, `WorldAligned=true`) |
+
 ## Formato de salida al responder
 
 Para cada afirmación concreta sobre estructura NIF:

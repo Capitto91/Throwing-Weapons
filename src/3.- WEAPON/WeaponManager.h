@@ -184,16 +184,17 @@ namespace Weapon
 		// a la llamada directa en las 11 transiciones reales) -- además del
 		// cambio de estado en sí, enciende/apaga el VFX de movimiento (ver
 		// 8.- ANIMATION/WeaponVFX.h) comparando a qué debe engancharse el
-		// VFX antes y después (arma real en mano durante kAiming/kThrowing,
-		// réplica en vuelo durante kThrown/kCalling/kReturning, nada en
-		// kInHand/kStuck) -- solo reenganchar si ese objetivo cambia de
-		// verdad, para no cortar y volver a arrancar el efecto en
-		// transiciones entre dos estados que comparten el mismo objetivo
-		// (p. ej. kAiming->kThrowing, ambos sobre el arma real). Excepción:
-		// la transición kThrowing->kThrown NO arranca aquí el VFX sobre la
-		// réplica -- en ese instante todavía no existe (Throw::LaunchWeapon
-		// la crea de forma asíncrona, ver ThrowWeapon) -- se arranca a mano
-		// en el callback onSpawned, en cuanto el handle real está listo.
+		// VFX antes y después (arma real en mano durante kThrowing, réplica
+		// en vuelo durante kThrown/kCalling/kReturning, nada en
+		// kInHand/kAiming/kStuck -- a petición del usuario, 2026-08-10: sin
+		// VFX mientras solo se está apuntando, todavía sin soltar) -- solo
+		// reenganchar si ese objetivo cambia de verdad, para no cortar y
+		// volver a arrancar el efecto en transiciones entre dos estados que
+		// comparten el mismo objetivo. Excepción: la transición
+		// kThrowing->kThrown NO arranca aquí el VFX sobre la réplica -- en
+		// ese instante todavía no existe (Throw::LaunchWeapon la crea de
+		// forma asíncrona, ver ThrowWeapon) -- se arranca a mano en el
+		// callback onSpawned, en cuanto el handle real está listo.
 		void TransitionState(State a_newState);
 
 		// Fija como arma activa la que hay en la mano derecha y pasa a

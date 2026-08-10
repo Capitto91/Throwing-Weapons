@@ -52,5 +52,14 @@ namespace Animation
 	// Cancela también cualquier espera de carga de 3D todavía pendiente de
 	// StartMovementVFXOnActor/OnReplica. Sin efecto si no había ningún VFX
 	// activo.
+	//
+	// Intento descartado (2026-08-10, ver CHANGELOG.md): dejar que las
+	// partículas ya nacidas murieran solas por su cuenta, apagando en vivo
+	// el modificador emisor (RE::NiPSysModifier::SetActive(false) sobre el
+	// de ORDER::kEmitter) en vez de cortar de golpe -- confirmado con log
+	// real del juego que el flag `active` se pone correctamente, pero el
+	// motor de Bethesda no lo usa para decidir si el emisor nace
+	// partículas nuevas (siguieron naciendo igual). Revertido a este corte
+	// inmediato.
 	void StopMovementVFX();
 }

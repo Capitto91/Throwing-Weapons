@@ -205,4 +205,5 @@ namespace Animation
 			g_activeVfxHandle = {};
 		}
 	}
+
 }
