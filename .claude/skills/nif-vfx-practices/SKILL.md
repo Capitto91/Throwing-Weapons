@@ -855,15 +855,81 @@ golpe al final del margen. Si se prueba una vía de "dejar morir solas las
 partículas", hay que confirmar primero que la emisión realmente se
 detiene antes de añadir cualquier margen de espera.
 
-**Vía alternativa sin probar todavía**: en vez de tocar el modificador por
-C++, bajar el propio graph variable `fToggleBlend` (el mismo mecanismo ya
-usado para encenderlo, ver la sección de arriba) hacia un valor distinto
-de `1.0`. Sin garantías — con `partB` borrado del `.nif`, el manager solo
-tiene una secuencia registrada (`NumSequences=1`), así que no está claro
-qué hace el blend al no tener una segunda secuencia hacia la que
-interpolar (podría no tener ningún efecto, o dejar los interpoladores
-"vivos" en su valor placeholder inválido, `-3.4e38`, ver la sección de
-`NiControllerManager` más arriba).
+**Vía intentada y descartada (2026-08-10)**: crear una `partB` real (copia
+de `partA`, con el sub-valor `EmitterActive` de `NiPSysEmitterCtlr` —
+animable por keyframe, confirmado presente en las dos secuencias del
+vanilla original, aunque ahí siempre en `true`, nunca usado para apagar
+nada de verdad — puesto a `false`), y seleccionarla escribiendo
+`fToggleBlend` a un valor distinto de `1.0`. **Con una sola secuencia
+registrada, `fToggleBlend` no importa (cualquier valor la selecciona, no
+hay nada más con lo que competir) — en cuanto se registra una segunda
+secuencia, su semántica deja de ser fiable.** Probado con dos hipótesis de
+valores opuestas entre sí (`1.0`=partA/`0.0`=partB, y al revés) y las dos
+fallaron de formas distintas y contradictorias (la primera: sin chispas en
+ningún momento; la segunda: sin chispas durante el tramo "encendido", con
+un pico de chispas nuevas justo en el instante que se suponía debía
+apagarlas). **Conclusión: no fiarse de ningún valor concreto de
+`fToggleBlend` en cuanto haya 2+ secuencias registradas en el manager —
+no hay forma de deducirlo sin acceso al código fuente real de Bethesda, y
+cada ronda de prueba cuesta un ciclo completo en el juego.**
+
+**Vía real, API de Gamebryo/NetImmerse en vez de graph variable
+(2026-08-10)**: activar/desactivar una secuencia por referencia directa,
+sin pasar por ninguna graph variable ni adivinar valores numéricos:
+
+- `RE::NiControllerManager::GetSequenceByName(std::string_view)` →
+  `RE::NiControllerSequence*` (`lib/commonlibsse-ng/include/RE/N/NiControllerManager.h`).
+- `RE::NiControllerSequence::Activate(std::uint8_t a_interpIndex, bool
+  a_maxOffset, float a_seqWeight, float a_easeInTime, NiControllerSequence*
+  a_partnerSequence, bool a_transition)` / `Deactivate(float a_easeOutTime,
+  bool a_transition)` (`.../RE/N/NiControllerSequence.h`) — semántica
+  exacta de los parámetros sin documentar en `commonlibsse-ng` (código de
+  ingeniería inversa sin comentarios); usados con `(0, false, 1.0f, 0.0f,
+  nullptr, false)` / `(0.0f, false)` por convención típica del SDK
+  (prioridad 0, peso completo, sin ease-in/out, sin secuencia pareja, sin
+  transición), sin verificar contra este proyecto en concreto.
+- Para llegar al `NiControllerManager` desde una referencia colocada:
+  `RE::NiObjectNET::GetController<T>()` (recorre la cadena `Next` de
+  controladores del propio objeto, comparando RTTI) sobre `Get3D()` —
+  confirmado en `ThorMjolnirSparks.nif` que el manager cuelga directamente
+  del nodo raíz (`BSFadeNode`), no del `NiParticleSystem` (que tiene su
+  propia cadena de controladores en paralelo, ver la chuleta de bloques
+  más abajo) — un solo salto basta, no hace falta recorrer nada más.
+
+Compila y se ejecuta sin error contra los headers reales — pero **también
+descartada**: con log real se confirmó que `Deactivate()` sí funciona
+(`Animating()` pasa a `false` de verdad justo después), pero el propio
+`NiControllerManager` reactivaba `partA` por su cuenta poco después, sin
+que el código tocara esa secuencia para nada — causa nunca identificada,
+posiblemente relacionada con algún comportamiento de fallback/prioridad
+interno del manager cuando ninguna secuencia "gana" del todo. Ni
+`Cumulative` (revisado en la especificación oficial: es sobre acumulación
+de *transformaciones*, para animaciones de locomoción sobre un hueso raíz
+— no tiene nada que ver con qué secuencia de partículas gana) ni ninguna
+otra combinación de `Activate`/`Deactivate` sobre dos secuencias del mismo
+manager resultó fiable. **Conclusión final: no hay forma fiable, con las
+APIs disponibles en `commonlibsse-ng`, de apagar la emisión de una
+secuencia ya en marcha sin destruir la referencia que la contiene.**
+
+### Solución real que sí funciona: dos `.nif` separados, sin ningún toggle
+
+En vez de pelear con el manager, evitarlo por completo: un `.nif`
+"continuo" (bucle normal, una única secuencia) y un `.nif` "de un solo
+uso" — copia del anterior, pero con `Cycle Type=CYCLE_CLAMP` y `BirthRate`
+animado por keyframe hasta `0` dentro de la propia secuencia (el apagado
+va horneado en la animación, no depende de ninguna llamada de C++ una vez
+colocado y activado). Al querer "apagar" el VFX, se coloca el `.nif` de un
+solo uso en la misma posición donde estaba el continuo (naciendo un poco
+antes de que el continuo se destruya, para que no haya ningún frame sin
+partículas visibles) y se deja tranquilo — se apaga solo. Cada `.nif`
+tiene su propio `NiControllerManager` independiente, sin nada compartido
+entre ellos, así que el mecanismo de activación de una sola secuencia
+(demostrado 100% fiable durante toda la sesión, antes de intentar nunca
+alternar dos secuencias en el mismo manager) vuelve a aplicar sin
+problema. Ver `Weapon::Constants`/`Animation::WeaponVFX.cpp`
+(`FadeOutMovementVFX`) y `CHANGELOG.md` v1.14.21 para la implementación
+real. Compila y despliega -- pendiente todavía del FormID real del
+segundo Activator (Creation Kit) y de la prueba final en el juego.
 
 ## Chuleta de bloques — `ThorMjolnirSparks.nif` (valores confirmados 2026-08-10)
 

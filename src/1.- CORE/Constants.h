@@ -841,6 +841,33 @@ namespace Constants
 	inline constexpr std::chrono::milliseconds kCallAnimationTailDuration{ 250 };
 	inline constexpr std::chrono::milliseconds kCatchAnimationTailDuration{ 500 };
 
+	// Margen extra, aparte de kCatchAnimationTailDuration, antes de que
+	// Weapon::WeaponManager::FinishCatchAnimation capture de verdad la
+	// posición del VFX de movimiento para el fundido
+	// (Animation::FadeOutMovementVFX(a_extraSettleDelay=true), ver ese
+	// comentario) -- bug reportado por el usuario (2026-08-10): incluso
+	// con el VFX ya reenganchado a la mano real (RetargetMovementVFXToActor,
+	// ver ReequipAndReset), el chorro final seguía apareciendo "menos de
+	// 0,5s" después de que la animación de Atrape pareciera haber
+	// terminado del todo, y fuera de sitio -- sospecha: el evento
+	// attackStop (disparado en el mismo instante que
+	// kCatchAnimationTailDuration vence) no deja al personaje en su pose
+	// de reposo de un salto; el propio grafo de animación vanilla sigue
+	// mezclando (blend) desde la pose de "sujetando tras golpear" hasta el
+	// reposo real un poco más, sin ningún evento propio que avise cuándo
+	// termina esa mezcla -- durante ese hueco la mano sigue moviéndose de
+	// verdad, así que capturar la posición demasiado pronto (justo al
+	// disparar attackStop) deja el burst fijo en un punto que el brazo
+	// abandona un instante después. Como el VFX sigue activo y
+	// reenganchado a la mano durante todo este margen extra (no se toca
+	// nada de su bucle de tick hasta que de verdad se captura la
+	// posición), alargar la espera antes de esa captura no tiene ningún
+	// coste -- solo pospone el instante exacto en que se congela.
+	// 400ms sin medir con precisión contra el clip real (a diferencia de
+	// kCatchAnimationTailDuration, que sí está medido) -- primer valor
+	// razonable, pendiente de ajustar según el resultado en el juego.
+	inline constexpr std::chrono::milliseconds kCatchVfxSettleDelay{ 400 };
+
 	// Temblor de cámara al cerrar la mano sobre el arma, disparado en el
 	// mismo instante que el reequipado real (WeaponManager::
 	// OnCatchReleaseAnimationEvent, misma anotación PIE.ThorMjolnirCatch ya
@@ -944,33 +971,105 @@ namespace Constants
 	// preview de la Creation Kit (el vanilla sin tocar sí se ve ahí) --
 	// borrar el manager rompe algo que el formato no explica por sí solo.
 	//
-	// Arquitectura actual: el .nif vuelve a ser una copia vanilla de
-	// fxsparkfountaintoggle.nif sin tocar (manager + secuencias partA/partB
-	// intactas). En vez de depender del script FXSetBlendVariableScript
-	// (Papyrus, solo se ejecuta sobre una referencia real cargada por el
-	// motor normal, no aplicable aquí), Animation::StartTicking llama a
-	// RE::IAnimationGraphManagerHolder::SetGraphVariableFloat("fToggleBlend", ...)
-	// directamente en C++ sobre la referencia recién colocada -- mismo
-	// mecanismo que el script, sin pasar por Papyrus. Ahora sí es una
-	// referencia real (TESObjectREFR, vía PlaceObjectAtMe) con grafo de
-	// animación propio -- a diferencia del primer intento
-	// (BSTempEffectParticle, sin grafo), esta llamada es válida.
+	// Arquitectura actual: el .nif (ThorMjolnirSparks.nif) es una copia
+	// vanilla de fxsparkfountaintoggle.nif con una sola secuencia (partB
+	// borrada, ver más abajo el porqué) -- Animation::StartTicking activa
+	// esa secuencia directamente vía RE::NiControllerSequence::Activate
+	// (ver más abajo), no ya vía graph variable.
 	//
-	// Activator propio, creado por el usuario en la Creation Kit copiando
-	// el vanilla FXSparkFountainToggleHeavy: EditorID
-	// CAP_ThorMjolnir_Activator_Sparkles, FormID dado por el usuario tal
-	// cual en xEdit/CK (0x01014B57) -- ThorMjolnirOAR.esp tiene el flag ESL
-	// activo (ver CLAUDE.md), así que se enmascara a 12 bits: 0x01014B57 &
-	// 0xFFF = 0xB57.
+	// Activator "continuo" (chispas mientras el arma se mueve de verdad),
+	// creado por el usuario en la Creation Kit copiando el vanilla
+	// FXSparkFountainToggleHeavy: EditorID CAP_ThorMjolnir_Activator_Sparkles,
+	// FormID dado por el usuario tal cual en xEdit/CK (0x01014B57) --
+	// ThorMjolnirOAR.esp tiene el flag ESL activo (ver CLAUDE.md), así que
+	// se enmascara a 12 bits: 0x01014B57 & 0xFFF = 0xB57.
 	inline constexpr RE::FormID kMovementVfxActivatorLocalFormID = 0xB57;
 
-	// Graph variable que el script vanilla (FXSetBlendVariableScript) pone
-	// en OnLoad() -- ver arriba. Sin confirmar todavía qué extremo (0.0 o
-	// 1.0) corresponde a la variante "Heavy" (más partículas, más rápidas)
-	// frente a la más floja -- 1.0 es la primera prueba, a falta de
-	// verificarlo en el juego contra las dos.
-	inline constexpr const char* kMovementVfxToggleBlendVariable = "fToggleBlend";
-	inline constexpr float       kMovementVfxToggleBlendValue = 1.0f;
+	// Histórico extenso de cómo dejar de mostrar el VFX sin cortarlo en
+	// seco (ver CHANGELOG.md para el detalle completo de cada ronda,
+	// v1.14.8 a v1.14.20): NiPSysModifier::SetActive por C++ (el motor lo
+	// ignora), graph variable "fToggleBlend" con dos secuencias
+	// registradas en el mismo manager (semántica no fiable, dos rondas de
+	// valores contradictorios), RE::NiControllerSequence::Activate/
+	// Deactivate directamente sobre las dos secuencias del mismo manager
+	// (Activate() no siempre reflejaba el estado real, y el manager
+	// reactivaba una secuencia por su cuenta sin que nuestro código la
+	// tocara -- confirmado con log real, causa nunca identificada, fuera
+	// de nuestro alcance).
+	//
+	// Arquitectura final: dos Activators/.nif completamente separados, sin
+	// ningún manager compartido entre ellos y sin ningún toggle entre
+	// secuencias -- cada uno con una única secuencia (mismo mecanismo de
+	// activación ya demostrado 100% fiable durante toda la sesión antes de
+	// tocar partB). El continuo (ThorMjolnirSparks.nif) se usa mientras el
+	// arma se mueve; al apagarse (atrape/clavado), Animation::
+	// FadeOutMovementVFX coloca el Activator "de un solo uso" de abajo en
+	// la misma posición -- nace un poco antes de que el continuo se
+	// destruya (Constants::kMovementVfxSwapOverlapDuration de solape, sin
+	// ningún frame sin partículas visibles) -- y dentro de ese .nif el
+	// apagado ya no depende de C++ en absoluto: BirthRate cae a 0 por su
+	// propia curva de keyframes (CYCLE_CLAMP, ver el propio .nif), así que
+	// las partículas mueren solas de verdad según su LifeSpan.
+	inline constexpr const char* kMovementVfxSequenceName = "partA";
+
+	// Activator "de un solo uso" -- copia de ThorMjolnirSparksOff.nif
+	// (creado por el usuario, copiando el continuo: única secuencia,
+	// CYCLE_CLAMP, BirthRate cae a 0 por su propia curva). EditorID
+	// CAP_ThorMjolnir_Activator_SparklesOff, FormID dado por el usuario tal
+	// cual en la Creation Kit (0x0101561C) -- mismo criterio de enmascarado
+	// ESL que el de arriba: 0x0101561C & 0xFFF = 0x61C.
+	inline constexpr RE::FormID kMovementVfxOffActivatorLocalFormID = 0x61C;
+
+	// Cuánto tiempo MÍNIMO se solapan de verdad el VFX a punto de
+	// destruirse y el que lo releva (recién colocado) antes de que el
+	// primero se destruya -- garantizado, no una simple red de seguridad.
+	// Mecanismo compartido por Animation::ScheduleOldVfxSwap (ver
+	// WeaponVFX.cpp), usado tanto para el relevo continuo→"de un solo
+	// uso" en atrape/clavado (Animation::FadeOutMovementVFX) como para el
+	// relevo mano→réplica al soltar el arma en Lanzar
+	// (Weapon::WeaponManager::State::kThrowing->kThrown).
+	//
+	// Corregido 2026-08-10 (a petición del usuario, tras dos rondas
+	// fallidas): el viejo NUNCA se destruye antes de que venza este
+	// margen, sea cual sea el motivo -- ni siquiera si el nuevo confirma
+	// antes que ya está reproduciéndose de verdad (Animating()==true, ver
+	// StartActivatingSequence). La versión anterior (v1.14.27) hacía
+	// justo lo contrario: destruía el viejo en cuanto el nuevo confirmaba
+	// estar listo, lo que en la práctica solía pasar en un par de ticks
+	// (unas pocas decenas de ms) -- técnicamente sin ningún hueco, pero un
+	// solape tan corto es imperceptible para el ojo humano, así que se
+	// seguía viendo como un corte seco seguido de un reinicio tardío
+	// ("no están solapados y se nota el salto", palabras del usuario) en
+	// vez de una transición suave. Ahora hace falta que se cumplan LAS
+	// DOS condiciones (margen mínimo vencido Y confirmación de que el
+	// nuevo ya se reproduce), no la primera que llegue -- ver
+	// kMovementVfxSwapSafetyTimeout para qué pasa si la confirmación
+	// nunca llega. 500ms ("medio segundo", sugerido tal cual por el
+	// usuario).
+	inline constexpr std::chrono::milliseconds kMovementVfxSwapOverlapDuration{ 500 };
+
+	// Red de seguridad ABSOLUTA para el mismo relevo de arriba -- por si
+	// la confirmación de que el nuevo VFX ya se está reproduciendo de
+	// verdad nunca llega (3D que nunca termina de cargar, Activate() que
+	// nunca tiene éxito): fuerza la destrucción del viejo de todas
+	// formas, para no dejarlo huérfano para siempre. Deliberadamente
+	// mucho más generosa que kMovementVfxSwapOverlapDuration (que ya no
+	// hace de red de seguridad por sí sola, ver ese comentario) -- cubre
+	// con margen de sobra el peor caso ya visto de espera de 3D
+	// (kMax3DWaitAttempts × Constants::kTickInterval del propio
+	// WeaponVFX.cpp, ~800ms) más unos cuantos reintentos de Activate().
+	inline constexpr std::chrono::milliseconds kMovementVfxSwapSafetyTimeout{ 1500 };
+
+	// Margen antes de destruir el Activator "de un solo uso" de verdad
+	// (Physics::DestroyReplica, vía Animation::StopMovementVFX) -- margen
+	// técnico, no estético: tiene que cubrir el ciclo completo de
+	// ThorMjolnirSparksOff.nif (Stop Time + LifeSpan de la última
+	// partícula que pueda nacer, ver ese .nif -- 1.5s + 1.2s = 2.7s en el
+	// peor caso con los valores actuales) para que a la última partícula
+	// nacida le dé tiempo a terminar su vida entera antes de que se borre
+	// el objeto que la contiene. Si se retocan esos valores en NifSkope,
+	// revisar este margen a la vez.
+	inline constexpr std::chrono::milliseconds kMovementVfxFadeOutSafetyMargin{ 2900 };
 
 	inline constexpr float kMovementVfxScale = 1.0f;  // placeholder, pendiente de ajustar en el juego
 }

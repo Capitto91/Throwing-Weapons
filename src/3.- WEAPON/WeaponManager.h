@@ -195,7 +195,22 @@ namespace Weapon
 		// ese instante todavía no existe (Throw::LaunchWeapon la crea de
 		// forma asíncrona, ver ThrowWeapon) -- se arranca a mano en el
 		// callback onSpawned, en cuanto el handle real está listo.
-		void TransitionState(State a_newState);
+		//
+		// a_manageVfx=false (usado por ReequipAndReset y por el callback
+		// onStuck de ThrowWeapon, ver esas dos funciones): salta por
+		// completo el bloque de arriba, dejando el VFX tal cual esté en ese
+		// momento -- necesario porque en ambos casos el fundido
+		// (Animation::FadeOutMovementVFX) no tiene por qué haberse
+		// disparado ya en este instante: onStuck lo llama a mano justo
+		// después, pero ReequipAndReset normalmente NO (el disparo normal
+		// vive en FinishCatchAnimation, al final de la animación completa
+		// de Atrape -- ver ese comentario); sin este escape, la lógica
+		// normal de aquí (cambio de objetivo VFX según el nuevo estado)
+		// cortaría el VFX de golpe en cualquiera de los dos casos, en vez
+		// de dejarlo vivo (siguiendo su última posición conocida, ver el
+		// lambda auto-reparable de Animation::StartMovementVFXOnReplica)
+		// para el fundido diferido o ya disparado.
+		void TransitionState(State a_newState, bool a_manageVfx = true);
 
 		// Fija como arma activa la que hay en la mano derecha y pasa a
 		// "apuntando".
@@ -325,7 +340,22 @@ namespace Weapon
 		// es limpio e instantáneo por sí solo, y el clon de la transición
 		// se veía en una pose sin calibrar durante su ventana, más
 		// perceptible aún al ser el reequipado real tan rápido).
-		void ReequipAndReset();
+		//
+		// a_reattachVfxToHand (2026-08-10, a petición del usuario -- solo
+		// PerformCatchReequip pasa true): si hay un VFX de movimiento
+		// activo, lo reengancha al hueso "WEAPON" del jugador
+		// (Animation::RetargetMovementVFXToActor) para que siga la mano
+		// durante el resto del gesto de Atrape en vez de quedarse fijo en
+		// la posición de la réplica ya destruida -- pensado solo para el
+		// flujo normal, animado, donde queda gesto por delante
+		// (FinishCatchAnimation dispara el fundido más tarde, ver
+		// Animation::FadeOutMovementVFX). Los caminos de recuperación
+		// instantánea (BeginCatchAnimation/BeginReturn sin jugador o
+		// réplica, RecallWeapon) dejan esto en false (por defecto): sin
+		// animación de por medio no hay ninguna mano en movimiento que
+		// seguir, y esos llamantes disparan el fundido a mano justo
+		// después, usando la última posición conocida.
+		void ReequipAndReset(bool a_reattachVfxToHand = false);
 
 		WeaponState weaponState;
 

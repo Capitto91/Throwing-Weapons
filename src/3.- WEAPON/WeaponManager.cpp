@@ -48,10 +48,16 @@ namespace Weapon
 		return &singleton;
 	}
 
-	void WeaponManager::TransitionState(State a_newState)
+	void WeaponManager::TransitionState(State a_newState, bool a_manageVfx)
 	{
 		const auto oldTarget = GetVfxTargetForState(weaponState.GetState());
 		weaponState.SetState(a_newState);
+
+		if (!a_manageVfx) {
+			logs::info("WeaponManager::TransitionState: -> {} (VFX gestionado aparte por el llamante).",
+				static_cast<int>(a_newState));
+			return;
+		}
 
 		const auto newTarget = GetVfxTargetForState(a_newState);
 
@@ -62,8 +68,15 @@ namespace Weapon
 			return;
 		}
 
-		Animation::StopMovementVFX();
-
+		// A diferencia de antes (hasta v1.14.24), ya no corta el VFX
+		// anterior aquí antes de colocar el nuevo -- Animation::
+		// StartMovementVFXOnActor/OnReplica (vía Animation::StartOn) ya se
+		// encargan de solapar con lo que hubiera antes y destruirlo un
+		// poco después (Constants::kMovementVfxSwapOverlapDuration), en
+		// vez de cortar primero y dejar un hueco -- eso es justo lo que se
+		// notaba como un "reinicio" en la transición kThrowing->kThrown
+		// (soltar el arma de la mano). Solo hace falta cortar de golpe
+		// aquí cuando el destino no lleva ningún VFX (kNone).
 		switch (newTarget) {
 		case VfxTarget::kRealWeapon:
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -80,6 +93,7 @@ namespace Weapon
 			}
 			break;
 		case VfxTarget::kNone:
+			Animation::StopMovementVFX();
 			break;
 		}
 	}
@@ -338,6 +352,20 @@ namespace Weapon
 				// usuario, 2026-08-04).
 			}
 			Input::SetMovementLocked(false);
+
+			// Sin llamada aparte a Animation::FadeOutMovementVFX aquí (a
+			// diferencia de v1.14.24): catchAnimationActive=true implica
+			// siempre weaponState==kReturning (ver el comentario de más
+			// arriba), así que el `case State::kReturning: RecallWeapon();`
+			// del switch de arriba SIEMPRE se ha ejecutado ya justo antes
+			// de llegar aquí -- y RecallWeapon ya llama a
+			// Animation::FadeOutMovementVFX por su cuenta. Repetirla aquí
+			// era una llamada doble real (bug reportado por el usuario,
+			// 2026-08-10: una segunda tanda de chispas tardía y
+			// desincronizada) -- FadeOutMovementVFX es reentrante desde
+			// v1.14.26 así que ya no causaría el bug aunque se repitiera,
+			// pero quitar la llamada de más deja claro que no hace falta
+			// ningún cierre de emergencia aparte para este caso concreto.
 		}
 
 		// Mismo motivo que el bloque de catchAnimationActive de arriba, para
@@ -608,8 +636,13 @@ namespace Weapon
 		if (!player) {
 			// Sin jugador no hay grafo sobre el que escribir nada ni
 			// animación que reproducir -- recuperación instantánea directa,
-			// igual que en Lanzar/Llamada (ver BeginThrowAnimation).
+			// igual que en Lanzar/Llamada (ver BeginThrowAnimation). Sin
+			// animación de por medio no hay ningún final de clip que
+			// esperar (ver FinishCatchAnimation), así que el fundido se
+			// dispara aquí mismo, justo después de ReequipAndReset (que ya
+			// no lo hace por su cuenta, ver ese comentario).
 			ReequipAndReset();
+			Animation::FadeOutMovementVFX();
 			return;
 		}
 		if (catchAnimationActive) {
@@ -760,7 +793,10 @@ namespace Weapon
 		// (Constants::kRightHandTypeOneHanded, puesto en
 		// BeginCatchAnimation) para lo que va a ser cierto de verdad en un
 		// instante, así que tocarlo aquí sobra.
-		ReequipAndReset();
+		//
+		// a_reattachVfxToHand=true: único llamante normal, animado, de
+		// ReequipAndReset -- ver ese comentario.
+		ReequipAndReset(true);
 
 		// Cambio de criterio (2026-08-08, a petición del usuario, ver
 		// CLAUDE.md/Constants::kCatchAnimationTailDuration): el resto del
@@ -805,6 +841,24 @@ namespace Weapon
 			player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 		}
 		Input::SetMovementLocked(false);
+
+		// Único disparador del fundido normal del VFX (a diferencia de
+		// v1.14.23, ver ReequipAndReset) -- aquí, al final de verdad de la
+		// animación completa de Atrape, no en el instante del reequipado
+		// real (bastante antes). ReequipAndReset ya reenganchó el VFX al
+		// hueso "WEAPON" del jugador (Animation::RetargetMovementVFXToActor),
+		// así que sigue la mano real durante todo este hueco.
+		//
+		// a_extraSettleDelay=true (2026-08-10, a petición del usuario):
+		// ni siquiera aquí es el instante exacto en que hay que capturar
+		// la posición -- el evento attackStop, disparado un poco más
+		// arriba, no deja al personaje en su pose de reposo de un salto,
+		// el grafo vanilla sigue mezclando (blend) un rato más sin ningún
+		// evento propio que avise cuándo termina. Ver
+		// Constants::kCatchVfxSettleDelay para el porqué completo -- el
+		// VFX sigue activo y siguiendo la mano durante ese margen extra
+		// también, así que no hay ningún coste por esperar un poco más.
+		Animation::FadeOutMovementVFX(true);
 	}
 
 	void WeaponManager::EquipGestureWeapon()
@@ -941,9 +995,19 @@ namespace Weapon
 				// cambiado por otra vía (p. ej. el jugador ya pulsó
 				// recuperar, o una pantalla de carga resincronizó el
 				// estado) antes de que el impacto se detectase.
+				logs::info("WeaponManager::onStuck: estado={}.", static_cast<int>(weaponState.GetState()));
 				if (weaponState.GetState() == State::kThrown) {
 					weaponState.SetStuckActorHandle(a_actor);
-					TransitionState(State::kStuck);
+
+					// A petición del usuario (2026-08-10): igual que en
+					// ReequipAndReset, deja que el VFX muera solo por su
+					// cuenta (Animation::FadeOutMovementVFX) en vez de
+					// cortarlo en seco. a_manageVfx=false para que
+					// TransitionState no lo corte de inmediato (arma
+					// volando->kStuck sí es un cambio de objetivo VFX,
+					// kReplica->kNone).
+					TransitionState(State::kStuck, false);
+					Animation::FadeOutMovementVFX();
 				}
 			};
 			callbacks.onAutoRecall = [this]() {
@@ -956,6 +1020,7 @@ namespace Weapon
 				// antes de este fix se teletransportaba a la mano de
 				// golpe en vez de volar de vuelta, saltándose la curva
 				// del punto 7 (bug detectado en el juego).
+				logs::info("WeaponManager::onAutoRecall: estado={}.", static_cast<int>(weaponState.GetState()));
 				if (weaponState.GetState() == State::kThrown || weaponState.GetState() == State::kStuck) {
 					BeginReturn(weaponState.GetState() == State::kStuck);
 				}
@@ -969,6 +1034,12 @@ namespace Weapon
 
 	void WeaponManager::BeginReturn(bool a_wasStuck)
 	{
+		// Diagnóstico (2026-08-10, ver Animation::WeaponVFX::StartOn/
+		// FadeOutMovementVFX): correlacionar en el log real con qué
+		// estado/wasStuck llega cada regreso, para el bug de chispas que
+		// a veces no cesan al probar con NPCs.
+		logs::info("WeaponManager::BeginReturn: estado={}, a_wasStuck={}.", static_cast<int>(weaponState.GetState()), a_wasStuck);
+
 		// Punto 6: "cuando se decide recuperar el arma... libera al
 		// objetivo, volviendo al jugador" — se libera de inmediato al
 		// iniciar el regreso, no al llegar a la mano.
@@ -992,7 +1063,11 @@ namespace Weapon
 
 		if (!player || !replicaHandle.get()) {
 			logs::warn("WeaponManager::BeginReturn: sin jugador o réplica válida, recuperación instantánea de reserva.");
+			// Sin animación de por medio (nunca se llegó a arrancar el
+			// regreso) -- fundido inmediato, ver el mismo comentario en
+			// BeginCatchAnimation.
 			ReequipAndReset();
+			Animation::FadeOutMovementVFX();
 			return;
 		}
 
@@ -1038,29 +1113,37 @@ namespace Weapon
 		}
 		weaponState.SetStuckActorHandle({});
 
+		// Recuperación instantánea (interrupción por pantalla de carga,
+		// etc.), sin ninguna animación de por medio -- fundido inmediato,
+		// ver el mismo comentario en BeginCatchAnimation.
 		ReequipAndReset();
+		Animation::FadeOutMovementVFX();
 	}
 
-	void WeaponManager::ReequipAndReset()
+	void WeaponManager::ReequipAndReset(bool a_reattachVfxToHand)
 	{
-		// Antes de destruir la réplica: si el VFX de movimiento estaba
-		// colgado de su nodo (State::kReturning, ver TransitionState), hay
-		// que desengancharlo primero -- Physics::DestroyReplica de abajo no
-		// lo sabe, y desenganchar de un nodo que el propio Disable/SetDelete
-		// ya haya empezado a desmontar es justo el tipo de orden a evitar
-		// (ver Animation::StopMovementVFX). TransitionState(kInHand), más
-		// abajo, volvería a llamarlo de todas formas, pero ya sin nada que
-		// cortar -- no-op inofensivo, mismo criterio que el resto del
-		// proyecto.
+		// A diferencia de antes (v1.14.23), ya NO dispara aquí el fundido
+		// del VFX (Animation::FadeOutMovementVFX) -- a petición del
+		// usuario (2026-08-10): disparar el fundido en el instante exacto
+		// del reequipado real (aquí) cortaba el gesto de Atrape a medias,
+		// bastante antes del final visual de la animación completa. El
+		// disparo normal ahora vive en FinishCatchAnimation, al final del
+		// margen de cola (Constants::kCatchAnimationTailDuration) -- los
+		// llamantes de recuperación instantánea (sin animación de por
+		// medio: BeginCatchAnimation sin jugador, BeginReturn sin
+		// jugador/réplica, RecallWeapon) llaman a FadeOutMovementVFX justo
+		// después de esta función, por su cuenta.
 		//
-		// Intento descartado (2026-08-10, ver CHANGELOG.md): dejar que las
-		// partículas ya nacidas murieran solas (Animation::FadeOutMovementVFX,
-		// apagando el modificador emisor en vivo) -- confirmado con log real
-		// que el motor no respeta ese flag para decidir si nacen partículas
-		// nuevas, así que solo conseguía que siguiera naciendo más tiempo
-		// antes de un corte igual de brusco. Revertido a este corte
-		// inmediato.
-		Animation::StopMovementVFX();
+		// a_reattachVfxToHand (ver el comentario del header): reengancha
+		// el VFX al hueso "WEAPON" del jugador en vez de dejarlo siguiendo
+		// la última posición conocida de la réplica que se destruye más
+		// abajo -- para que siga la mano durante el resto del gesto de
+		// Atrape. Player resuelto una sola vez aquí, reutilizado también
+		// para el reequipado real de más abajo.
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (a_reattachVfxToHand && player) {
+			Animation::RetargetMovementVFXToActor(*player);
+		}
 
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
 		weaponState.SetActiveTickToken({});
@@ -1068,7 +1151,6 @@ namespace Weapon
 		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
 
-		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* weapon = weaponState.GetActiveWeapon();
 
 		if (player && weapon) {
@@ -1112,6 +1194,6 @@ namespace Weapon
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
-		TransitionState(State::kInHand);
+		TransitionState(State::kInHand, false);
 	}
 }
