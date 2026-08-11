@@ -9,6 +9,7 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponTrail.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <cmath>
@@ -189,6 +190,12 @@ namespace Throw
 			// WeaponAnimation.h (bug "se aplana momentos después",
 			// 2026-08-06).
 			RE::NiMatrix3 launchBaseLocal;
+			// Estela de rayo (ver Constants.h, "-- Estela de rayo durante
+			// el vuelo --"): un único WeaponTrail para todo el tramo,
+			// creado aquí junto al resto del estado de arranque y
+			// capturado por la lambda del bucle de tick de abajo -- nunca
+			// un Physics::StartTickLoop propio para el trail.
+			auto trail = std::make_shared<Animation::WeaponTrail>();
 			if (auto replica = a_handle.get()) {
 				if (auto* node3D = replica->Get3D()) {
 					const RE::NiMatrix3 rootWorld = node3D->world.rotate;
@@ -200,6 +207,8 @@ namespace Throw
 					// el bucle de abajo dispare su primer tick.
 					Animation::TickSpin(*replica, 0.0f, launchBaseLocal);
 				}
+
+				trail->Start(replica->GetParentCell(), replica->GetPosition());
 			}
 
 			// Trayectoria parabólica propia (punto 3): posición(t) =
@@ -207,7 +216,7 @@ namespace Throw
 			// (la réplica está en modo kKeyframed, sin fuerzas/gravedad
 			// del motor). Forma cerrada en vez de acumular velocidad tick
 			// a tick, para no arrastrar deriva numérica.
-			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, launchBaseLocal, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			auto token = Physics::StartTickLoop(a_handle, [a_shooter, a_handle, origin, velocity0, launchBaseLocal, trail, onStuck = callbacks.onStuck, onAutoRecall = callbacks.onAutoRecall, onTickStarted = callbacks.onTickStarted, elapsed = 0.0f, loggedFirstGravitySample = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -265,6 +274,7 @@ namespace Throw
 
 					a_refr.SetPosition(stickPoint);
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
+					trail->Update(stickPoint, a_deltaSeconds);
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
 
 					// Punto 10 (segunda mitad, caso impacto): eliminado el
@@ -309,6 +319,7 @@ namespace Throw
 
 				a_refr.SetPosition(nextPos);
 				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+				trail->Update(nextPos, a_deltaSeconds);
 				return true;
 			});
 

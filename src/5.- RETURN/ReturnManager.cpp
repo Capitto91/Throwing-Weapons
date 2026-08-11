@@ -9,6 +9,7 @@
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponTrail.h"
 #include "9.- MATH/CurveMath.h"
 #include "9.- MATH/RotationMath.h"
 
@@ -185,7 +186,14 @@ namespace Return
 			const RE::NiMatrix3 rootWorld = replica->Get3D() ? replica->Get3D()->world.rotate : RE::NiMatrix3{};
 			const RE::NiMatrix3 movementBaseLocal = Animation::GetSpinLocalRotation(*replica);
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, catchTriggered = false, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			// Estela de rayo (ver Constants.h, "-- Estela de rayo durante
+			// el vuelo --"): creada aquí, no en el temblor de
+			// desprendimiento previo (BeginReturn -- ahí la réplica no se
+			// mueve, no tiene sentido muestrear posición todavía).
+			auto trail = std::make_shared<Animation::WeaponTrail>();
+			trail->Start(replica->GetParentCell(), start);
+
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, trail, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, catchTriggered = false, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -307,6 +315,13 @@ namespace Return
 				// (temblor incluido si lo hubo), así que aquí solo hay que
 				// seguir alimentándolo con el tiempo de este tick.
 				catchCue->UpdateStart(nextPos, a_deltaSeconds);
+
+				// Estela de rayo: deja de alimentarse en cuanto
+				// arrivedFired sea true (chequeo al principio del bucle,
+				// más arriba) -- los segmentos ya añadidos se apagan solos
+				// por su propio Constants::kTrailSegmentLifetime, no hace
+				// falta seguir muestreando la posición estática de la mano.
+				trail->Update(nextPos, a_deltaSeconds);
 
 				const float distanceToHand = (handPos - nextPos).Length();
 

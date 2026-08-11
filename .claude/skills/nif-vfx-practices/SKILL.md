@@ -24,15 +24,21 @@ para las APIs de CommonLibSSE-NG.
 
 ## Jerarquía de fuentes de verdad (en este orden)
 
-1. **Ya verificado en este proyecto** — `CLAUDE.md`, sección "Animación
-   horneada en el NIF (punto 10, giro)": patrón confirmado *en el juego* de
-   un `NiTransformController` colgado de un nodo hijo dedicado
-   (`Constants::kWeaponSpinNodeName`), flag `kActive` desactivado en NifSkope
-   para que no arranque solo, `Start()`/`Stop()` virtuales sin
-   `NiControllerManager`/`NiControllerSequence` de por medio, y la trampa de
-   reenganchar *todas* las mallas visibles al nuevo nodo. Si la pregunta cae
-   dentro de esto, usa ese texto tal cual — no lo reinventes ni lo
-   "mejores" sin que el usuario lo pida.
+1. **Ya verificado en este proyecto** — `CLAUDE.md`, sección "Giro por código
+   (punto 10) — NO animación horneada en el NIF": el giro se calcula y
+   escribe por código cada tick directamente sobre `NiAVObject::local.rotate`
+   del nodo hijo dedicado (`Constants::kWeaponSpinNodeName`, `Animation::TickSpin`)
+   — **no** hay ningún `NiTransformController`/`NiTimeController` de por
+   medio. Se probaron tres arquitecturas basadas en `NiTimeController`
+   (controller suelto, `NiControllerManager`/`NiControllerSequence`, y una
+   variante horneada activa desde la carga) y las tres fallaban de forma
+   intermitente porque el motor no siempre llama `NiTimeController::Update()`
+   por su cuenta sobre el controller de una réplica creada en tiempo de
+   ejecución, y llamarlo a mano crasheó el juego — por eso se descartó del
+   todo. Sigue aplicando la trampa de reenganchar *todas* las mallas visibles
+   al nodo hijo dedicado (eso es estructura del NIF, no depende del mecanismo
+   de giro). Si la pregunta cae dentro de esto, usa ese texto tal cual — no
+   lo reinventes ni lo "mejores" sin que el usuario lo pida.
 2. **NIFs reales ya funcionando, disponibles en este repo**:
    - `_reference/Kratos Combat - 2.8.6a/meshes/`: mod publicado, y además la
      plantilla que este proyecto está obligado a seguir para todo lo
@@ -523,10 +529,12 @@ releyendo el fichero con los métodos (a)/(c) después.
   `references/nifxml-excerpts.md`. Los slots 6-7 solo se usan si el
   shader tiene el flag correspondiente activo; con menos de 8 rutas
   presentes, los índices bajos (0-2) son los que casi siempre importan.
-- **Giro/animación horneada en el propio NIF, controlada por código**:
+- **Giro, controlado por código puro, SIN nada horneado en el NIF**:
   patrón ya verificado en el juego en este mismo proyecto — usa tal cual lo
-  descrito en `CLAUDE.md` (`NiTransformController` + nodo hijo dedicado +
-  `Start()`/`Stop()`), no el patrón siguiente, salvo que el usuario pida
+  descrito en `CLAUDE.md` (`Animation::TickSpin` escribe
+  `NiAVObject::local.rotate` del nodo hijo dedicado cada tick, sin
+  `NiTransformController`/`NiTimeController` de ningún tipo, descartado tras
+  tres intentos fallidos), no el patrón siguiente, salvo que el usuario pida
   explícitamente replicar Kratos.
 - **Patrón alternativo real, visto en Kratos** (no usado por este proyecto,
   documentado solo como referencia): `Projectile_LeviathanAxe{A,H,L}.nif`

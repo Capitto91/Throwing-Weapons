@@ -1072,4 +1072,50 @@ namespace Constants
 	inline constexpr std::chrono::milliseconds kMovementVfxFadeOutSafetyMargin{ 2900 };
 
 	inline constexpr float kMovementVfxScale = 1.0f;  // placeholder, pendiente de ajustar en el juego
+
+	// -- Estela de rayo durante el vuelo (ver 8.- ANIMATION/WeaponTrail) --
+	// puro polish sin punto numerado en Mecanica del arma.txt, complementa
+	// (no sustituye) el VFX de movimiento de arriba. Fase 1 (ver el plan
+	// de implementación): arquitectura restaurada del sistema abandonado
+	// en v1.9.8 (CHANGELOG.md), probada con la malla placeholder de
+	// Precision -- kTrailEffectPath apunta al NIF final de planos
+	// cruzados + shader de rayo una vez construido (Fase 2).
+	//
+	// Reposiciona cada tick los segmentos ya modelados de este NIF
+	// siguiendo el historial reciente de posiciones de la réplica,
+	// interpolado con Catmull-Rom. Basado en el sistema de estelas de
+	// Precision (Ershin, MIT License, github.com/ersh1/Precision,
+	// src/AttackTrail.h/.cpp) -- reimplementado para seguir la posición de
+	// la réplica en vuelo en vez de un arma equipada en la mano de un
+	// actor. A diferencia de la versión original (v1.7.1), el color/
+	// textura del rayo se hornea en el shader del propio NIF (mismo
+	// mecanismo Greyscale_To_PaletteColor que ThorMjolnirSparks.nif) en
+	// vez de sobreescribirse por código, y el punto de anclaje es
+	// directamente la posición del nodo raíz de la réplica, sin ningún
+	// offset en espacio del giro.
+	inline constexpr const char* kTrailEffectPath = "Effects/ThorMjolnirTrail.nif";
+
+	// Nombre del nodo hijo, dentro del NIF de estela, que contiene la
+	// cadena de huesos segmento a reposicionar cada tick. Única fuente de
+	// verdad compartida con el NIF, igual que kWeaponSpinNodeName.
+	inline constexpr std::string_view kTrailRootNodeName{ "TrailRoot" };
+
+	// Tiempo de vida de cada segmento individual de la estela antes de
+	// reciclarse (determina cuánto "rastro" se ve detrás del arma en cada
+	// instante). Mismo valor de partida que Precision
+	// (Settings::fTrailSegmentLifetime), pendiente de ajustar en el juego.
+	inline constexpr float kTrailSegmentLifetime = 0.1f;
+
+	// Cuántos segmentos nuevos de estela se añaden por segundo de vuelo.
+	// Mismo valor de partida que Precision
+	// (Settings::uTrailSegmentsPerSecond), pendiente de ajustar en el
+	// juego.
+	inline constexpr std::uint32_t kTrailSegmentsPerSecond = 120;
+
+	// Escala aplicada a cada segmento de la estela. El código nunca la
+	// calcula a partir de la malla del arma (a diferencia de Precision,
+	// que la deriva del alcance del arma equipada) -- placeholder ajustado
+	// a ojo en la iteración anterior (ver CHANGELOG.md v1.7.1), pendiente
+	// de reajustar contra la malla final de la Fase 2.
+	inline constexpr float kTrailSegmentScale = 0.15f;
 }
