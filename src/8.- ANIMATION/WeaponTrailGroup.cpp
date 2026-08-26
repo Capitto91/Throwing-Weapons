@@ -31,6 +31,8 @@ namespace Animation
 		for (std::size_t i = 0; i < trails.size(); ++i) {
 			trails[i].Start(a_cell, a_initialPosition, a_upReference, ComputeCopyRoll(a_roll, i), a_anchorWorldOffset);
 		}
+
+		previousRawPosition.reset();
 	}
 
 	void WeaponTrailGroup::SetRoll(float a_roll)
@@ -42,8 +44,52 @@ namespace Animation
 
 	void WeaponTrailGroup::Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds)
 	{
+		// Efecto rayo (ver cabecera de WeaponTrailGroup.h) -- base
+		// perpendicular a la dirección de avance REAL (sin desviar),
+		// calculada una única vez por tick; el sorteo del desvío en sí
+		// pasa a hacerse POR COPIA dentro del bucle de más abajo (cambio
+		// 2026-08-26, a petición del usuario: compartir un único desvío
+		// entre las 8 copias se notaba como que "todas se desvían de la
+		// misma manera" -- con sorteo independiente por copia, cada una
+		// traza su propio zigzag, aunque las 8 sigan centradas en la
+		// misma trayectoria real de fondo). Dirección estimada por
+		// diferencia con la posición del tick anterior (sin ella todavía,
+		// primer tick tras Start(), no hay desviación posible).
+		RE::NiPoint3 right{ 1.0f, 0.0f, 0.0f };
+		RE::NiPoint3 up{ 0.0f, 0.0f, 1.0f };
+		bool         hasDeviationBasis = false;
+
+		if (previousRawPosition.has_value()) {
+			RE::NiPoint3 travelDir = a_currentPosition - *previousRawPosition;
+			const float  travelLength = travelDir.Length();
+			if (travelLength > 0.0f) {
+				travelDir = travelDir / travelLength;
+
+				// Gram-Schmidt contra el eje Z del mundo -- mismo
+				// convenio de respaldo que Math::SetRotationFromForwardUp
+				// para direcciones (casi) verticales.
+				right = travelDir.Cross(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+				float rightLength = right.Length();
+				if (rightLength < 1.0e-4f) {
+					right = travelDir.Cross(RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+					rightLength = right.Length();
+				}
+				right = rightLength > 0.0f ? right / rightLength : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+				up = travelDir.Cross(right);
+				hasDeviationBasis = true;
+			}
+		}
+
+		previousRawPosition = a_currentPosition;
+
+		std::uniform_real_distribution<float> jitterDist(-Constants::kTrailLightningMaxDeviation, Constants::kTrailLightningMaxDeviation);
+
 		for (auto& trail : trails) {
-			trail.Update(a_currentPosition, a_deltaSeconds);
+			RE::NiPoint3 jitteredPosition = a_currentPosition;
+			if (hasDeviationBasis) {
+				jitteredPosition = jitteredPosition + right * jitterDist(randomEngine) + up * jitterDist(randomEngine);
+			}
+			trail.Update(jitteredPosition, a_deltaSeconds);
 		}
 	}
 }

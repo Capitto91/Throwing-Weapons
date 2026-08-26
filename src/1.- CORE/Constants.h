@@ -1178,6 +1178,19 @@ namespace Constants
 	// en 360° sin necesitar 16 copias reales.
 	inline constexpr float kTrailCopyRollStepDegrees = 22.5f;
 
+	// Desviación lateral máxima (unidades de mundo) del efecto rayo
+	// (Animation::WeaponTrailGroup::Update, 2026-08-26, a petición del
+	// usuario -- "pequeñas desviaciones de manera aleatoria, sin salirse
+	// demasiado de la línea de trayectoria"): cada tick se añade un
+	// desplazamiento aleatorio, acotado a este radio, perpendicular a la
+	// dirección de avance real, ANTES de repartir la posición a las 8
+	// copias -- así las 8 ven el mismo "núcleo" del rayo zigzagueante,
+	// solo giradas entre sí, en vez de 8 zigzags independientes sin
+	// relación entre ellos. Placeholder, mitad de
+	// kTrailSegmentSpacing como punto de partida -- pendiente de ajustar
+	// a ojo en el juego.
+	inline constexpr float kTrailLightningMaxDeviation = 15.0f;
+
 	// Reciclado por DISTANCIA recorrida, no por tiempo transcurrido
 	// (cambio 2026-08-26, sustituye a kTrailSegmentLifetime/
 	// kTrailSegmentsPerSecond -- valores de partida de Precision, que
@@ -1219,6 +1232,7 @@ namespace Constants
 	// "ahora que son varias, debería hacerlas más pequeñas") -- con 8
 	// copias giradas entre sí en vez de una sola, cada una necesita menos
 	// tamaño individual para el mismo volumen visual conjunto. Todavía
-	// placeholder pendiente de reajustar a ojo.
-	inline constexpr float kTrailSegmentScale = 0.35f;
+	// placeholder pendiente de reajustar a ojo. Bajada de 0.35 a 0.25
+	// (2026-08-26, "un poco más estrecho").
+	inline constexpr float kTrailSegmentScale = 0.25f;
 }

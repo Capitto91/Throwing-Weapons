@@ -1288,5 +1288,17 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
 
 - **"Ahora que son varias, debería hacerlas más pequeñas. Y en vez de 45 grados, el doble, cada 22,5º"**: `Constants::kTrailCopyCount` 4 -> 8 y `kTrailCopyRollStepDegrees` 45° -> 22,5° juntos (duplicar la densidad angular con planos simétricos exige duplicar también el número de copias para seguir cubriendo el círculo completo, ver el comentario de la constante) -- 8 copias cubren 16 posiciones de 22,5° en 360°. `Constants::kTrailSegmentScale` bajada de 0.70 a 0.35 (con más copias solapándose, cada una necesita menos tamaño individual para el mismo volumen visual conjunto).
 
+### v1.14.44
+
+- **Efecto rayo**: "un algoritmo que, siguiendo siempre la trayectoria que realiza el arma, haga pequeñas desviaciones de manera aleatoria, sin salirse demasiado de la línea de trayectoria" (con imagen de referencia: zigzag irregular sobre la línea recta original, acotado a un corredor estrecho alrededor de ella).
+  - `Animation::WeaponTrailGroup::Update` desvía la posición real un desplazamiento aleatorio (`std::uniform_real_distribution` sobre `std::mt19937`, sembrado con `std::random_device` por instancia) acotado a `Constants::kTrailLightningMaxDeviation` (15 u, placeholder), perpendicular a la dirección de avance real -- estimada por diferencia con la posición del tick anterior, sin necesitar que el llamante pase nada nuevo -- **antes** de repartirla a las 8 copias. Al desviar la posición compartida en vez de cada copia por separado, las 8 muestran el mismo "núcleo" de rayo zigzagueante coherente (solo giradas entre sí por su propio roll fijo) en vez de 8 zigzags independientes sin relación entre ellos.
+  - No hace falta tocar `WeaponTrail`/`Math::CatmullRom` para nada de esto: al inyectar el zigzag directamente en el historial de posiciones que ya consume la interpolación existente, la orientación por segmento (tangente de Catmull-Rom, ver v1.14.33) sigue el zigzag automáticamente sin ningún cambio adicional -- cada segmento ya se orienta según su propio tramo del rayo, no según la trayectoria suave original.
+  - Sin decaimiento/persistencia entre ticks (cada muestra es independiente, solo acotada al radio máximo) -- da un zigzag más "eléctrico"/caótico, coherente con la imagen de referencia, en vez de una ondulación suave. Pendiente de ajustar `kTrailLightningMaxDeviation` a ojo en el juego.
+
+### v1.14.45
+
+- **"Quizás el problema es que todas se desvían de la misma manera. ¿Hay posibilidad de que cada una tenga una desviación propia?"** (probado tras v1.14.44): las 8 copias compartían un único desvío aleatorio por tick. Cambiado a sorteo independiente por copia -- la base perpendicular (right/up) se sigue calculando una única vez por tick a partir de la trayectoria real sin desviar, pero cada copia dentro del bucle de `WeaponTrailGroup::Update` saca sus propios dos números aleatorios de `std::uniform_real_distribution` sobre el mismo `randomEngine` -- las 8 siguen centradas en la misma trayectoria real de fondo, pero cada una traza su propio zigzag independiente en vez de las 8 moviéndose exactamente igual.
+
+
 
 

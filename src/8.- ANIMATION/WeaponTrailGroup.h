@@ -24,11 +24,26 @@
 // Misma interfaz pública que WeaponTrail (Start/Update/SetRoll) para que
 // los llamantes (Throw::LaunchWeapon/Return::BeginReturnMovement) no
 // necesiten ningún cambio más que el tipo.
+//
+// Efecto rayo (2026-08-26, a petición del usuario -- "pequeñas
+// desviaciones de manera aleatoria, sin salirse demasiado de la línea de
+// trayectoria"): Update() desvía la posición real un desplazamiento
+// aleatorio acotado (Constants::kTrailLightningMaxDeviation), perpendicular
+// a la dirección de avance real (estimada aquí mismo por diferencia con la
+// posición del tick anterior, no necesita que el llamante pase nada
+// nuevo). La base perpendicular se calcula una única vez por tick a partir
+// de la trayectoria real sin desviar, pero el sorteo del desvío en sí es
+// INDEPENDIENTE por copia (segunda vuelta, mismo día: compartir un único
+// desvío entre las 8 se notaba como que "todas se desvían de la misma
+// manera") -- cada una de las 8 traza su propio zigzag, todas centradas en
+// la misma trayectoria real de fondo.
 
 #pragma once
 
 #include "8.- ANIMATION/WeaponTrail.h"
 
+#include <optional>
+#include <random>
 #include <vector>
 
 namespace Animation
@@ -42,19 +57,23 @@ namespace Animation
 
 		// Mismos parámetros que WeaponTrail::Start -- a_roll es el roll de
 		// la copia 0; el resto suman i·Constants::kTrailCopyRollStepDegrees
-		// cada una.
+		// cada una. Reinicia también el seguimiento de posición previa del
+		// efecto rayo (ver cabecera del archivo) -- un tramo nuevo no debe
+		// heredar la dirección de avance del tramo anterior.
 		void Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset);
 
 		// Mismo criterio que Start: a_roll es la base de la copia 0, cada
 		// copia mantiene su propio desfase fijo por encima.
 		void SetRoll(float a_roll);
 
-		// Reenvía a_currentPosition/a_deltaSeconds a todas las copias por
-		// igual -- todas siguen exactamente la misma posición histórica,
-		// solo difieren en su roll.
+		// Desvía a_currentPosition con un desplazamiento propio para cada
+		// copia (ver cabecera del archivo) y reenvía el resultado, junto
+		// con a_deltaSeconds, a cada una.
 		void Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds);
 
 	private:
-		std::vector<WeaponTrail> trails;
+		std::vector<WeaponTrail>    trails;
+		std::mt19937                randomEngine{ std::random_device{}() };
+		std::optional<RE::NiPoint3> previousRawPosition;
 	};
 }
