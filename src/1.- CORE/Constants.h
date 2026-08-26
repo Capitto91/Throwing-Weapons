@@ -1100,22 +1100,125 @@ namespace Constants
 	// verdad compartida con el NIF, igual que kWeaponSpinNodeName.
 	inline constexpr std::string_view kTrailRootNodeName{ "TrailRoot" };
 
-	// Tiempo de vida de cada segmento individual de la estela antes de
-	// reciclarse (determina cuánto "rastro" se ve detrás del arma en cada
-	// instante). Mismo valor de partida que Precision
-	// (Settings::fTrailSegmentLifetime), pendiente de ajustar en el juego.
-	inline constexpr float kTrailSegmentLifetime = 0.1f;
+	// Desplaza el punto de anclaje de la estela en el espacio LOCAL del
+	// nodo raíz del arma (no del nodo de giro -- ver más abajo) --
+	// reintroducido 2026-08-26: el nodo raíz de la réplica no coincide con
+	// el centro visual de la pieza (confirmado en NifSkope en una
+	// iteración anterior de este mismo proyecto: cae en la base del
+	// mango), y la versión actual usaba ese punto tal cual sin compensar
+	// -- reportado por el usuario como "el inicio del trail falla" tras
+	// arreglar los demás bugs. Mismo nombre/concepto que la constante
+	// histórica ya usada para esto (ver CHANGELOG.md v1.7.1/v1.14.31),
+	// magnitud (~20 unidades) recuperada de ese historial -- el EJE no
+	// quedó registrado numéricamente, así que Y es una suposición de
+	// partida (mismo criterio "ajustar a ojo" que el resto de constantes
+	// de esta estela), no confirmada contra el NIF real del hacha.
+	//
+	// A diferencia del histórico kTrailAnchorLocalOffset (retirado en
+	// v1.14.31 precisamente porque orbitaba con el giro visual,
+	// Animation::GetVisualTransform leía el nodo de giro en rotación
+	// constante), este offset se transforma con la rotación del nodo
+	// RAÍZ (rootWorld), que no gira durante el vuelo -- ver
+	// Throw::LaunchWeapon/Return::BeginReturnMovement, "el nodo raíz de
+	// la réplica no vuelve a rotar en lo que le queda de vida". Así se
+	// consigue el mismo desplazamiento fijo respecto al arma sin
+	// reintroducir el bug original.
+	//
+	// Historial de ajuste en el juego, mismo día (2026-08-26): +20
+	// ("sobresale bastante") -> +10 ("se aleja aún más", probado el eje:
+	// a lo largo del mango/hacha, no lateral) -> -10 ("mucho peor" que
+	// +10, confirma que el signo positivo era el correcto, no el eje) ->
+	// +5 (signo positivo restaurado, magnitud reducida de nuevo). Sigue
+	// pendiente de ajuste fino.
+	inline constexpr RE::NiPoint3 kTrailAnchorLocalOffset{ 0.0f, 5.0f, 0.0f };
 
-	// Cuántos segmentos nuevos de estela se añaden por segundo de vuelo.
-	// Mismo valor de partida que Precision
-	// (Settings::uTrailSegmentsPerSecond), pendiente de ajustar en el
-	// juego.
-	inline constexpr std::uint32_t kTrailSegmentsPerSecond = 120;
+	// Ángulo (grados) al que se inclina la cinta sobre su propio eje de
+	// avance -- ver Math::SetRotationFromForwardUp/8.- ANIMATION/WeaponTrail.cpp.
+	// Sustituye (2026-08-26) al intento de derivarlo del eje Z real del
+	// arma (Math::ComputeRoll contra rootWorld.GetVectorZ(), v1.14.34-37):
+	// ese eje nunca se llegó a verificar contra el NIF real y dio
+	// resultados poco fiables (plano equivocado, luego invertido, luego
+	// "vuelve a verse curvo") -- en vez de seguir adivinando qué eje del
+	// esqueleto es el correcto, valor fijo dado directamente por el
+	// usuario (dibujo con el ángulo deseado, 2026-08-26), aplicado igual
+	// en ida y vuelta sobre la MISMA base sin bancado ya verificada
+	// (Constants::kTrailLength y comentario de v1.14.35) -- sigue sin
+	// bancarse curve lo que curve la trayectoria, solo cambia de dónde
+	// sale el ángulo que se le suma. Signo negado (2026-08-26, probado en
+	// el juego: +45° salía a 90° de donde tocaba, "al revés" según el
+	// usuario) -- Math::SetRotationFromForwardUp gira en sentido
+	// right->up para un roll positivo, así que el sentido contrario
+	// necesita negarlo. Pendiente de afinar a ojo si -45° tampoco es
+	// exacto.
+	inline constexpr float kTrailRollDegrees = -45.0f;
 
-	// Escala aplicada a cada segmento de la estela. El código nunca la
+	// Nº de copias en paralelo de la estela (Animation::WeaponTrailGroup),
+	// cada una con su propio roll fijo (ver kTrailCopyRollStepDegrees) --
+	// 2026-08-26, sustituye al intento de una única malla con varios
+	// planos cruzados dentro (descartado: los pesos de piel repartidos
+	// entre huesos vecinos aplastaban las aspas más alejadas del eje
+	// cuando huesos consecutivos tenían orientaciones distintas -- ver
+	// CHANGELOG.md). Cada copia usa el mismo .nif de un único plano
+	// simple, ya probado, sin ese problema -- varias copias giradas entre
+	// sí dan el mismo efecto visual de "cobertura desde cualquier
+	// ángulo" sin tocar NifSkope ni arriesgar el mismo aplastado.
+	// Subido de 4 a 8 (2026-08-26, "el doble, cada 22,5º") junto con
+	// kTrailCopyRollStepDegrees -- para mantener la misma cobertura
+	// simétrica (ver ese comentario), duplicar la densidad angular
+	// (45°->22,5°) exige duplicar también el número de copias (4->8):
+	// con N copias en pasos de S grados y cada plano simétrico a ambos
+	// lados de su eje, se cubren 2N posiciones de S grados en 360°, así
+	// que 2N·S = 360 tiene que seguir cumpliéndose.
+	inline constexpr std::uint32_t kTrailCopyCount = 8;
+
+	// Separación angular (grados) entre copias consecutivas -- a petición
+	// del usuario, primero "una cada 45°", luego "el doble, cada 22,5º".
+	// Con 8 copias (0°/22,5°/45°/.../157,5°) y cada plano extendiéndose a
+	// ambos lados de su eje (simétrico), cubre las 16 posiciones de 22,5°
+	// en 360° sin necesitar 16 copias reales.
+	inline constexpr float kTrailCopyRollStepDegrees = 22.5f;
+
+	// Reciclado por DISTANCIA recorrida, no por tiempo transcurrido
+	// (cambio 2026-08-26, sustituye a kTrailSegmentLifetime/
+	// kTrailSegmentsPerSecond -- valores de partida de Precision, que
+	// asumía velocidad de swing más o menos constante). Diagnosticado en
+	// el juego: con una ventana de TIEMPO fijo, la longitud visible de la
+	// estela es proporcional a la velocidad INSTANTÁNEA del arma -- en la
+	// ida (velocidad constante desde el primer tick) da una longitud
+	// estable, pero en la vuelta (arranca en reposo,
+	// Return::ComputeReturnAcceleration) el retraso medido crecía de ~1
+	// unidad a ~280 a lo largo del propio regreso (log real: 1.0 -> 8.8 ->
+	// 21.4 -> ... -> 278.5 unidades entre t=0.05s y t=1.49s), viéndose
+	// pegada al arma durante gran parte del regreso. Con una ventana de
+	// DISTANCIA, la longitud visible una vez llena la cadena de huesos es
+	// constante en el espacio, no depende de la velocidad instantánea.
+	//
+	// kTrailLength (unidades de mundo) es el alcance total deseado de la
+	// estela; kTrailSegmentSpacing es la distancia entre segmentos
+	// consecutivos. Elegidos para que, con los 30 huesos reales de
+	// ThorMjolnirTrail.nif (confirmado en el juego, nodo TrailRoot con 30
+	// hijos), la cadena entera cubra justo kTrailLength sin desperdiciar
+	// huesos (30 * 30 = 900) -- si el NIF cambia de número de huesos, la
+	// lógica de reciclado ya fuerza el ajuste igualmente (ver
+	// WeaponTrail.cpp). Subidos deliberadamente por encima de lo que ya
+	// daba la versión anterior (que el usuario reportó "muy corta" incluso
+	// en la ida, donde el reciclado por tiempo sí llegaba a una longitud
+	// estable) -- pendientes de ajustar a ojo en el juego.
+	inline constexpr float kTrailLength = 900.0f;
+	inline constexpr float kTrailSegmentSpacing = 30.0f;
+
+	// Escala aplicada a cada segmento de la estela (cada copia individual
+	// de Animation::WeaponTrailGroup, no el conjunto). El código nunca la
 	// calcula a partir de la malla del arma (a diferencia de Precision,
-	// que la deriva del alcance del arma equipada) -- placeholder ajustado
-	// a ojo en la iteración anterior (ver CHANGELOG.md v1.7.1), pendiente
-	// de reajustar contra la malla final de la Fase 2.
-	inline constexpr float kTrailSegmentScale = 0.15f;
+	// que la deriva del alcance del arma equipada) -- historial de ajuste
+	// en el juego (2026-08-26): 0.15 -> 0.35 por "muy estrecha" -> 0.70
+	// tras arreglar el bancado de la cinta (v1.14.35, quedaba casi de
+	// canto respecto a la cámara en tercera persona la mayor parte del
+	// tiempo, subir la escala compensaba parcialmente) -> **0.35** de
+	// nuevo al pasar de 1 copia a `kTrailCopyCount` copias (v1.14.42,
+	// "ahora que son varias, debería hacerlas más pequeñas") -- con 8
+	// copias giradas entre sí en vez de una sola, cada una necesita menos
+	// tamaño individual para el mismo volumen visual conjunto. Todavía
+	// placeholder pendiente de reajustar a ojo.
+	inline constexpr float kTrailSegmentScale = 0.35f;
 }

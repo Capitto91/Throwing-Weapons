@@ -22,4 +22,14 @@ namespace Math
 	// de la estela -- portado tal cual de Precision (Ershin, MIT License,
 	// github.com/ersh1/Precision, src/Utils.cpp, Utils::CatmullRom).
 	RE::NiPoint3 CatmullRom(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t);
+
+	// Derivada (tangente, sin normalizar) de CatmullRom en a_t -- mismos
+	// parámetros y convenio. Usada por 8.- ANIMATION/WeaponTrail para
+	// orientar cada segmento según la curva real en su propio punto en vez
+	// de una única dirección compartida por todos los segmentos de un
+	// mismo tick (2026-08-26, arreglo de "poca resolución"/facetado
+	// visible cuando la trayectoria curva rápido dentro de un solo tick --
+	// las posiciones ya se interpolaban suaves con CatmullRom, pero todas
+	// compartían la orientación calculada una vez por tick).
+	RE::NiPoint3 CatmullRomTangent(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t);
 }

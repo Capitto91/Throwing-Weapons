@@ -85,20 +85,61 @@ namespace Math
 		return t * t * (3.0f - 2.0f * t);
 	}
 
-	void SetRotationMatrix(RE::NiMatrix3& a_matrix, float a_sacb, float a_cacb, float a_sb)
+	void SetRotationFromForwardUp(RE::NiMatrix3& a_matrix, const RE::NiPoint3& a_forward, const RE::NiPoint3& a_up, float a_roll)
 	{
-		const float cb = std::sqrt(1.0f - a_sb * a_sb);
-		const float ca = a_cacb / cb;
-		const float sa = a_sacb / cb;
+		// Gram-Schmidt: "right" perpendicular a a_forward y a_up a la vez:
+		// si a_up es (casi) paralelo a a_forward, right degenera a
+		// longitud ~0 -- se cae a un eje del mundo fijo distinto de
+		// a_forward como referencia de respaldo.
+		RE::NiPoint3 right       = a_up.Cross(a_forward);
+		float        rightLength = right.Length();
+		if (rightLength < 1.0e-4f) {
+			const RE::NiPoint3 fallbackUp = std::abs(a_forward.z) < 0.99f ? RE::NiPoint3{ 0.0f, 0.0f, 1.0f } : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+			right = fallbackUp.Cross(a_forward);
+			rightLength = right.Length();
+		}
+		right = rightLength > 0.0f ? right / rightLength : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
 
-		a_matrix.entry[0][0] = ca;
-		a_matrix.entry[0][1] = -a_sacb;
-		a_matrix.entry[0][2] = sa * a_sb;
-		a_matrix.entry[1][0] = sa;
-		a_matrix.entry[1][1] = a_cacb;
-		a_matrix.entry[1][2] = -ca * a_sb;
-		a_matrix.entry[2][0] = 0.0f;
-		a_matrix.entry[2][1] = a_sb;
-		a_matrix.entry[2][2] = cb;
+		// a_forward y right ya son unitarios y ortogonales entre sí, así
+		// que su producto vectorial ya sale unitario -- sin normalizar de
+		// nuevo.
+		const RE::NiPoint3 up = a_forward.Cross(right);
+
+		// a_roll: rotación 2D de (right, up) dentro de su propio plano
+		// (perpendicular a a_forward) -- no toca a_forward, así que no
+		// puede reintroducir bancado por sí sola, solo gira la cinta sobre
+		// su propio eje de avance un ángulo fijo.
+		const float        cosRoll     = std::cos(a_roll);
+		const float        sinRoll     = std::sin(a_roll);
+		const RE::NiPoint3 rolledRight = right * cosRoll + up * sinRoll;
+		const RE::NiPoint3 rolledUp    = up * cosRoll - right * sinRoll;
+
+		// Columna 0 = X (right), columna 1 = Y (a_forward, mismo convenio
+		// que la función que sustituye), columna 2 = Z (up) -- convenio de
+		// NiMatrix3::GetVectorX/Y/Z confirmado contra la implementación
+		// real (columna, no fila).
+		a_matrix.entry[0][0] = rolledRight.x;
+		a_matrix.entry[0][1] = a_forward.x;
+		a_matrix.entry[0][2] = rolledUp.x;
+		a_matrix.entry[1][0] = rolledRight.y;
+		a_matrix.entry[1][1] = a_forward.y;
+		a_matrix.entry[1][2] = rolledUp.y;
+		a_matrix.entry[2][0] = rolledRight.z;
+		a_matrix.entry[2][1] = a_forward.z;
+		a_matrix.entry[2][2] = rolledUp.z;
+	}
+
+	float ComputeRoll(const RE::NiPoint3& a_forward, const RE::NiPoint3& a_planeUp, const RE::NiPoint3& a_desiredUp)
+	{
+		RE::NiMatrix3 planeBasis;
+		RE::NiMatrix3 desiredBasis;
+		SetRotationFromForwardUp(planeBasis, a_forward, a_planeUp, 0.0f);
+		SetRotationFromForwardUp(desiredBasis, a_forward, a_desiredUp, 0.0f);
+
+		const RE::NiPoint3 planeRight = planeBasis.GetVectorX();
+		const RE::NiPoint3 planeUpAxis = planeBasis.GetVectorZ();
+		const RE::NiPoint3 desiredRight = desiredBasis.GetVectorX();
+
+		return std::atan2(planeUpAxis.Dot(desiredRight), planeRight.Dot(desiredRight));
 	}
 }

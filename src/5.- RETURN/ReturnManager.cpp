@@ -9,11 +9,12 @@
 #include "6.- PHYSICS/CollisionManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
-#include "8.- ANIMATION/WeaponTrail.h"
+#include "8.- ANIMATION/WeaponTrailGroup.h"
 #include "9.- MATH/CurveMath.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
+#include <numbers>
 #include <vector>
 
 namespace Return
@@ -190,10 +191,38 @@ namespace Return
 			// el vuelo --"): creada aquí, no en el temblor de
 			// desprendimiento previo (BeginReturn -- ahí la réplica no se
 			// mueve, no tiene sentido muestrear posición todavía).
-			auto trail = std::make_shared<Animation::WeaponTrail>();
-			trail->Start(replica->GetParentCell(), start);
+			auto trail = std::make_shared<Animation::WeaponTrailGroup>();
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, trail, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, catchTriggered = false, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			// Plano de la estela (ver WeaponTrail.h, a_upReference, y el
+			// comentario mucho más largo en Throw::LaunchWeapon sobre por
+			// qué un eje fijo del arma "bancaba" la cinta según la
+			// trayectoria se curvaba). Una Bezier cuadrática (start,
+			// controlPoint, initialHandPos) es siempre plana -- tres
+			// puntos no colineales definen un único plano -- así que su
+			// normal es perpendicular a la curva ENTERA de principio a
+			// fin, sin bancado, igual que la normal del plano vertical ya
+			// usada para la ida. Signo ajustado contra el eje Z real del
+			// arma (mismo motivo que en la ida: no perder qué lado
+			// corresponde al plano visual real).
+			RE::NiPoint3 trailUpReference = (controlPoint - start).Cross(initialHandPos - start);
+			const float  trailUpLength = trailUpReference.Length();
+			trailUpReference = trailUpLength > 0.0f ? trailUpReference / trailUpLength : RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+
+			// Roll fijo (ver el comentario largo en Throw::LaunchWeapon,
+			// mismo arreglo aquí): derivarlo del eje Z real del arma dio
+			// resultados poco fiables -- Constants::kTrailRollDegrees
+			// (ángulo fijo dado directamente por el usuario) sustituye ese
+			// cálculo, misma constante que en la ida.
+			const float trailRoll = Constants::kTrailRollDegrees * std::numbers::pi_v<float> / 180.0f;
+
+			// Punto de anclaje (ver el comentario largo en
+			// Throw::LaunchWeapon, mismo arreglo aquí): rootWorld ya
+			// estaba calculado más arriba para el giro.
+			const RE::NiPoint3 trailAnchorWorldOffset = rootWorld * Constants::kTrailAnchorLocalOffset;
+
+			trail->Start(replica->GetParentCell(), start, trailUpReference, trailRoll, trailAnchorWorldOffset);
+
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, trail, trailUpReference, trailRoll, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, shudderDuration = a_shudderDuration, catchTriggered = false, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), loggedHandAxisDiagnostic = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				const auto previousPos = a_refr.GetPosition();
 				elapsed += a_deltaSeconds;
 
@@ -316,11 +345,54 @@ namespace Return
 				// seguir alimentándolo con el tiempo de este tick.
 				catchCue->UpdateStart(nextPos, a_deltaSeconds);
 
+				// Roll de la estela durante el enderezado (punto 10, segunda
+				// mitad): el arma funde su orientación hacia la de la mano
+				// en esta misma ventana (TickSpinStraighten, más arriba),
+				// pero el roll de la estela se quedaba fijo con el valor
+				// de todo el vuelo -- desalineados justo en el tramo más
+				// visible, reportado por el usuario. Se funde con el mismo
+				// blend, recalculando el roll objetivo cada tick (mismo
+				// motivo que TickSpinStraighten: la mano puede seguir
+				// moviéndose). Math::ComputeRoll necesita una dirección de
+				// avance real -- se usa nextPos-previousPos (la tangente
+				// de la curva en este tick) en vez de la del nodo de giro,
+				// coherente con que WeaponTrail nunca lee ese nodo. Solo
+				// afecta a los próximos segmentos que se añadan (ver
+				// WeaponTrail::SetRoll), los ya colocados no se retocan.
+				if (straightening) {
+					const RE::NiPoint3 travelDir = nextPos - previousPos;
+					const float        travelLength = travelDir.Length();
+					if (travelLength > 0.0f) {
+						// -GetHandBoneWorldRotation(...).GetVectorZ(): mismo
+						// convenio de signo que -rootWorld.GetVectorZ() ya
+						// usado para el arma (v1.14.37) -- no verificado que
+						// se traslade igual al hueso de la mano, pendiente
+						// de confirmar en el juego.
+						const RE::NiPoint3 handUpAxis = -Animation::GetHandBoneWorldRotation(*a_player).GetVectorZ();
+						const float        targetRoll = Math::ComputeRoll(travelDir / travelLength, trailUpReference, handUpAxis);
+
+						float diff = targetRoll - trailRoll;
+						constexpr float pi = std::numbers::pi_v<float>;
+						while (diff > pi) {
+							diff -= 2.0f * pi;
+						}
+						while (diff < -pi) {
+							diff += 2.0f * pi;
+						}
+
+						const float straightenBlend = std::clamp((elapsed - straightenStart) / straightenDuration, 0.0f, 1.0f);
+						trail->SetRoll(trailRoll + diff * straightenBlend);
+					}
+				}
+
 				// Estela de rayo: deja de alimentarse en cuanto
 				// arrivedFired sea true (chequeo al principio del bucle,
-				// más arriba) -- los segmentos ya añadidos se apagan solos
-				// por su propio Constants::kTrailSegmentLifetime, no hace
-				// falta seguir muestreando la posición estática de la mano.
+				// más arriba) -- como la réplica ya no se mueve en ese
+				// tramo, no se recorre más distancia y los segmentos ya
+				// añadidos no llegan a reciclarse por Constants::kTrailLength;
+				// no hace falta seguir muestreando la posición estática de
+				// la mano (se quedan visibles, congelados, hasta que el
+				// propio WeaponTrail se destruye al terminar el bucle).
 				trail->Update(nextPos, a_deltaSeconds);
 
 				const float distanceToHand = (handPos - nextPos).Length();

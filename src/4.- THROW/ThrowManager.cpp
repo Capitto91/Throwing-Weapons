@@ -9,10 +9,11 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
-#include "8.- ANIMATION/WeaponTrail.h"
+#include "8.- ANIMATION/WeaponTrailGroup.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <cmath>
+#include <numbers>
 #include <optional>
 
 namespace Throw
@@ -195,11 +196,65 @@ namespace Throw
 			// creado aquí junto al resto del estado de arranque y
 			// capturado por la lambda del bucle de tick de abajo -- nunca
 			// un Physics::StartTickLoop propio para el trail.
-			auto trail = std::make_shared<Animation::WeaponTrail>();
+			auto trail = std::make_shared<Animation::WeaponTrailGroup>();
 			if (auto replica = a_handle.get()) {
+				// Plano de la estela (ver WeaponTrail.h, a_upReference).
+				// Primer intento (2026-08-26, versión anterior de esta
+				// misma sesión): el eje Z del nodo raíz de la réplica,
+				// fijo durante todo el vuelo -- arregló el desencaje de
+				// plano contra el ángulo del arma, pero como la parábola
+				// gira dentro de su propio plano vertical (eje X/Y
+				// constante, solo cae en Z -- ComputeGravityDrop), un eje
+				// fijo que no está garantizado perpendicular a ESE plano
+				// obliga a la cinta a "bancarse"/torcerse según la
+				// trayectoria se inclina, más notorio cuanto más lejos del
+				// ángulo de salida (la cola, la parte más antigua) --
+				// confirmado con datos reales del log que las posiciones
+				// centrales de la estela son perfectamente rectas en
+				// X/Y, así que el "escorado hacia la izquierda" reportado
+				// por el usuario no podía ser la trayectoria, solo la
+				// orientación de la cinta.
+				//
+				// Arreglo: en vez de un eje del arma, la normal real del
+				// plano de la parábola (perpendicular a la dirección de
+				// vuelo Y al eje vertical del mundo a la vez) -- por
+				// construcción, la dirección de vuelo nunca sale de ese
+				// plano en toda la ida, así que la cinta no se banca en
+				// absoluto, curve la parábola lo que curve.
+				//
+				// Segunda vuelta (mismo día, reportado tras subir
+				// Constants::kTrailSegmentScale): con solo la normal de
+				// trayectoria, la cinta ya no tiene NINGÚN grado de
+				// libertad relacionado con el ángulo real del arma (esa
+				// normal es geometría pura de la parábola) -- se veía
+				// "definitivamente desalineada" en cuanto se hizo más
+				// grande. Tercera vuelta: derivarlo del eje Z real del
+				// arma (Math::ComputeRoll) dio resultados poco fiables
+				// (plano equivocado, invertido, "vuelve a verse curvo") --
+				// Constants::kTrailRollDegrees (ángulo fijo dado
+				// directamente por el usuario) sustituye ese cálculo. El
+				// único ángulo (no la referencia de plano en sí) es lo que
+				// se mantiene fijo el resto del vuelo, así que encaja con
+				// el ángulo deseado sin volver a bancarse.
+				RE::NiPoint3 trailUpReference = velocity0.Cross(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+				const float  trailUpLength = trailUpReference.Length();
+				trailUpReference = trailUpLength > 0.0f ? trailUpReference / trailUpLength : RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+
+				const float trailRoll = Constants::kTrailRollDegrees * std::numbers::pi_v<float> / 180.0f;
+
+				// Punto de anclaje (ver WeaponTrail.h, a_anchorWorldOffset):
+				// el nodo raíz de la réplica cae en la base del mango, no
+				// en el centro visual del hacha (confirmado en NifSkope,
+				// ver Constants::kTrailAnchorLocalOffset) -- transformado
+				// por rootWorld (constante en vuelo, no el nodo de giro)
+				// para que el offset se mueva rígido con el arma sin
+				// orbitar con Animation::TickSpin.
+				RE::NiPoint3 trailAnchorWorldOffset{ 0.0f, 0.0f, 0.0f };
+
 				if (auto* node3D = replica->Get3D()) {
 					const RE::NiMatrix3 rootWorld = node3D->world.rotate;
 					launchBaseLocal = Math::LocalRotationFromWorld(rootWorld, capturedWeaponWorldRotation);
+					trailAnchorWorldOffset = rootWorld * Constants::kTrailAnchorLocalOffset;
 
 					// Esta llamada a elapsed=0 solo evita que el nodo de
 					// giro muestre la rotación de reposo del NIF durante el
@@ -208,7 +263,7 @@ namespace Throw
 					Animation::TickSpin(*replica, 0.0f, launchBaseLocal);
 				}
 
-				trail->Start(replica->GetParentCell(), replica->GetPosition());
+				trail->Start(replica->GetParentCell(), replica->GetPosition(), trailUpReference, trailRoll, trailAnchorWorldOffset);
 			}
 
 			// Trayectoria parabólica propia (punto 3): posición(t) =
