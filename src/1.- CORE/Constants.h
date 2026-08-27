@@ -1191,6 +1191,21 @@ namespace Constants
 	// a ojo en el juego.
 	inline constexpr float kTrailLightningMaxDeviation = 15.0f;
 
+	// Cada cuánto (segundos) se re-sortea el desvío del efecto rayo, por
+	// copia (Animation::WeaponTrailGroup::Update, 2026-08-27 -- primer paso
+	// de "que parezca un rayo de verdad": el desvío se mantenía fijo hasta
+	// ahora, sino que se resorteaba cada tick (~16ms), lo que el usuario
+	// reportó como demasiado suave -- con un punto de quiebro casi idéntico
+	// al anterior cada 16ms, la spline de Catmull-Rom (WeaponTrail.cpp) los
+	// funde en una ondulación continua en vez de marcarlos. Manteniendo el
+	// mismo desvío varios ticks seguidos, los puntos de quiebro quedan más
+	// separados en el historial y el salto entre uno y el siguiente es más
+	// grande y perceptible. Placeholder, pendiente de ajustar a ojo en el
+	// juego -- si con esto solo no basta, el siguiente paso es cambiar la
+	// interpolación de Catmull-Rom a lineal en WeaponTrail.cpp (ver
+	// conversación con el usuario).
+	inline constexpr float kTrailLightningHoldSeconds = 0.05f;
+
 	// Reciclado por DISTANCIA recorrida, no por tiempo transcurrido
 	// (cambio 2026-08-26, sustituye a kTrailSegmentLifetime/
 	// kTrailSegmentsPerSecond -- valores de partida de Precision, que

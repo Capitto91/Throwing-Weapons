@@ -1343,6 +1343,17 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
 - **"En el ring glow, quisiera un efecto de pulsación, energía que va y viene, en vez de una textura estática"**: decodificado `ThorMjolnirLight.nif` (`nif_header_walk.py` de la skill `nif-vfx-practices`) -- el `BSTriShape` "RingGlow" (nombre real confirmado por el campo Name del bloque, índice de string 4) no lleva ningún controller horneado todavía, textura fija. Mismo motivo ya confirmado en v1.15.1 (un controller horneado no se reproduciría solo sobre esta referencia colocada con `PlaceObjectAtMe`) -- se implementa directamente por código en vez de hornear nada en NifSkope.
   - `Animation::WeaponGlow::TickGlowPulse`: oscila `BSEffectShaderMaterial::baseColorScale` (el multiplicador de brillo del shader -- "Base Color Scale", mismo campo ya usado como valor fijo en `ThorMjolnirSparks.nif`) con una onda seno reescalada a `[Constants::kGlowPulseScaleMin, kGlowPulseScaleMax]` a `kGlowPulseFrequencyHz` ciclos/segundo -- valores de partida (0.4-1.6, 1 Hz), sin ajustar a ojo en el juego todavía. Geometría localizada por nombre real (`GetObjectByName`, `Constants::kGlowRingGlowNodeName`), a diferencia de la malla del scroll de UV (sin nombre útil, localizada por estructura).
 
+### v1.16.5
+
+- **"El movimiento del efecto rayo se me antoja demasiado suavizado, quiero que imite más a un rayo -- cambios de dirección más grandes y con menos FPS"**: paso 1 de 2. El desvío aleatorio por copia (`Animation::WeaponTrailGroup::Update`, v1.14.45) se resorteaba cada tick (~16ms) -- con un punto de quiebro casi idéntico al anterior tan seguido, la spline de Catmull-Rom de `WeaponTrail` los fundía en una ondulación continua en vez de marcarlos.
+  - El desvío ya no se resortea todos los ticks: se mantiene fijo por copia (`heldDeviationRight`/`heldDeviationUp`/`holdTimer`, uno por copia) durante `Constants::kTrailLightningHoldSeconds` (0.05s, placeholder) y solo entonces salta a un nuevo valor -- sigue proyectándose sobre la base right/up del tick actual (que sí se recalcula siempre a partir de la trayectoria real), así que el vector resultante sigue la dirección de avance, solo su magnitud por eje queda más espaciada en el tiempo. `Start()` fuerza un resorteo inmediato en el primer `Update()` de cada tramo nuevo.
+
+### v1.16.6
+
+- Mismo pedido, paso 2 de 2: la interpolación de POSICIÓN de `WeaponTrail::Update` deja de usar Catmull-Rom, sustituida por interpolación lineal (`Math::Lerp`, nueva) entre las 2 últimas muestras del historial. Catmull-Rom es una curva C1-continua por diseño -- por muy separados y bruscos que fueran ya los quiebros de entrada (paso 1), la spline los redondeaba en vez de marcarlos, justo lo contrario de lo que pide un rayo.
+  - Con solo 2 puntos de control en vez de 4, la dirección de cada segmento deja de evaluarse punto a punto sobre la curva -- con una recta no hay curvatura que capturar dentro de un mismo tick, así que todos los segmentos añadidos en la misma llamada a `Update` comparten exactamente la misma dirección (`ip2-ip1`), sin perder nada respecto al arreglo de "poca resolución" de v1.14.33 (ese arreglo era necesario porque la curva SÍ variaba dentro de un tick; una recta no varía, compartir la dirección es exacto, no una aproximación).
+  - `Math::CatmullRom`/`Math::CatmullRomTangent` (`9.- MATH/CurveMath`) retiradas por quedar sin ningún uso tras el cambio.
+
 
 
 

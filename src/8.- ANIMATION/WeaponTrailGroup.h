@@ -37,6 +37,15 @@
 // desvío entre las 8 se notaba como que "todas se desvían de la misma
 // manera") -- cada una de las 8 traza su propio zigzag, todas centradas en
 // la misma trayectoria real de fondo.
+//
+// 2026-08-27, primer paso hacia un aspecto de rayo más brusco (ver
+// Constants::kTrailLightningHoldSeconds): el desvío de cada copia ya NO se
+// resortea todos los ticks -- se mantiene fijo un rato (heldDeviation*/
+// holdTimer, uno por copia) y solo se re-sortea al agotarse ese tiempo.
+// Sigue proyectándose sobre la base right/up del tick actual (que sí se
+// recalcula cada tick a partir de la trayectoria real), así que el vector
+// resultante todavía sigue la dirección de avance -- solo su MAGNITUD por
+// eje se mantiene constante entre resorteos.
 
 #pragma once
 
@@ -75,5 +84,12 @@ namespace Animation
 		std::vector<WeaponTrail>    trails;
 		std::mt19937                randomEngine{ std::random_device{}() };
 		std::optional<RE::NiPoint3> previousRawPosition;
+
+		// Desvío mantenido (escalares sobre right/up del tick actual, ver
+		// cabecera del archivo) y tiempo transcurrido desde el último
+		// resorteo, uno por copia -- índices paralelos a trails.
+		std::vector<float> heldDeviationRight;
+		std::vector<float> heldDeviationUp;
+		std::vector<float> holdTimers;
 	};
 }

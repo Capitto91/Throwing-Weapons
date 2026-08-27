@@ -4,6 +4,7 @@
 
 #include "1.- CORE/Constants.h"
 
+#include <algorithm>
 #include <numbers>
 
 namespace Animation
@@ -24,6 +25,9 @@ namespace Animation
 	WeaponTrailGroup::WeaponTrailGroup()
 	{
 		trails.resize(Constants::kTrailCopyCount);
+		heldDeviationRight.resize(Constants::kTrailCopyCount, 0.0f);
+		heldDeviationUp.resize(Constants::kTrailCopyCount, 0.0f);
+		holdTimers.resize(Constants::kTrailCopyCount, 0.0f);
 	}
 
 	void WeaponTrailGroup::Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset)
@@ -33,6 +37,12 @@ namespace Animation
 		}
 
 		previousRawPosition.reset();
+
+		// Fuerza un resorteo inmediato en el primer Update() -- un tramo
+		// nuevo no debe heredar el desvío mantenido del tramo anterior.
+		std::ranges::fill(heldDeviationRight, 0.0f);
+		std::ranges::fill(heldDeviationUp, 0.0f);
+		std::ranges::fill(holdTimers, Constants::kTrailLightningHoldSeconds);
 	}
 
 	void WeaponTrailGroup::SetRoll(float a_roll)
@@ -84,12 +94,23 @@ namespace Animation
 
 		std::uniform_real_distribution<float> jitterDist(-Constants::kTrailLightningMaxDeviation, Constants::kTrailLightningMaxDeviation);
 
-		for (auto& trail : trails) {
+		for (std::size_t i = 0; i < trails.size(); ++i) {
+			// Resorteo por copia solo al agotarse su propio holdTimer (ver
+			// cabecera del archivo) -- el resto de ticks reutiliza la misma
+			// magnitud por eje, así que el punto de quiebro en el
+			// historial de WeaponTrail no aparece cada 16ms.
+			holdTimers[i] += a_deltaSeconds;
+			if (holdTimers[i] >= Constants::kTrailLightningHoldSeconds) {
+				holdTimers[i] -= Constants::kTrailLightningHoldSeconds;
+				heldDeviationRight[i] = jitterDist(randomEngine);
+				heldDeviationUp[i] = jitterDist(randomEngine);
+			}
+
 			RE::NiPoint3 jitteredPosition = a_currentPosition;
 			if (hasDeviationBasis) {
-				jitteredPosition = jitteredPosition + right * jitterDist(randomEngine) + up * jitterDist(randomEngine);
+				jitteredPosition = jitteredPosition + right * heldDeviationRight[i] + up * heldDeviationUp[i];
 			}
-			trail.Update(jitteredPosition, a_deltaSeconds);
+			trails[i].Update(jitteredPosition, a_deltaSeconds);
 		}
 	}
 }

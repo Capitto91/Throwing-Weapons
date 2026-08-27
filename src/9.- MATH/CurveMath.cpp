@@ -11,26 +11,8 @@ namespace Math
 		return a_p0 * (u * u) + a_control * (2.0f * u * a_t) + a_p2 * (a_t * a_t);
 	}
 
-	RE::NiPoint3 CatmullRom(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t)
+	RE::NiPoint3 Lerp(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, float a_t)
 	{
-		const RE::NiPoint3 a = a_p1 * 2.0f;
-		const RE::NiPoint3 b = a_p2 - a_p0;
-		const RE::NiPoint3 c = a_p0 * 2.0f - a_p1 * 5.0f + a_p2 * 4.0f - a_p3;
-		const RE::NiPoint3 d = -a_p0 + a_p1 * 3.0f - a_p2 * 3.0f + a_p3;
-
-		return (a + (b * a_t) + (c * a_t * a_t) + (d * a_t * a_t * a_t)) * 0.5f;
-	}
-
-	RE::NiPoint3 CatmullRomTangent(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t)
-	{
-		// Derivada respecto a a_t de la misma expresión que CatmullRom
-		// (posición(t) = 0.5·(a + b·t + c·t² + d·t³)) -> posición'(t) =
-		// 0.5·(b + 2·c·t + 3·d·t²). Mismos b/c/d, sin el término "a" (su
-		// derivada es 0, es el punto de partida constante).
-		const RE::NiPoint3 b = a_p2 - a_p0;
-		const RE::NiPoint3 c = a_p0 * 2.0f - a_p1 * 5.0f + a_p2 * 4.0f - a_p3;
-		const RE::NiPoint3 d = -a_p0 + a_p1 * 3.0f - a_p2 * 3.0f + a_p3;
-
-		return (b + (c * (2.0f * a_t)) + (d * (3.0f * a_t * a_t))) * 0.5f;
+		return a_p0 + (a_p1 - a_p0) * a_t;
 	}
 }

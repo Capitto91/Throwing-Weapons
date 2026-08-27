@@ -15,21 +15,13 @@ namespace Math
 	// fin). Fórmula estándar: (1-t)²·p0 + 2·(1-t)·t·control + t²·p2.
 	RE::NiPoint3 EvaluateQuadraticBezier(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_control, const RE::NiPoint3& a_p2, float a_t);
 
-	// Interpola entre a_p1 y a_p2 (a_p0/a_p3 son los puntos anterior y
-	// siguiente de la secuencia, que dan forma a la tangente) en a_t (0 =
-	// a_p1, 1 = a_p2). Usada por 8.- ANIMATION/WeaponTrail para suavizar el
-	// historial de posiciones de la réplica al reposicionar los segmentos
-	// de la estela -- portado tal cual de Precision (Ershin, MIT License,
-	// github.com/ersh1/Precision, src/Utils.cpp, Utils::CatmullRom).
-	RE::NiPoint3 CatmullRom(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t);
-
-	// Derivada (tangente, sin normalizar) de CatmullRom en a_t -- mismos
-	// parámetros y convenio. Usada por 8.- ANIMATION/WeaponTrail para
-	// orientar cada segmento según la curva real en su propio punto en vez
-	// de una única dirección compartida por todos los segmentos de un
-	// mismo tick (2026-08-26, arreglo de "poca resolución"/facetado
-	// visible cuando la trayectoria curva rápido dentro de un solo tick --
-	// las posiciones ya se interpolaban suaves con CatmullRom, pero todas
-	// compartían la orientación calculada una vez por tick).
-	RE::NiPoint3 CatmullRomTangent(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, const RE::NiPoint3& a_p2, const RE::NiPoint3& a_p3, float a_t);
+	// Interpolación lineal entre a_p0 (a_t=0) y a_p1 (a_t=1). Usada por
+	// 8.- ANIMATION/WeaponTrail para reposicionar los segmentos de la
+	// estela entre las 2 últimas muestras del historial de posiciones de
+	// la réplica -- 2026-08-27, sustituye a un Catmull-Rom anterior
+	// (retirado, sin más uso): para el efecto rayo, la curva C1-continua de
+	// Catmull-Rom redondeaba los quiebros del historial en vez de
+	// marcarlos, justo lo contrario de lo que pide un rayo (ver
+	// WeaponTrail.cpp para el detalle completo).
+	RE::NiPoint3 Lerp(const RE::NiPoint3& a_p0, const RE::NiPoint3& a_p1, float a_t);
 }

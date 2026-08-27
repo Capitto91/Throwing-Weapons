@@ -19,10 +19,10 @@
 // tick), así que esa técnica degenera en una dirección constante e
 // incorrecta (Catmull-Rom es afín, CR(p+C,t) = CR(p,t)+C, así que con
 // rotación constante la resta de las dos interpolaciones da siempre el
-// mismo vector fijo). En su lugar, la tangente sale directamente del
-// propio historial de posiciones (Math::CatmullRomTangent sobre las 4
-// muestras usadas para interpolar), que sí refleja el recorrido real sin
-// depender de ningún ángulo de la réplica.
+// mismo vector fijo). En su lugar, la dirección sale directamente del
+// propio historial de posiciones (la diferencia entre dos muestras
+// consecutivas, ver segmentAxis más abajo), que sí refleja el recorrido
+// real sin depender de ningún ángulo de la réplica.
 //
 // Ese "hacia dónde mira la réplica" de Precision no solo daba la
 // dirección de avance -- también fijaba el PLANO de la cinta (el giro
@@ -35,6 +35,24 @@
 // eje real del arma en el instante de Start(), no una lectura continua --
 // fija el plano de la cinta sin que la estela llegue a rotar con el giro
 // visual en vuelo (Animation::TickSpin), que debe quedar fuera de esto.
+//
+// 2026-08-27, paso 2 de "que parezca un rayo" (paso 1: Constants::
+// kTrailLightningHoldSeconds en Animation::WeaponTrailGroup): la
+// interpolación de POSICIÓN también deja de usar Catmull-Rom, sustituida
+// por Math::Lerp lineal entre las dos últimas muestras del historial
+// (ip1/ip2). Motivo: Catmull-Rom es una curva C1-continua por diseño --
+// por muy separados y bruscos que sean los quiebros de entrada (ya
+// conseguido en el paso 1), la spline los redondea en vez de marcarlos,
+// justo lo contrario de lo que pide un rayo. Con solo 2 puntos de control
+// en vez de 4, ip0/ip3 ya no hacen falta (eran solo contexto para dar
+// forma a la tangente de la curva) y la dirección de cada segmento deja de
+// evaluarse punto a punto (segmentAxisAt(t) antes variaba con t sobre la
+// curva) -- con una recta no hay curvatura que capturar dentro de un
+// mismo tick, así que todos los segmentos añadidos en la misma llamada a
+// Update comparten exactamente la misma dirección (ip2-ip1), sin perder
+// nada respecto al arreglo de "poca resolución" de 2026-08-26 (ese
+// arreglo era necesario porque la curva SÍ variaba dentro de un tick; una
+// recta no varía, compartir la dirección es exacto, no una aproximación).
 
 #include "8.- ANIMATION/WeaponTrail.h"
 
@@ -205,11 +223,10 @@ namespace Animation
 			diagLoggedTrailRootResolved = true;
 		}
 
-		// Catmull-Rom necesita 4 muestras para interpolar una dirección real
-		// (ver más abajo) -- hasta entonces no hay suficiente historial. Se
-		// aparcan a escala 0 en la posición actual -- la orientación no
-		// importa a escala 0.
-		if (history.size() < 4) {
+		// Hacen falta al menos 2 muestras para tener una dirección real --
+		// hasta entonces no hay suficiente historial. Se aparcan a escala 0
+		// en la posición actual -- la orientación no importa a escala 0.
+		if (history.size() < 2) {
 			RE::NiTransform parkedTransform;
 			parkedTransform.translate = history.back();
 			parkedTransform.scale = 0.0f;
@@ -218,40 +235,30 @@ namespace Animation
 			return;
 		}
 
-		// Puntos de control de Catmull-Rom (las 4 últimas muestras del
-		// historial) -- se calculan una única vez y se reutilizan tanto
-		// para la posición como para la orientación de cada segmento, y
-		// para el tramo "aparcado" de más abajo. No depende de ningún
-		// ángulo de la réplica, a diferencia del original de Precision
-		// (ver comentario al inicio del archivo).
-		auto p3It = history.rbegin();
-		auto p2It = p3It + 1;
+		// Las 2 últimas muestras del historial -- se calculan una única vez
+		// y se reutilizan tanto para la posición (Math::Lerp) como para la
+		// orientación de cada segmento, y para el tramo "aparcado" de más
+		// abajo.
+		auto p2It = history.rbegin();
 		auto p1It = p2It + 1;
-		auto p0It = p1It + 1;
 
-		const auto& ip0 = *p0It;
 		const auto& ip1 = *p1It;
 		const auto& ip2 = *p2It;
-		const auto& ip3 = *p3It;
 
 		// Dirección de avance (eje Y local, ver Math::SetRotationFromForwardUp)
-		// de un segmento en el punto a_t de la curva (0 = ip1, 1 = ip2, ver
-		// Math::CatmullRom) -- tangente real de la curva
-		// (Math::CatmullRomTangent) evaluada en el punto exacto de CADA
-		// segmento, en vez de una única dirección compartida por todos los
-		// segmentos de un mismo tick (2026-08-26, arreglo de "poca
-		// resolución"/facetado visible cuando la trayectoria curva rápido
-		// dentro de un solo tick -- las posiciones ya se interpolaban
-		// suaves, la orientación no). El eje Y del segmento va de tenue
-		// (origen) a intenso (creciente) en el NIF, pero en el juego el
-		// resultado salía al revés (confirmado por el usuario), así que se
-		// niega antes de devolverlo.
-		const auto segmentAxisAt = [&ip0, &ip1, &ip2, &ip3](float a_t) {
-			RE::NiPoint3 tangent = Math::CatmullRomTangent(ip0, ip1, ip2, ip3, a_t);
-			const float  length = tangent.Length();
-			tangent = length > 0.0f ? tangent / length : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
-			return -tangent;
-		};
+		// de todos los segmentos añadidos en este tick -- constante
+		// (ip2-ip1), no varía con t (ver comentario de cabecera del
+		// archivo: sin curvatura Catmull-Rom que capturar dentro de un
+		// mismo tick, compartir la dirección es exacto). El eje Y del
+		// segmento va de tenue (origen) a intenso (creciente) en el NIF,
+		// pero en el juego el resultado salía al revés (confirmado por el
+		// usuario), así que se niega antes de devolverlo.
+		const auto segmentAxis = [&ip1, &ip2]() {
+			RE::NiPoint3 direction = ip2 - ip1;
+			const float  length = direction.Length();
+			direction = length > 0.0f ? direction / length : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+			return -direction;
+		}();
 
 		float      segmentsToAdd = segmentsToAddRemainder + distanceThisTick / Constants::kTrailSegmentSpacing;
 		const auto segmentsToAddTrunc = static_cast<std::uint32_t>(segmentsToAdd);
@@ -314,9 +321,10 @@ namespace Animation
 			}
 		}
 
-		// Añade los segmentos nuevos, interpolados con Catmull-Rom entre
-		// las 4 últimas muestras del historial -- cada uno con su propia
-		// orientación (segmentAxisAt(t)), no una compartida por tick.
+		// Añade los segmentos nuevos, interpolados linealmente entre las 2
+		// últimas muestras del historial -- todos comparten la misma
+		// orientación (segmentAxis), ver comentario de cabecera del
+		// archivo.
 		if (segmentsToAdd > 0.0f) {
 			for (std::uint32_t i = 0; i < segmentsToAddTrunc; ++i) {
 				if (segmentCount <= currentBoneIdx) {
@@ -329,8 +337,7 @@ namespace Animation
 				}
 
 				const float t = (static_cast<float>(i) + 1.0f) / segmentsToAdd;
-				const auto  interpolatedPos = Math::CatmullRom(ip0, ip1, ip2, ip3, t);
-				const auto  segmentAxis = segmentAxisAt(t);
+				const auto  interpolatedPos = Math::Lerp(ip1, ip2, t);
 
 				RE::NiTransform newTransform = segmentBone->world;
 				Math::SetRotationFromForwardUp(newTransform.rotate, segmentAxis, upReference, roll);
@@ -388,7 +395,6 @@ namespace Animation
 			RE::NiTransform worldTransform;
 			worldTransform.translate = history.back();
 
-			const auto segmentAxis = segmentAxisAt(1.0f);
 			Math::SetRotationFromForwardUp(worldTransform.rotate, segmentAxis, upReference, roll);
 			worldTransform.scale = 0.0f;
 
