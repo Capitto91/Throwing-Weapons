@@ -1354,6 +1354,11 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - Con solo 2 puntos de control en vez de 4, la dirección de cada segmento deja de evaluarse punto a punto sobre la curva -- con una recta no hay curvatura que capturar dentro de un mismo tick, así que todos los segmentos añadidos en la misma llamada a `Update` comparten exactamente la misma dirección (`ip2-ip1`), sin perder nada respecto al arreglo de "poca resolución" de v1.14.33 (ese arreglo era necesario porque la curva SÍ variaba dentro de un tick; una recta no varía, compartir la dirección es exacto, no una aproximación).
   - `Math::CatmullRom`/`Math::CatmullRomTangent` (`9.- MATH/CurveMath`) retiradas por quedar sin ningún uso tras el cambio.
 
+## 2026-08-28 (eliminada la distancia máxima de lanzamiento)
 
+### v1.16.7
+
+- **Punto 5 de `Mecanica del arma.txt` cambiado a petición del usuario**: el lanzamiento ya no tiene distancia máxima. Antes, `Throw::LaunchWeapon` comprobaba cada tick si la réplica había recorrido más de `Constants::kMaxThrowDistance` (6000 unidades) sin impactar y, en ese caso, disparaba `onAutoRecall()` igual que al caer al agua -- ese chequeo se retira del todo; ahora el agua es el único disparador de recuperación automática en vuelo, y el arma vuela sin límite hasta impactar contra algo.
+  - `Constants::kMaxThrowDistance` reutilizaba el mismo valor para dos cosas a la vez: el límite de vuelo (retirado) y la longitud del raycast que busca el punto real al que apunta la mirilla (`Throw::ComputeAimedDirection`, necesario para la corrección de paralaje cámara/mano). Ese segundo uso se mantiene -- la constante se renombra a `Constants::kAimRaycastDistance` para dejar claro que ya no tiene relación con un límite de lanzamiento.
 
 

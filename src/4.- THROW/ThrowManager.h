@@ -34,10 +34,11 @@ namespace Throw
 		// una superficie.
 		std::function<void(RE::ActorHandle a_actor)> onStuck;
 
-		// Distancia máxima superada sin impactar, o caída al agua (punto
-		// 5): la réplica sigue existiendo pero ha dejado de moverse,
-		// pendiente de que el llamante decida qué hacer (recuperación
-		// automática).
+		// Caída al agua (punto 5, agua no es superficie donde clavarse): la
+		// réplica sigue existiendo pero ha dejado de moverse, pendiente de
+		// que el llamante decida qué hacer (recuperación automática). El
+		// lanzamiento ya no tiene distancia máxima -- vuela sin límite hasta
+		// impactar o caer al agua.
 		std::function<void()> onAutoRecall;
 	};
 

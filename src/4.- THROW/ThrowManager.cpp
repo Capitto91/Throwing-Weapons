@@ -65,12 +65,13 @@ namespace Throw
 		//
 		// Sin solución real (discriminante negativo, objetivo fuera del
 		// alcance máximo que esa velocidad puede cubrir) devuelve
-		// nullopt -- no ocurre dentro de Constants::kMaxThrowDistance con
-		// las constantes actuales (alcance máximo teórico v²/g ≈ 8398
-		// unidades, por encima de las 6000 de kMaxThrowDistance, que solo
-		// limita cuándo el arma se da por perdida y regresa sola, sin
-		// relación con si la parábola llega o no), pero se contempla por
-		// seguridad para cualquier ajuste futuro de las constantes.
+		// nullopt -- no ocurre dentro de Constants::kAimRaycastDistance
+		// con las constantes actuales (alcance máximo teórico v²/g ≈ 8398
+		// unidades, por encima de las 6000 de kAimRaycastDistance, que
+		// solo limita hasta dónde se busca el punto al que apunta la
+		// mirilla, sin relación con si la parábola llega o no), pero se
+		// contempla por seguridad para cualquier ajuste futuro de las
+		// constantes.
 		std::optional<float> SolveLowArcPitch(float a_horizontalDistance, float a_heightDiff)
 		{
 			constexpr float speed = Constants::kThrowInitialSpeed;
@@ -91,7 +92,7 @@ namespace Throw
 		// aplicada desde el origen en la mano, no converge en el punto al
 		// que apunta la mirilla). Se calcula primero el punto real al que
 		// apunta la mirilla con un raycast desde la cámara hasta
-		// Constants::kMaxThrowDistance, y la dirección horizontal de
+		// Constants::kAimRaycastDistance, y la dirección horizontal de
 		// lanzamiento va desde el origen en la mano hacia ese punto — así
 		// el origen visual coincide con lo que el jugador ve en la
 		// mirilla, sea cual sea la distancia. El pitch (componente
@@ -103,7 +104,7 @@ namespace Throw
 		{
 			const auto cameraPos = GetCameraPosition();
 			const auto forward = GetCameraForward();
-			const auto rayEnd = cameraPos + forward * Constants::kMaxThrowDistance;
+			const auto rayEnd = cameraPos + forward * Constants::kAimRaycastDistance;
 
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
@@ -362,12 +363,6 @@ namespace Throw
 				// impactar contra nada (punto 5).
 				if (a_refr.IsInWater()) {
 					logs::info("Throw::LaunchWeapon: ha caído al agua, recuperando automáticamente.");
-					onAutoRecall();
-					return false;
-				}
-
-				if ((nextPos - origin).Length() >= Constants::kMaxThrowDistance) {
-					logs::info("Throw::LaunchWeapon: distancia máxima superada sin impactar, recuperando automáticamente.");
 					onAutoRecall();
 					return false;
 				}

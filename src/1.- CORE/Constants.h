@@ -259,13 +259,14 @@ namespace Constants
 	// vuelo para compensar. Placeholder, pendiente de ajustar en el juego.
 	inline constexpr float kActorStickForwardOffset = 15.0f;
 
-	// Distancia máxima de lanzamiento (punto 5): si no impacta contra
-	// nada, el arma regresa automáticamente. Placeholder de partida (en la
-	// iteración anterior se dobló a 12000 para compensar un hueco visual
-	// específico de la migración Projectile→réplica al iniciar el
-	// regreso automático; con réplica propia desde el lanzamiento ese
-	// motivo ya no aplica, así que se vuelve a partir del valor original).
-	inline constexpr float kMaxThrowDistance = 6000.0f;
+	// Longitud del raycast de apuntado (Throw::ComputeAimedDirection): hasta
+	// dónde se busca el punto real al que apunta la mirilla para calcular la
+	// dirección del lanzamiento. Ya no limita el vuelo en sí -- el punto 5
+	// de Mecanica del arma.txt se actualizó (2026-08-28, a petición del
+	// usuario) para eliminar la distancia máxima de lanzamiento: el arma
+	// vuela sin límite hasta impactar contra algo o caer al agua, nunca
+	// regresa sola por haber recorrido demasiada distancia sin impactar.
+	inline constexpr float kAimRaycastDistance = 6000.0f;
 
 	// -- Regreso (RETURN), puntos 7-8 --
 	// Cambio de criterio sobre el punto 8 original de Mecanica del
