@@ -7,6 +7,8 @@
 #include "1.- CORE/Constants.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
+#include <cmath>
+#include <numbers>
 #include <thread>
 
 namespace Animation
@@ -70,6 +72,56 @@ namespace Animation
 		// a falta de mejor fuente.
 		RE::NiPointer<RE::NiLight> g_niLight;
 
+		// Valor "pleno" de fade de la luz (capturado del formulario en
+		// AttachGlowLight) -- 0.0 hasta que haya una luz real adjunta.
+		float g_lightTargetFade = 0.0f;
+
+		// Fundido de encendido/apagado (Constants::kGlowFadeDuration, a
+		// petición del usuario 2026-08-27) -- afecta tanto a la escala del
+		// nodo raíz del destello (malla visible creciendo/encogiendo)
+		// como al "fade" (dimmer) de la luz real, en paralelo. kSteady =
+		// ya a fuerza plena, TickGlowFade no hace nada (evita recalcular
+		// la misma escala/fade cada tick sin necesidad). g_phaseElapsed se
+		// reinicia cada vez que StartTicking/StopWeaponGlow cambian de
+		// fase.
+		enum class GlowPhase
+		{
+			kFadingIn,
+			kSteady,
+			kFadingOut
+		};
+		GlowPhase g_phase = GlowPhase::kFadingIn;
+		float     g_phaseElapsed = 0.0f;
+
+		// Aplica el fundido en curso (si lo hay) sobre a_refr (el propio
+		// destello) -- llamada desde los tres bucles de tick
+		// (StartTicking/RetargetWeaponGlowToReplica/ToActor), igual que
+		// TickGlowUVScroll. No toca nada si ya está en fase kSteady.
+		void TickGlowFade(RE::TESObjectREFR& a_refr, float a_deltaSeconds)
+		{
+			if (g_phase == GlowPhase::kSteady) {
+				return;
+			}
+
+			g_phaseElapsed += a_deltaSeconds;
+			float t = g_phaseElapsed / Constants::kGlowFadeDurationSeconds;
+			t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+
+			if (g_phase == GlowPhase::kFadingOut) {
+				t = 1.0f - t;
+			} else if (t >= 1.0f) {
+				g_phase = GlowPhase::kSteady;
+			}
+
+			if (auto* node3D = a_refr.Get3D()) {
+				node3D->local.scale = t;
+				node3D->world.scale = t;
+			}
+			if (g_niLight) {
+				g_niLight->GetLightRuntimeData().fade = g_lightTargetFade * t;
+			}
+		}
+
 		// Formulario resuelto una sola vez por sesión -- mismo patrón que
 		// GetGlowActivatorForm.
 		RE::TESObjectLIGH* GetGlowLightForm()
@@ -108,6 +160,14 @@ namespace Animation
 			}
 
 			g_niLight = RE::NiPointer<RE::NiLight>(niLight);
+
+			// Valor "pleno" hacia el que rampea TickGlowFade -- capturado
+			// aquí (el propio formulario, no el runtime data del NiLight
+			// recién creado) porque GenDynamic puede dejarlo ya puesto a
+			// este mismo valor de fábrica; guardarlo aparte evita
+			// depender de en qué momento exacto lo escribe GenDynamic por
+			// dentro.
+			g_lightTargetFade = lightForm->fade;
 		}
 
 		// Suelta nuestra propia referencia a la luz -- sin ningún
@@ -189,6 +249,36 @@ namespace Animation
 			}
 		}
 
+		// Shader del BSTriShape "RingGlow" -- resuelto una vez en
+		// StartTicking (mismo momento que g_shaderProperty), por nombre
+		// real esta vez (Constants::kGlowRingGlowNodeName), no por
+		// estructura.
+		RE::NiPointer<RE::BSEffectShaderProperty> g_ringGlowShaderProperty;
+		float                                      g_pulseElapsed = 0.0f;
+
+		// Pulso de energía sobre "RingGlow" -- ver
+		// Constants::kGlowPulseFrequencyHz/kGlowPulseScaleMin/Max. Oscila
+		// BSEffectShaderMaterial::baseColorScale con una onda seno
+		// reescalada a [min, max] -- mismo motivo que TickGlowUVScroll
+		// para escribirlo a mano en vez de hornear un controller (no se
+		// reproduciría solo, misma causa ya confirmada en este archivo).
+		void TickGlowPulse(float a_deltaSeconds)
+		{
+			if (!g_ringGlowShaderProperty) {
+				return;
+			}
+
+			g_pulseElapsed += a_deltaSeconds;
+
+			constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
+			const float     sine01 = 0.5f * (1.0f + std::sin(twoPi * Constants::kGlowPulseFrequencyHz * g_pulseElapsed));
+			const float     scale = Constants::kGlowPulseScaleMin + (Constants::kGlowPulseScaleMax - Constants::kGlowPulseScaleMin) * sine01;
+
+			if (auto* material = g_ringGlowShaderProperty->GetMaterial()) {
+				material->baseColorScale = scale;
+			}
+		}
+
 		// Guarda de reentrancia para los reintentos de espera de 3D (ver
 		// WaitFor3DThenStartTicking) -- mismo patrón que
 		// Animation::WeaponVFX::g_generation: si StopWeaponGlow corre
@@ -251,6 +341,15 @@ namespace Animation
 
 			node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true);
 
+			// Nace a escala 0 (invisible) -- TickGlowFade la sube a 1
+			// durante Constants::kGlowFadeDuration, mismo criterio que
+			// WeaponTrail::Start para evitar un fotograma a fuerza plena
+			// antes de que el primer tick del fundido corra.
+			g_phase = GlowPhase::kFadingIn;
+			g_phaseElapsed = 0.0f;
+			node3D->local.scale = 0.0f;
+			node3D->world.scale = 0.0f;
+
 			// Resuelto una sola vez, aquí, en cuanto el 3D está listo -- ver
 			// el comentario de g_shaderProperty.
 			if (auto* geometry = FindGlowScrollGeometry(node3D)) {
@@ -263,6 +362,20 @@ namespace Animation
 				logs::warn("Animation::WeaponGlow: no se encontró la geometría del NiBillboardNode -- sin scroll de UV.");
 			}
 
+			// Shader de "RingGlow" -- resuelto por nombre real (ver
+			// Constants::kGlowRingGlowNodeName), para el pulso de energía
+			// (TickGlowPulse).
+			g_pulseElapsed = 0.0f;
+			if (auto* ringGlow = node3D->GetObjectByName(Constants::kGlowRingGlowNodeName)) {
+				if (auto* geometry = ringGlow->AsGeometry()) {
+					g_ringGlowShaderProperty = RE::NiPointer<RE::BSEffectShaderProperty>(
+						skyrim_cast<RE::BSEffectShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get()));
+				}
+			}
+			if (!g_ringGlowShaderProperty) {
+				logs::warn("Animation::WeaponGlow: no se encontró \"{}\" -- sin pulso de energía.", Constants::kGlowRingGlowNodeName);
+			}
+
 			// Luz real -- adjuntada al propio nodo raíz del Activator, se
 			// mueve gratis con él cada tick (ver AttachGlowLight/GenDynamic).
 			AttachGlowLight(ref.get(), node3D);
@@ -272,6 +385,8 @@ namespace Animation
 				a_refr.SetPosition(pos);
 				Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 				TickGlowUVScroll(a_deltaSeconds);
+				TickGlowPulse(a_deltaSeconds);
+				TickGlowFade(a_refr, a_deltaSeconds);
 				return true;
 			});
 
@@ -315,8 +430,25 @@ namespace Animation
 	void StartWeaponGlow(RE::Actor& a_actor)
 	{
 		if (g_activeHandle) {
-			logs::warn("Animation::StartWeaponGlow: ya hay un destello activo -- no-op.");
-			return;
+			if (g_phase != GlowPhase::kFadingOut) {
+				logs::warn("Animation::StartWeaponGlow: ya hay un destello activo -- no-op.");
+				return;
+			}
+
+			// El anterior todavía está en su margen de fundido de salida
+			// (ver StopWeaponGlow, Constants::kGlowFadeDuration) -- se
+			// cierra de golpe aquí mismo en vez de esperar a que su
+			// propio margen diferido lo haga, para que este ciclo nuevo
+			// pueda arrancar sin conflicto. Invalida ese cierre diferido
+			// (guardado por generación) antes de tocar nada.
+			++g_generation;
+			Physics::CancelTickLoop(g_tickToken);
+			g_tickToken = {};
+			g_shaderProperty.reset();
+			g_ringGlowShaderProperty.reset();
+			DetachGlowLight();
+			Physics::DestroyReplica(g_activeHandle);
+			g_activeHandle = {};
 		}
 
 		auto* form = GetGlowActivatorForm();
@@ -372,6 +504,8 @@ namespace Animation
 			a_refr.SetPosition(lastPosition);
 			Physics::SyncHavok(a_refr, lastPosition, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 			TickGlowUVScroll(a_deltaSeconds);
+			TickGlowPulse(a_deltaSeconds);
+			TickGlowFade(a_refr, a_deltaSeconds);
 			return true;
 		});
 	}
@@ -393,23 +527,52 @@ namespace Animation
 			a_refr.SetPosition(pos);
 			Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 			TickGlowUVScroll(a_deltaSeconds);
+			TickGlowPulse(a_deltaSeconds);
+			TickGlowFade(a_refr, a_deltaSeconds);
 			return true;
 		});
 	}
 
 	void StopWeaponGlow()
 	{
-		++g_generation;
-
-		Physics::CancelTickLoop(g_tickToken);
-		g_tickToken = {};
-
-		g_shaderProperty.reset();
-		DetachGlowLight();
-
-		if (g_activeHandle) {
-			Physics::DestroyReplica(g_activeHandle);
-			g_activeHandle = {};
+		if (!g_activeHandle || g_phase == GlowPhase::kFadingOut) {
+			// Sin destello activo, o ya apagándose -- no-op (evita
+			// solapar dos fundidos de salida si algo llama de más).
+			return;
 		}
+
+		// No se cancela el bucle de tick ni se destruye nada todavía --
+		// se deja correr Constants::kGlowFadeDuration más, con
+		// TickGlowFade encogiendo la malla y atenuando la luz en paralelo
+		// (mismos tres bucles de tick de siempre, sin ningún cambio en
+		// ellos), y solo entonces se limpia de verdad. Guardado por
+		// generación, mismo patrón que Animation::WeaponVFX: si
+		// StartWeaponGlow arranca un destello nuevo mientras este margen
+		// todavía está corriendo, este cierre diferido se descarta en
+		// silencio en vez de limpiar el destello equivocado.
+		g_phase = GlowPhase::kFadingOut;
+		g_phaseElapsed = 0.0f;
+
+		const auto generation = ++g_generation;
+		std::thread([generation]() {
+			std::this_thread::sleep_for(Constants::kGlowFadeDuration);
+			SKSE::GetTaskInterface()->AddTask([generation]() {
+				if (g_generation.load() != generation) {
+					return;
+				}
+
+				Physics::CancelTickLoop(g_tickToken);
+				g_tickToken = {};
+
+				g_shaderProperty.reset();
+				g_ringGlowShaderProperty.reset();
+				DetachGlowLight();
+
+				if (g_activeHandle) {
+					Physics::DestroyReplica(g_activeHandle);
+					g_activeHandle = {};
+				}
+			});
+		}).detach();
 	}
 }

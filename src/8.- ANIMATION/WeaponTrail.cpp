@@ -80,6 +80,7 @@ namespace Animation
 				}
 			}
 		}
+
 	}
 
 	WeaponTrail::~WeaponTrail()

@@ -108,6 +108,51 @@ explícitamente — "confirmado contra el formato, no contra un NIF real
 funcionando" — y recomienda probarlo en NifSkope/en el juego antes de darlo
 por bueno.
 
+## Preferencia por código sobre animación horneada (directiva del usuario, 2026-08-27)
+
+**Por defecto, cualquier animación en el tiempo de un efecto de este
+proyecto (scroll de UV, pulso de brillo/color, giro, fundido de
+encendido/apagado, rotación de una pieza suelta, etc.) se escribe por
+código cada tick, no se hornea como controller/animación dentro del
+NIF** — incluso en los casos donde el horneado SÍ se reproduciría solo
+(p. ej. un efecto instanciado vía `RE::BSTempEffectParticle::Spawn`, ver
+"Matiz importante" más abajo, donde se confirmó que el motor sí tickea
+esos controllers). No es solo una cuestión de fiabilidad (la razón
+original, ver esa misma sección, para objetos colocados con
+`PlaceObjectAtMe` que sí lo necesitan porque el controller horneado
+nunca se ejecuta) — es una decisión de arquitectura aparte, pedida
+explícitamente por el usuario:
+
+> Motivo (dado tal cual por el usuario): un valor controlado por código
+> deja el camino abierto a exponerlo en un futuro menú de configuración
+> (MCM) — velocidad de pulso, color, rango de intensidad, etc. Un valor
+> fijo dentro de las claves de un `NiFloatData` horneado en el NIF no se
+> puede reconfigurar en tiempo real sin volver a exportar el fichero.
+
+**Consecuencia práctica al diseñar/revisar un NIF de efecto para este
+proyecto**: no hace falta dejar ningún controller/animación horneada
+dentro del fichero — basta con dejar los nodos/materiales en su pose
+"neutra"/de reposo (V Offset=0, escala=1, Base Color Scale=1, etc.), y
+toda la animación temporal se implementa en el módulo C++
+correspondiente, leyendo/escribiendo directamente los campos reales del
+material o del nodo cada tick — mismos campos ya verificados en este
+proyecto: `BSShaderMaterial::texCoordOffset`/`texCoordScale`,
+`BSEffectShaderMaterial::baseColor`/`baseColorScale`,
+`NiLight::GetLightRuntimeData()` (`diffuse`/`radius`/`fade`),
+`NiAVObject::local.rotate`/`local.scale`. Si el usuario pide "que se vea
+X" y tú, como asistente, dudarías entre hornear la animación en NifSkope
+o escribirla por código, **la respuesta por defecto es código**, salvo
+que el propio usuario pida explícitamente lo contrario para un caso
+concreto.
+
+Ejemplos ya implementados en este proyecto siguiendo este criterio (ver
+`8.- ANIMATION/WeaponAnimation.cpp`/`WeaponGlow.cpp`):
+`Animation::TickSpin` (giro), `Animation::WeaponGlow::TickGlowUVScroll`
+(scroll de UV), `Animation::WeaponGlow::TickGlowPulse` (pulso de brillo,
+onda seno sobre `baseColorScale`), `Animation::WeaponGlow::TickGlowFade`
+(fundido de encendido/apagado, escala del nodo + `fade` de la luz en
+paralelo).
+
 ## Cómo inspeccionar un NIF real (métodos ya probados en este PC)
 
 ### a) Grep binario de nombres de tipo de bloque (siempre funciona)

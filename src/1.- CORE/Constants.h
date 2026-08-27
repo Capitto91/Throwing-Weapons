@@ -1294,6 +1294,18 @@ namespace Constants
 	// kMovementVfxActivatorLocalFormID.
 	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0xC19;
 
+	// Duración de la transición de encendido/apagado del destello (malla +
+	// luz) -- a petición del usuario 2026-08-27 ("no se apague/encienda de
+	// golpe"). Dos constantes con el MISMO valor mantenidas a mano en
+	// sincronía (mismo criterio que kTickInterval/kTickDeltaSeconds): la
+	// de chrono para el margen de espera antes de destruir de verdad tras
+	// el fundido de apagado (Animation::WeaponGlow::StopWeaponGlow), la de
+	// float para el propio ritmo del fundido tick a tick
+	// (Animation::WeaponGlow::TickGlowFade). Valor de partida ("ligera"),
+	// sin ajustar a ojo en el juego todavía.
+	inline constexpr std::chrono::milliseconds kGlowFadeDuration{ 300 };
+	inline constexpr float                     kGlowFadeDurationSeconds = 0.3f;
+
 	// Velocidad (unidades/segundo) del scroll de "V Offset" del shader del
 	// destello -- animación horneada en el propio NIF
 	// (BSEffectShaderPropertyFloatController -> NiFloatInterpolator ->
@@ -1315,6 +1327,29 @@ namespace Constants
 	// vez de depender del controller horneado. Valor derivado de las
 	// claves reales de arriba (-1.0 / 7.083333), no inventado.
 	inline constexpr float kGlowUVScrollSpeed = -1.0f / 7.083333f;
+
+	// Nombre real del BSTriShape "RingGlow" dentro de ThorMjolnirLight.nif
+	// (confirmado decodificando el campo Name del bloque -- índice de
+	// string 4, "RingGlow" -- con nif_header_walk.py de la skill
+	// nif-vfx-practices, 2026-08-27). A diferencia de la malla del scroll
+	// de UV (sin nombre útil, localizada por estructura vía
+	// FindGlowScrollGeometry), esta sí tiene nombre real, así que se
+	// busca directamente con GetObjectByName.
+	inline constexpr std::string_view kGlowRingGlowNodeName{ "RingGlow" };
+
+	// Pulso de energía sobre "RingGlow" -- a petición del usuario
+	// 2026-08-27 ("en vez de una textura estática, energía que va y
+	// viene"). Mismo motivo que kGlowUVScrollSpeed para no hornear nada
+	// en el NIF (un controller horneado tampoco se reproduciría aquí,
+	// misma causa de fondo): se escribe directamente cada tick sobre
+	// BSEffectShaderMaterial::baseColorScale (el multiplicador de brillo
+	// del shader -- "Base Color Scale", ya usado como constante fija en
+	// ThorMjolnirSparks.nif, ver CLAUDE.md) con una oscilación seno, en
+	// vez de un valor fijo. Frecuencia y amplitud de partida, sin ajustar
+	// a ojo en el juego todavía.
+	inline constexpr float kGlowPulseFrequencyHz = 1.0f;   // ciclos/segundo
+	inline constexpr float kGlowPulseScaleMin = 0.4f;
+	inline constexpr float kGlowPulseScaleMax = 1.6f;
 
 	// FormID local (0101A6DE, ESL -- ya enmascarado: 0xA6DE & 0xFFF, ver
 	// CLAUDE.md) del TESObjectLIGH creado por el usuario 2026-08-27. Radio,
