@@ -1235,4 +1235,98 @@ namespace Constants
 	// placeholder pendiente de reajustar a ojo. Bajada de 0.35 a 0.25
 	// (2026-08-26, "un poco más estrecho").
 	inline constexpr float kTrailSegmentScale = 0.25f;
+
+	// Destello + luz real que acompaña al arma desde que empieza el gesto de
+	// Lanzar hasta que se completa el Atrape (2026-08-27, ver
+	// 8.- ANIMATION/WeaponGlow.h para la arquitectura completa). Punto
+	// "polish" nuevo, sin número en Mecanica del arma.txt -- mismo criterio
+	// que kMovementVfxActivatorLocalFormID para las chispas.
+	//
+	// Arquitectura revisada (sustituye a un primer intento de esta misma
+	// sesión que horneaba la malla billboard como hijo de "Gold" dentro
+	// del propio NIF del arma): a petición del usuario, un .nif propio y
+	// separado (kGlowEffectPath, "ThorMjolnirLight.nif", solo efectos
+	// visuales) colocado como Activator real y seguido cada tick -- mismo
+	// mecanismo ya probado para las chispas (PlaceObjectAtMe + bucle de
+	// tick manual), en vez de BSTempEffectParticle (como WeaponTrail):
+	// BSTempEffectParticle tiene una vida útil FIJA fijada al crearlo, que
+	// no cubre "hasta que se hace el Atrape" -- el arma puede quedar
+	// clavada un tiempo indefinido antes de llamarla de vuelta, y un
+	// Activator colocado con PlaceObjectAtMe no caduca por sí solo.
+
+	// Ruta del .nif del destello, relativa a meshes/ -- mismo convenio de
+	// carpeta que kTrailEffectPath. Confirmada por el usuario 2026-08-27.
+	inline constexpr const char* kGlowEffectPath = "Effects/ThorMjolnirLight.nif";
+
+	// Nombre del nodo de la cabeza del martillo, YA EXISTENTE en el NIF
+	// real del arma (Mjolnir.nif) -- confirmado por el usuario 2026-08-26.
+	// El destello sigue la posición MUNDIAL de este nodo concreto (buscado
+	// con GetObjectByName sobre el hueso "WEAPON" del actor mientras el
+	// arma sigue en la mano, o sobre Get3D() de la réplica en vuelo -- ver
+	// Animation::WeaponGlow) en vez de la posición del hueso "WEAPON"/nodo
+	// raíz de la réplica sin más -- ésos caen en la base del mango, no en
+	// la cabeza (mismo problema ya documentado para kTrailAnchorLocalOffset,
+	// pero resuelto aquí de forma más directa: a diferencia del nodo raíz
+	// de la réplica, "Gold" SÍ es un nodo real y nombrado dentro del NIF,
+	// así que no hace falta ningún offset fijo calculado a ojo -- se lee
+	// su posición real cada tick). Corregido 2026-08-27 (el destello
+	// colgaba de la base del mango hasta la punta, no de la cabeza).
+	inline constexpr std::string_view kWeaponHammerHeadNodeName{ "Gold" };
+
+	// Desplaza el punto de anclaje del destello en el espacio LOCAL del
+	// propio nodo "Gold" (transformado por su rotación mundial real cada
+	// tick, mismo criterio que Constants::kTrailAnchorLocalOffset -- así
+	// el desplazamiento se mueve rígido con la cabeza del martillo, sin
+	// orbitar en mundo si el arma gira/tumba en vuelo). A petición del
+	// usuario 2026-08-27 ("justo ahora está en el centro del arma, debería
+	// estar un poco más arriba") -- primer intento en Z (0,0,5) se salía
+	// del eje del arma ("lo has desplazado fuera del eje... está
+	// tumbado"), corregido a Y -- mismo eje que kTrailAnchorLocalOffset
+	// usa para su propio desplazamiento a lo largo del mango/hacha.
+	// Magnitud subida de 5 a 15 (2026-08-27, a petición del usuario) --
+	// eje ya confirmado correcto, sigue pendiente de ajuste fino si hace
+	// falta.
+	inline constexpr RE::NiPoint3 kGlowAnchorLocalOffset{ 0.0f, 15.0f, 0.0f };
+
+	// FormID local del Activator creado por el usuario 2026-08-27
+	// (01019C19, ESL activo -- ya enmascarado: 0x9C19 & 0xFFF, ver
+	// CLAUDE.md), Model=kGlowEffectPath, sin script, mismo patrón que
+	// kMovementVfxActivatorLocalFormID.
+	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0xC19;
+
+	// Velocidad (unidades/segundo) del scroll de "V Offset" del shader del
+	// destello -- animación horneada en el propio NIF
+	// (BSEffectShaderPropertyFloatController -> NiFloatInterpolator ->
+	// NiFloatData, decodificada con nif_find_controlled_variable.py/
+	// nif_keydata_decode.py de la skill nif-vfx-practices, 2026-08-27: 2
+	// claves, de V=0.0 en t=0 a V=-1.0 en t=7.083333s), pero que en el
+	// juego NUNCA llega a reproducirse -- confirmado que el motor no
+	// llama NiTimeController::Update() por su cuenta sobre un controller
+	// colgado de una referencia colocada en tiempo de ejecución
+	// (PlaceObjectAtMe), mismo motivo exacto ya documentado en CLAUDE.md
+	// para el giro (kWeaponSpinNodeName) -- ahí era un
+	// NiTransformController, aquí es un BSEffectShaderPropertyFloatController,
+	// pero la causa de fondo (referencia creada en tiempo de ejecución) es
+	// idéntica. NifSkope/la vista previa de la CK sí lo reproducen porque
+	// avanzan todos los NiTimeController a mano, sin pasar por el mismo
+	// bucle de actualización del motor real. Mismo remedio que el giro:
+	// escribir el valor directamente por código cada tick
+	// (Animation::WeaponGlow, sobre BSShaderMaterial::texCoordOffset) en
+	// vez de depender del controller horneado. Valor derivado de las
+	// claves reales de arriba (-1.0 / 7.083333), no inventado.
+	inline constexpr float kGlowUVScrollSpeed = -1.0f / 7.083333f;
+
+	// FormID local (0101A6DE, ESL -- ya enmascarado: 0xA6DE & 0xFFF, ver
+	// CLAUDE.md) del TESObjectLIGH creado por el usuario 2026-08-27. Radio,
+	// color, fade y demás saldrán directamente de ese formulario en tiempo
+	// de ejecución cuando se conecte la luz (segunda mitad de esta
+	// funcionalidad, todavía sin implementar -- de momento este destello
+	// solo cuelga la malla visual) -- no se duplican aquí como constantes
+	// propias.
+	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x6DE;
+
+	// Nombre que se le dará al RE::NiPointLight creado por código cuando se
+	// conecte la luz (pendiente, ver arriba) -- namespacing igual que el
+	// resto del proyecto, ver kThrowTriggerGlobalEditorID.
+	inline constexpr std::string_view kWeaponGlowLightNodeName{ "CAP_ThorMjolnir_GlowLight" };
 }

@@ -11,6 +11,7 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
 
 #include <thread>
@@ -443,6 +444,13 @@ namespace Weapon
 
 		TransitionState(State::kThrowing);
 
+		// Destello (Animation::WeaponGlow, 2026-08-27): arranca aquí, en
+		// el instante exacto en que empieza la animación de Lanzar, con el
+		// arma real todavía en la mano -- decisión del usuario. Sigue el
+		// hueso "WEAPON" hasta que la réplica exista de verdad (ver
+		// callbacks.onSpawned más abajo, Animation::RetargetWeaponGlowToReplica).
+		Animation::StartWeaponGlow(*player);
+
 		// Fin del zoom de apuntado (ver BeginAiming) -- el gesto de Lanzar ya
 		// no es "apuntando".
 		Animation::SetAimZoom(false);
@@ -643,6 +651,7 @@ namespace Weapon
 			// no lo hace por su cuenta, ver ese comentario).
 			ReequipAndReset();
 			Animation::FadeOutMovementVFX();
+			Animation::StopWeaponGlow();
 			return;
 		}
 		if (catchAnimationActive) {
@@ -859,6 +868,7 @@ namespace Weapon
 		// VFX sigue activo y siguiendo la mano durante ese margen extra
 		// también, así que no hay ningún coste por esperar un poco más.
 		Animation::FadeOutMovementVFX(true);
+		Animation::StopWeaponGlow();
 	}
 
 	void WeaponManager::EquipGestureWeapon()
@@ -985,6 +995,10 @@ namespace Weapon
 				// archivo).
 				if (a_handle.get() && weaponState.GetState() == State::kThrown) {
 					Animation::StartMovementVFXOnReplica(a_handle);
+
+					// Destello (ver BeginThrowAnimation): pasa de seguir la
+					// mano a seguir la réplica en cuanto su handle es real.
+					Animation::RetargetWeaponGlowToReplica(a_handle);
 				}
 			};
 			callbacks.onTickStarted = [this](Physics::TickToken a_token) {
@@ -1068,6 +1082,7 @@ namespace Weapon
 			// BeginCatchAnimation.
 			ReequipAndReset();
 			Animation::FadeOutMovementVFX();
+			Animation::StopWeaponGlow();
 			return;
 		}
 
@@ -1118,6 +1133,7 @@ namespace Weapon
 		// ver el mismo comentario en BeginCatchAnimation.
 		ReequipAndReset();
 		Animation::FadeOutMovementVFX();
+		Animation::StopWeaponGlow();
 	}
 
 	void WeaponManager::ReequipAndReset(bool a_reattachVfxToHand)
@@ -1143,6 +1159,7 @@ namespace Weapon
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (a_reattachVfxToHand && player) {
 			Animation::RetargetMovementVFXToActor(*player);
+			Animation::RetargetWeaponGlowToActor(*player);
 		}
 
 		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
