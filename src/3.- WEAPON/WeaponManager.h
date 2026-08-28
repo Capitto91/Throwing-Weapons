@@ -5,6 +5,8 @@
 
 #include "3.- WEAPON/WeaponState.h"
 
+#include <chrono>
+
 namespace Weapon
 {
 	class WeaponManager
@@ -367,6 +369,60 @@ namespace Weapon
 		// Activado por EquipGestureWeapon mientras dura el equipado del
 		// señuelo -- ver IsEquipGuardSuppressed.
 		bool suppressEquipGuard{ false };
+
+		// True desde que ThrowWeapon oculta el arma real y difiere su
+		// desequipado/desbloqueo real (Constants::kThrowReleaseVisualHoldDuration)
+		// hasta que ese cierre diferido se completa -- mismo papel que
+		// catchAnimationActive/callAnimationActive, para el gesto de
+		// Lanzar. Comprobado por ese propio cierre en vez del estado actual
+		// (bug real, 2026-08-28: el estado podía haber avanzado a kCalling
+		// -- recuperar casi al instante tras lanzar -- antes de que
+		// venciera el margen, y el chequeo antiguo por lista de estados no
+		// incluía kCalling; el desequipado/desbloqueo real de Lanzar nunca
+		// llegaba a ejecutarse, dejando el personaje bloqueado a media
+		// animación) y también gatea OnAimButtonDown (ver esa función,
+		// caso kInHand) para no dejar empezar un ciclo nuevo mientras el
+		// cierre del anterior sigue pendiente -- ambos arreglos son la
+		// misma causa de fondo, un cierre diferido que podía quedar
+		// obsoleto por una transición demasiado rápida. Reseteado en
+		// ReequipAndReset (cualquier camino de recuperación completa el
+		// cierre de golpe).
+		bool throwTailActive{ false };
+
+		// Incrementado cada vez que ReequipAndReset arranca un reequipado
+		// real (activa "SkipEquipAnimation" y llama a EquipObject) --
+		// capturado por el hilo que la apaga de nuevo pasado
+		// Constants::kSkipEquipAnimationWindow, para que solo el reequipado
+		// MÁS RECIENTE apague la variable. Sin esto, un ciclo nuevo que
+		// empezara (y volviera a poner esta misma variable a true para su
+		// propio reequipado) antes de que venciera esta ventana podía ver
+		// cómo el cierre diferido de un reequipado anterior la apagaba de
+		// en medio, dejando sin suprimir la animación de desenvainar de un
+		// ciclo distinto -- mismo patrón que throwTailActive.
+		std::uint64_t reequipGeneration{ 0 };
+
+		// Instante real (reloj monotónico, no tiempo de juego) del último
+		// evento que tocó el grafo de animación por nuestra cuenta -- el
+		// arma dejando la mano de verdad (ThrowWeapon) o un "attackStop"
+		// real (FinishCallAnimation/FinishCatchAnimation). Generalizado
+		// (2026-08-28) desde un campo que solo cubría Lanzar: el mismo
+		// problema (dos "attackStart" vanilla demasiado seguidos confunden
+		// al grafo de forma no determinista, ver Constants::
+		// kMinCatchAnimationDelay para el primer caso ya conocido)
+		// reapareció también entre Atrape y el Lanzar del ciclo siguiente
+		// -- mi gate original en OnAimButtonDown/kInHand solo comprobaba
+		// que catchAnimationActive ya estuviera a false, sin exigir ningún
+		// margen aparte, y con el jugador machacando el botón esa
+		// comprobación podía pasar apenas unas decenas de ms después del
+		// attackStop real de Atrape (confirmado con logs: 83ms de margen
+		// real en un caso que falló). Ver Constants::kMinAttackStartInterval,
+		// comprobado ahora en los dos sitios que disparan un "attackStart"
+		// nuevo por pulsación de botón (OnAimButtonUp, casos kAiming y
+		// kThrown/kStuck). std::chrono::steady_clock en vez de acumular
+		// segundos dentro de un bucle de tick (como hace Return) porque
+		// aquí no hay ningún tick en marcha entre un cierre y la siguiente
+		// pulsación -- se mide en el instante mismo de cada evento.
+		std::chrono::steady_clock::time_point lastAttackAnimationEventTime;
 
 		// True mientras dura el gesto visual de Atrape (desde
 		// BeginCatchAnimation hasta FinishCatchAnimation, ver esa función --

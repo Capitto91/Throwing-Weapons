@@ -783,6 +783,38 @@ namespace Constants
 	// negociable).
 	inline constexpr float kMinCatchAnimationDelay = 0.5f;
 
+	// Misma causa de fondo que kMinCatchAnimationDelay de arriba, pero
+	// general: dos disparos de "attackStart" vanilla demasiado seguidos
+	// confunden al grafo de forma no determinista, sea cual sea el par de
+	// gestos concreto. kMinCatchAnimationDelay ya cubre Llamada->Atrape
+	// (impuesto internamente por el propio bucle de tick de
+	// Return::BeginReturn, que nunca dispara BeginCatchAnimation antes de
+	// ese margen) -- esta constante cubre los otros dos huecos, ambos
+	// gatillados directamente por el botón del jugador sin ningún mínimo
+	// impuesto por el propio flujo:
+	// - Lanzar->Llamada (bug real, 2026-08-28, primer caso encontrado):
+	//   recuperar menos de ~0,6s después de que el arma saliera de la mano
+	//   (Estado "Lanzando -> Lanzada") producía el síntoma no determinista
+	//   de arriba (NotifyAnimationGraph() a veces false directamente, a
+	//   veces true pero sin que la anotación real de Call.hkx llegara
+	//   nunca); recuperar pasado ese margen funcionó siempre. Fallos vistos
+	//   hasta 0,622s, único éxito medido a 0,923s.
+	// - Atrape->Lanzar del ciclo siguiente (segundo caso, mismo día): el
+	//   gate original de OnAimButtonDown/kInHand (comprobar solo que
+	//   catchAnimationActive ya estuviera a false) no bastaba -- machacando
+	//   el botón, un lanzamiento nuevo podía dispararse apenas 83ms después
+	//   del "attackStop" real de FinishCatchAnimation, con el mismo
+	//   síntoma: el lanzamiento ocurría mecánicamente (red de seguridad,
+	//   1.5s después) pero sin que Throw.hkx llegara a reproducirse nunca.
+	// Valor de partida generoso sobre el peor caso medido (0,622s) --
+	// placeholder, pendiente de ajustar a la baja en el juego si se nota
+	// como una espera perceptible. WeaponManager::OnAimButtonUp (casos
+	// kAiming y kThrown/kStuck) ignora la pulsación mientras no se cumpla,
+	// medido desde WeaponManager::lastAttackAnimationEventTime (el último
+	// evento que tocó el grafo por nuestra cuenta: el arma dejando la mano,
+	// o un "attackStop" real de Llamada/Atrape).
+	inline constexpr float kMinAttackStartInterval = 1.0f;
+
 	// Cuánto sigue reproduciéndose Call.hkx/Catch.hkx, en tiempo real,
 	// después de su propia anotación de liberación hasta que el propio
 	// clip termina del todo -- mismos 0.5s de cola ya medidos y descritos
@@ -1363,7 +1395,7 @@ namespace Constants
 	// ThorMjolnirSparks.nif, ver CLAUDE.md) con una oscilación seno, en
 	// vez de un valor fijo. Frecuencia y amplitud de partida, sin ajustar
 	// a ojo en el juego todavía.
-	inline constexpr float kGlowPulseFrequencyHz = 1.0f;   // ciclos/segundo
+	inline constexpr float kGlowPulseFrequencyHz = 1.0f;  // ciclos/segundo
 	inline constexpr float kGlowPulseScaleMin = 0.4f;
 	inline constexpr float kGlowPulseScaleMax = 1.6f;
 

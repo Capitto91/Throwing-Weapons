@@ -104,6 +104,40 @@ namespace Weapon
 		switch (weaponState.GetState()) {
 		case State::kInHand:
 			{
+				// El ciclo anterior puede haber vuelto a "en mano" (ver
+				// ReequipAndReset) antes de que termine de verdad su propio
+				// cierre asíncrono diferido (desequipado real de Lanzar,
+				// desatascado del grafo de Llamada/Atrape -- ver
+				// throwTailActive/callAnimationActive/catchAnimationActive).
+				// Empezar un ciclo nuevo mientras eso sigue pendiente es
+				// justo la condición de carrera que dejaba el personaje
+				// congelado a media animación al pulsar el botón demasiado
+				// rápido (2026-08-28) -- se ignora la pulsación hasta que el
+				// cierre anterior se complete de verdad, en vez de dejar que
+				// interfiera con el ciclo nuevo.
+				if (throwTailActive || callAnimationActive || catchAnimationActive) {
+					break;
+				}
+
+				// Bug real (2026-08-28, ver CHANGELOG.md): este chequeo vivía
+				// antes en OnAimButtonUp, en el momento de soltar -- pero
+				// apuntar puede durar lo que el jugador quiera (no hay
+				// mecánica de carga, Mecanica del arma.txt punto 3), así que
+				// bloquear el suelte dejaba al personaje atascado en la pose
+				// de apuntado, sin soltar el arma, hasta que pasara el margen
+				// completo por pura casualidad (varios intentos de botón
+				// hasta que "cuadraba"). El margen debe impedir EMPEZAR a
+				// apuntar demasiado pronto, no impedir TERMINAR un apuntado
+				// ya en marcha -- comprobado aquí, en la pulsación que inicia
+				// el gesto, para que una vez dentro de kAiming el suelte
+				// siempre complete el lanzamiento sin más esperas.
+				const auto elapsedSinceLastAttackEvent = std::chrono::duration<float>(std::chrono::steady_clock::now() - lastAttackAnimationEventTime).count();
+				logs::info("WeaponManager::OnAimButtonDown/kInHand: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
+					elapsedSinceLastAttackEvent, Constants::kMinAttackStartInterval);
+				if (elapsedSinceLastAttackEvent < Constants::kMinAttackStartInterval) {
+					break;
+				}
+
 				// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el
 				// arma envainada: la primera pulsación solo desenvaina, no
 				// empieza a apuntar -- hace falta una segunda pulsación ya con
@@ -135,23 +169,76 @@ namespace Weapon
 
 	void WeaponManager::OnAimButtonUp()
 	{
+		// Compartido por los dos casos de abajo -- ver el comentario de
+		// Constants::kMinAttackStartInterval/lastAttackAnimationEventTime:
+		// ninguno de los dos gestos puede disparar su propio "attackStart"
+		// demasiado pronto tras el último evento que tocó el grafo por
+		// nuestra cuenta (el arma dejando la mano, o un "attackStop" real
+		// de Llamada/Atrape) -- dos disparos de ese evento vanilla
+		// demasiado seguidos confunden al grafo de forma no determinista.
+		const auto elapsedSinceLastAttackEvent = std::chrono::duration<float>(std::chrono::steady_clock::now() - lastAttackAnimationEventTime).count();
+
 		switch (weaponState.GetState()) {
 		case State::kAiming:
+			// El margen mínimo (ver Constants::kMinAttackStartInterval) ya
+			// se comprueba en OnAimButtonDown/kInHand, al EMPEZAR a apuntar
+			// -- no aquí. Bug real (2026-08-28, ver CHANGELOG.md): este
+			// chequeo vivía antes en este punto (al soltar) y dejaba al
+			// personaje atascado en la pose de apuntado, sin soltar el
+			// arma, hasta que el margen se cumpliera por pura casualidad --
+			// apuntar puede durar lo que el jugador quiera (sin mecánica de
+			// carga, Mecanica del arma.txt punto 3), así que una vez dentro
+			// de kAiming el suelte debe completar el lanzamiento siempre,
+			// sin ninguna espera adicional.
 			BeginThrowAnimation();
 			break;
 		case State::kThrown:
 		case State::kStuck:
-			// Disparado al soltar, no al pulsar -- mismo motivo que Lanzar:
-			// disparar attackStart mientras el botón todavía está pulsado
-			// escalaba a un power attack vanilla real (confirmado en el
-			// juego con el Animation Event Log de OAR: PowerAttack_Start_end
-			// en vez de la secuencia del ataque ligero, incluso con el
-			// personaje quieto -- no era el mismo bug de movimiento ya
-			// resuelto para Lanzar en v1.9.16). Al soltar, el botón ya no
-			// está pulsado en el instante exacto de NotifyAnimationGraph, así
-			// que no hay ambigüedad que resolver.
-			BeginCallAnimation();
-			break;
+			{
+				// Causa raíz real encontrada con logs comparados (2026-08-28,
+				// ver CHANGELOG.md): BeginCallAnimation escribe iRightHandType
+				// a mano para fingir "arma de una mano" mientras el jugador
+				// está desarmado de verdad -- pero el desequipado real del
+				// arma (ThrowWeapon, diferido Constants::kThrowReleaseVisualHoldDuration
+				// tras soltar) puede no haber ocurrido todavía. Si Llamada se
+				// dispara mientras el arma real sigue equipada, la rama de
+				// combate ya la decide el motor por el arma real, no por nuestro
+				// truco -- la condición del submod de OAR de Llamada nunca
+				// llega a coincidir, y el gesto entero cae siempre a la red de
+				// seguridad de 1.5s con la animación real sin reproducirse
+				// (confirmado con logs: 'era 3' -- arma todavía equipada -- en
+				// todos los casos que fallaban; 'era 0' -- ya desequipada -- en
+				// todos los que funcionaban). Se ignora la pulsación mientras
+				// throwTailActive siga pendiente, igual que ya hace
+				// OnAimButtonDown en kInHand para el mismo tipo de carrera.
+				if (throwTailActive) {
+					break;
+				}
+
+				// Segundo bug real de fondo, distinto del anterior, encontrado
+				// con la misma comparación de logs (2026-08-28): con el arma ya
+				// genuinamente desequipada (throwTailActive ya en false),
+				// recuperar demasiado pronto tras soltar seguía fallando --
+				// mismo mecanismo general de Constants::kMinAttackStartInterval
+				// (ver arriba).
+				logs::info("WeaponManager::OnAimButtonUp/kThrown-kStuck: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
+					elapsedSinceLastAttackEvent, Constants::kMinAttackStartInterval);
+				if (elapsedSinceLastAttackEvent < Constants::kMinAttackStartInterval) {
+					break;
+				}
+
+				// Disparado al soltar, no al pulsar -- mismo motivo que Lanzar:
+				// disparar attackStart mientras el botón todavía está pulsado
+				// escalaba a un power attack vanilla real (confirmado en el
+				// juego con el Animation Event Log de OAR: PowerAttack_Start_end
+				// en vez de la secuencia del ataque ligero, incluso con el
+				// personaje quieto -- no era el mismo bug de movimiento ya
+				// resuelto para Lanzar en v1.9.16). Al soltar, el botón ya no
+				// está pulsado en el instante exacto de NotifyAnimationGraph, así
+				// que no hay ambigüedad que resolver.
+				BeginCallAnimation();
+				break;
+			}
 		default:
 			break;
 		}
@@ -480,9 +567,18 @@ namespace Weapon
 		// submod de OAR que sustituye Constants::kLightAttackAnimationEvent
 		// (un evento vanilla ya existente, ninguno nuevo) por Throw.hkx.
 		Animation::SetThrowTrigger(*player, true);
+
+		// Diagnóstico (2026-08-28, ver CHANGELOG.md): GetAttackState() antes
+		// y después de disparar el evento -- para comparar el primer
+		// lanzamiento de la sesión (donde la anotación real de OAR sí
+		// llega) contra los siguientes (donde no llega y se cae siempre a
+		// la red de seguridad de 1.5s), a ver si el grafo ya arranca en un
+		// estado distinto de kNone/0.
+		const auto attackStateBefore = player->AsActorState()->GetAttackState();
 		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
-		logs::info("WeaponManager::BeginThrowAnimation: '{}' disparado, NotifyAnimationGraph()={}.",
-			Constants::kLightAttackAnimationEvent, notifyOk);
+		logs::info("WeaponManager::BeginThrowAnimation: '{}' disparado, NotifyAnimationGraph()={}, GetAttackState() antes={} después={}, IsMoving={}.",
+			Constants::kLightAttackAnimationEvent, notifyOk, static_cast<int>(attackStateBefore),
+			static_cast<int>(player->AsActorState()->GetAttackState()), player->IsMoving());
 
 		// Red de seguridad: el lanzamiento físico debe ocurrir siempre, tenga
 		// o no confirmación de la anotación real (decisión del usuario,
@@ -558,13 +654,20 @@ namespace Weapon
 		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
 
 		Animation::SetCallTrigger(*player, true);
+
+		// Diagnóstico (2026-08-28, ver CHANGELOG.md) -- mismo motivo que
+		// BeginThrowAnimation: la anotación real de Llamada no ha llegado
+		// nunca en las pruebas del usuario, siempre cae a la red de
+		// seguridad de 1.5s.
+		const auto attackStateBefore = player->AsActorState()->GetAttackState();
 		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
 
 		std::int32_t readBackInt = -1;
 		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
-		logs::info("WeaponManager::BeginCallAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+		logs::info("WeaponManager::BeginCallAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}, GetAttackState() antes={} después={}, IsMoving={}.",
 			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
-			Constants::kLightAttackAnimationEvent, notifyOk);
+			Constants::kLightAttackAnimationEvent, notifyOk, static_cast<int>(attackStateBefore),
+			static_cast<int>(player->AsActorState()->GetAttackState()), player->IsMoving());
 
 		// Red de seguridad: el regreso físico debe empezar siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
@@ -614,6 +717,22 @@ namespace Weapon
 			return;
 		}
 		callAnimationActive = false;
+
+		// Bug real (2026-08-28, ver CHANGELOG.md): esta actualización vivía
+		// más abajo, al final del bloque -- pero OnAimButtonDown/kInHand
+		// solo comprueba callAnimationActive antes de leer
+		// lastAttackAnimationEventTime, así que había una rendija real
+		// entre "la bandera ya está a false" y "el timestamp ya está
+		// actualizado" en la que una pulsación podía colarse leyendo un
+		// timestamp todavía viejo (confirmado con logs: el gate calculó
+		// 1.817s contra el timestamp de la Llamada anterior, no contra este
+		// Atrape, en el mismo milisegundo en que este método lo actualizaba
+		// más abajo). Puesta aquí, junto a la bandera, para que las dos
+		// mutaciones sean atómicas entre sí -- cualquiera que observe
+		// callAnimationActive ya en false observa también este timestamp ya
+		// fresco.
+		lastAttackAnimationEventTime = std::chrono::steady_clock::now();
+		logs::info("WeaponManager::FinishCallAnimation: lastAttackAnimationEventTime actualizado.");
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetCallTrigger(*player, false);
@@ -693,13 +812,19 @@ namespace Weapon
 		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
 
 		Animation::SetCatchTrigger(*player, true);
+
+		// Diagnóstico (2026-08-28, ver CHANGELOG.md) -- Atrape sí recibe la
+		// anotación real siempre; sirve de referencia para comparar contra
+		// Lanzar/Llamada, que no.
+		const auto attackStateBefore = player->AsActorState()->GetAttackState();
 		const bool notifyOk = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
 
 		std::int32_t readBackInt = -1;
 		player->GetGraphVariableInt(Constants::kRightHandTypeGraphVariable, readBackInt);
-		logs::info("WeaponManager::BeginCatchAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}.",
+		logs::info("WeaponManager::BeginCatchAnimation: '{}' puesto a {} (era {}), releído como {} -- '{}' disparado, NotifyAnimationGraph()={}, GetAttackState() antes={} después={}, IsMoving={}.",
 			Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded, previousRightHandType, readBackInt,
-			Constants::kLightAttackAnimationEvent, notifyOk);
+			Constants::kLightAttackAnimationEvent, notifyOk, static_cast<int>(attackStateBefore),
+			static_cast<int>(player->AsActorState()->GetAttackState()), player->IsMoving());
 
 		// Red de seguridad: el reequipado real debe ocurrir siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
@@ -839,6 +964,23 @@ namespace Weapon
 		catchPhysicallyArrived = false;
 		catchReequipPending = false;
 
+		// Ver Constants::kMinAttackStartInterval/lastAttackAnimationEventTime
+		// -- bug real (2026-08-28, ver CHANGELOG.md), confirmado con logs:
+		// esta actualización vivía más abajo, al final del bloque de
+		// player -- pero OnAimButtonDown/kInHand solo comprueba
+		// catchAnimationActive antes de leer lastAttackAnimationEventTime,
+		// así que había una rendija real entre "la bandera ya está a false"
+		// y "el timestamp ya está actualizado" en la que una pulsación
+		// (con el botón machacado, "muchos intentos") podía colarse leyendo
+		// un timestamp todavía viejo -- el gate calculó 1.817s contra el
+		// timestamp de la Llamada anterior, no contra este Atrape, en el
+		// mismo milisegundo en que este método lo actualizaba más abajo, y
+		// el Lanzar siguiente se disparó sin que Throw.hkx llegara a
+		// reproducirse. Puesta aquí, junto a la bandera, para que las dos
+		// mutaciones sean atómicas entre sí.
+		lastAttackAnimationEventTime = std::chrono::steady_clock::now();
+		logs::info("WeaponManager::FinishCatchAnimation: lastAttackAnimationEventTime actualizado.");
+
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetCatchTrigger(*player, false);
 			Animation::SetAnimationDriven(*player, false);
@@ -953,31 +1095,60 @@ namespace Weapon
 			// vuelve invisible"); el desequipado real ("...y se desactiva",
 			// necesario para el punto 4: puños libres) se difiere.
 			Animation::SetEquippedWeaponHidden(*player, true);
+			throwTailActive = true;
+			lastAttackAnimationEventTime = std::chrono::steady_clock::now();
+			logs::info("WeaponManager::ThrowWeapon: lastAttackAnimationEventTime actualizado.");
 
 			// Sin cola y aplicación inmediata: un desequipar encolado podía
 			// perderse en silencio si se dispara desde un evento de carga
 			// (comprobado en la iteración anterior). Diferido el margen de
 			// arriba en vez de hacerlo aquí mismo, por el motivo ya
-			// explicado. Comprueba el estado al despertar por si el ciclo ya se
-			// completó y reinició del todo antes de que venza el margen
-			// (arma ya de vuelta en la mano, o una aiming/throwing nueva en
-			// marcha) -- en cualquiera de esos casos este desequipado ya
-			// quedaría obsoleto y no debe tocar el arma de un ciclo
-			// distinto.
+			// explicado. Comprobado por throwTailActive, no por una lista de
+			// estados esperados -- bug real (2026-08-28): recuperar casi al
+			// instante tras lanzar (kThrown -> kCalling) hacía que el
+			// estado ya no estuviera en esa lista cuando vencía el margen,
+			// así que el desequipado real y el desbloqueo de
+			// SetAnimationDriven/movimiento nunca llegaban a ejecutarse --
+			// el personaje se quedaba congelado a media animación de
+			// Lanzar, con Llamada ya intentando reproducirse encima.
+			// throwTailActive en cambio es verdad durante todo el ciclo
+			// mientras este cierre siga pendiente, sea cual sea el estado
+			// concreto en ese instante, y solo se apaga aquí mismo o en
+			// ReequipAndReset (recuperación completa/instantánea) -- si ya
+			// está a false aquí es que ese otro camino ya hizo este mismo
+			// trabajo, no hay nada que repetir.
 			std::thread([this, player, weapon]() {
 				std::this_thread::sleep_for(Constants::kThrowReleaseVisualHoldDuration);
 				SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
-					const auto state = weaponState.GetState();
-					if (state != State::kThrown && state != State::kStuck && state != State::kReturning) {
+					if (!throwTailActive) {
 						return;
 					}
+					throwTailActive = false;
+
 					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 
-					// Desactivados aquí, junto con el desequipado real, no
-					// en OnThrowReleaseAnimationEvent -- ver el comentario
-					// de allí.
-					Animation::SetAnimationDriven(*player, false);
-					Input::SetMovementLocked(false);
+					// El desequipado real de arriba debe ocurrir siempre,
+					// una sola vez -- pero el desbloqueo de
+					// SetAnimationDriven/movimiento que este mismo margen
+					// gestionaba solo es correcto si Lanzar sigue siendo el
+					// gesto vigente. Regresión real (2026-08-28, tras
+					// cambiar el chequeo de arriba de una lista de estados a
+					// throwTailActive): recuperar casi al instante tras
+					// lanzar hace que Llamada (callAnimationActive) ya se
+					// haya apropiado de estas mismas dos banderas para su
+					// propio gesto antes de que venza este margen --
+					// apagarlas aquí encima corta Call.hkx a mitad (se oía
+					// el sonido del chasquido pero la animación nunca
+					// llegaba a reproducirse) y deja el bloqueo de
+					// movimiento en un estado que ya no le corresponde
+					// gestionar a nadie. Si Llamada o Atrape ya están en
+					// marcha, son ellos quienes las apagarán al terminar
+					// (FinishCallAnimation/FinishCatchAnimation) -- aquí no
+					// hay nada más que hacer con ellas.
+					if (!callAnimationActive && !catchAnimationActive) {
+						Animation::SetAnimationDriven(*player, false);
+						Input::SetMovementLocked(false);
+					}
 				});
 			}).detach();
 
@@ -1138,6 +1309,15 @@ namespace Weapon
 
 	void WeaponManager::ReequipAndReset(bool a_reattachVfxToHand)
 	{
+		// El arma real se reequipa de verdad más abajo -- si el cierre
+		// diferido de Lanzar (ver ThrowWeapon/throwTailActive) seguía
+		// pendiente en este instante (recuperación instantánea disparada
+		// muy poco después de lanzar, p. ej. una pantalla de carga), se da
+		// por completado aquí mismo: sin este reseteo, ese cierre diferido
+		// llegaría más tarde y desequiparía de nuevo un arma que este mismo
+		// reequipado acaba de devolver a la mano.
+		throwTailActive = false;
+
 		// A diferencia de antes (v1.14.23), ya NO dispara aquí el fundido
 		// del VFX (Animation::FadeOutMovementVFX) -- a petición del
 		// usuario (2026-08-10): disparar el fundido en el instante exacto
@@ -1176,7 +1356,9 @@ namespace Weapon
 			// de carga, el juego aceptaba la orden (sonaba el sonido de
 			// equipar) pero nunca llegaba a equipar el arma de verdad
 			// (comprobado en la iteración anterior).
-			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
+			const auto generation = ++reequipGeneration;
+
+			SKSE::GetTaskInterface()->AddTask([this, player, weapon, generation]() {
 				// Suprime la animación completa de equipar/desenvainar al
 				// volver el arma a la mano -- vía el mod externo
 				// SkipEquipAnimation (dependencia obligatoria del plugin,
@@ -1200,10 +1382,20 @@ namespace Weapon
 				// así que la variable se apagaba antes de que el hook de
 				// SkipEquipAnimation llegara a leerla. Se desactiva aparte,
 				// tras Constants::kSkipEquipAnimationWindow, mismo patrón
-				// hilo-que-duerme-y-reencola de todo el proyecto.
-				std::thread([player]() {
+				// hilo-que-duerme-y-reencola de todo el proyecto. Guardado
+				// por generación (reequipGeneration, mismo patrón ya usado
+				// en Animation::WeaponVFX/WeaponGlow): si un ciclo nuevo
+				// empezó y volvió a poner esta misma variable a true para
+				// su propio reequipado antes de que venza esta ventana,
+				// esta instancia obsoleta no debe apagarla -- la instancia
+				// más reciente ya tiene su propio cierre programado para
+				// hacerlo en su momento.
+				std::thread([this, player, generation]() {
 					std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
-					SKSE::GetTaskInterface()->AddTask([player]() {
+					SKSE::GetTaskInterface()->AddTask([this, player, generation]() {
+						if (generation != reequipGeneration) {
+							return;
+						}
 						player->SetGraphVariableBool("SkipEquipAnimation", false);
 					});
 				}).detach();

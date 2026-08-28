@@ -286,7 +286,55 @@ concreto, no asumas que el campo no existe en el formato — puede ser solo
 que esta build no lo conoce todavía; contrástalo contra el extracto local
 antes de descartarlo.
 
-### e) Scripts adicionales, validados 2026-08-09 (sesión de `fxsparkfountaintoggle.nif`/spark fountain)
+### e) Copiar bloques entre NIFs reales en NifSkope — "Paste Branch failed with errors: failed to map parent link"
+
+Validado en el juego/sesión real (2026-08-28, `ThorMjolnirImpact.nif` a partir
+de `fxshockcloakhandeffects.nif`). Al intentar copiar solo una pieza suelta de
+un NIF de referencia (p. ej. un `NiParticleSystem` y su emisor) con *Copy
+Branch* / *Paste Branch*, NifSkope puede fallar con el diálogo de error
+**"Paste Branch failed with errors: failed to map parent link
+`NiNode>NombreDelNodo`"**.
+
+**Causa**: *Copy Branch* copia el bloque seleccionado y sus referencias
+propias (`Ref`, hijos que posee) de forma autocontenida, pero **no**
+resuelve punteros que apuntan hacia arriba/hacia fuera de la selección — el
+campo `Emitter Object` (`Ptr`) de un `NiPSysBoxEmitter` apuntando a su nodo
+ancla, o el propio enlace de un `NiNode` hacia *su* padre en la jerarquía
+original. Empezar la copia un nivel más arriba (en el nodo padre en vez de
+en el hijo) **no lo arregla** — probado explícitamente: sigue fallando con
+el mismo mensaje, porque ese nodo padre a su vez tiene su propio enlace
+hacia el padre de *él*, y así sucesivamente hasta la raíz. Cualquier
+selección que no sea la jerarquía completa desde la raíz puede dejar algún
+enlace sin resolver.
+
+**Técnica que sí funciona, confirmada por el usuario** — en vez de intentar
+adivinar qué subconjunto mínimo es autocontenido, copiar el árbol completo
+y extraer después:
+
+1. En el NIF de referencia, selecciona el nodo raíz (`BSFadeNode`/`NiNode`
+   de más arriba) → **Copy Branch**. Al ser todo el árbol, cualquier
+   puntero interno (sea cual sea) tiene su destino dentro de la misma
+   copia — no hay nada que quede fuera.
+2. En tu NIF nuevo, selecciona tu propio nodo raíz → **Paste Branch**. Te
+   queda un nodo raíz de referencia completo colgando como hijo del tuyo,
+   con todo el contenido original (piezas que quieres y piezas que no).
+3. **Ahora, dentro de tu mismo NIF** (ya no entre ficheros distintos),
+   selecciona los nodos concretos que sí quieres de ese árbol recién
+   pegado → **Copy Branch** → selecciona tu nodo raíz real → **Paste
+   Branch**. Esta segunda copia funciona sin error porque origen y destino
+   están en el mismo fichero — cualquier enlace que antes cruzaba dos
+   ficheros distintos ahora resuelve dentro del propio documento.
+4. Borra (**Remove Branch**) el nodo raíz de referencia completo que
+   trajiste en el paso 2 (con todo lo que no usaste colgando de él) — ya
+   no hace falta, lo que necesitabas quedó duplicado en el paso 3 bajo tu
+   raíz real.
+
+No se ha investigado cuál es el campo/tipo de enlace exacto que dispara el
+error en cada caso (`Emitter Object` de un emisor, el `Parent` interno que
+NifSkope valida al pegar, u otro) — no hace falta saberlo para aplicar la
+técnica, que es agnóstica a la causa concreta.
+
+### f) Scripts adicionales, validados 2026-08-09 (sesión de `fxsparkfountaintoggle.nif`/spark fountain)
 
 - `scripts/nif_sequence_decode.py`: decodifica `NiControllerManager` (secuencias
   que referencia, `Object Palette`) y cada `NiControllerSequence` (`Cycle
