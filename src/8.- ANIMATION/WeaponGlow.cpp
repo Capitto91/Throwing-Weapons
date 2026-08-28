@@ -287,35 +287,6 @@ namespace Animation
 		// destruido.
 		std::atomic<std::uint64_t> g_generation{ 0 };
 
-		// Posición mundial del nodo "Gold" (cabeza del martillo,
-		// Constants::kWeaponHammerHeadNodeName) bajo a_root -- a_root puede
-		// ser el hueso "WEAPON" del actor (mientras el arma sigue en la
-		// mano, ver GetPlayerHandGlowPosition) o Get3D() de la réplica en
-		// vuelo (ver RetargetWeaponGlowToReplica). Corregido 2026-08-27: el
-		// destello colgaba de a_root directamente (base del mango en los
-		// dos casos), no de la cabeza -- "Gold" es un nodo real y nombrado
-		// dentro del NIF del arma, así que se busca y se lee su posición
-		// real cada vez en vez de aplicar un offset fijo calculado a ojo
-		// (a diferencia de Constants::kTrailAnchorLocalOffset, que sí
-		// necesita un offset porque el nodo raíz de la réplica no
-		// corresponde a ningún punto nombrado del NIF). Si no se
-		// encuentra (NIF sin el nodo, o todavía sin 3D), cae de vuelta a
-		// la posición de a_root -- mejor que nada, con aviso en el log.
-		RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root)
-		{
-			if (!a_root) {
-				return RE::NiPoint3{};
-			}
-
-			if (auto* goldNode = a_root->GetObjectByName(Constants::kWeaponHammerHeadNodeName)) {
-				return goldNode->world.translate + goldNode->world.rotate * Constants::kGlowAnchorLocalOffset;
-			}
-
-			logs::warn("Animation::WeaponGlow: nodo \"{}\" no encontrado -- usando la posición de a_root de reserva.",
-				Constants::kWeaponHammerHeadNodeName);
-			return a_root->world.translate;
-		}
-
 		// Reevaluado cada tick (no una foto fija) -- mismo criterio que
 		// Animation::WeaponVFX::GetPlayerHandPosition, pero leyendo la
 		// posición de "Gold" (ver GetGlowAnchorPosition) en vez de la del
@@ -425,6 +396,37 @@ namespace Animation
 				});
 			}).detach();
 		}
+	}
+
+	// Posición mundial del nodo "Gold" (cabeza del martillo,
+	// Constants::kWeaponHammerHeadNodeName) bajo a_root -- a_root puede ser
+	// el hueso "WEAPON" del actor (mientras el arma sigue en la mano, ver
+	// GetPlayerHandGlowPosition) o Get3D() de la réplica en vuelo/clavada
+	// (ver RetargetWeaponGlowToReplica y Throw::LaunchWeapon vía
+	// Animation::SpawnImpactVFX). Corregido 2026-08-27: el destello colgaba
+	// de a_root directamente (base del mango en los dos casos), no de la
+	// cabeza -- "Gold" es un nodo real y nombrado dentro del NIF del arma,
+	// así que se busca y se lee su posición real cada vez en vez de aplicar
+	// un offset fijo calculado a ojo (a diferencia de
+	// Constants::kTrailAnchorLocalOffset, que sí necesita un offset porque
+	// el nodo raíz de la réplica no corresponde a ningún punto nombrado del
+	// NIF). Si no se encuentra (NIF sin el nodo, o todavía sin 3D), cae de
+	// vuelta a la posición de a_root -- mejor que nada, con aviso en el
+	// log. Expuesta en el header (ya no en el namespace anónimo) para que
+	// otros VFX anclados a la cabeza del arma puedan reutilizarla.
+	RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root)
+	{
+		if (!a_root) {
+			return RE::NiPoint3{};
+		}
+
+		if (auto* goldNode = a_root->GetObjectByName(Constants::kWeaponHammerHeadNodeName)) {
+			return goldNode->world.translate + goldNode->world.rotate * Constants::kGlowAnchorLocalOffset;
+		}
+
+		logs::warn("Animation::WeaponGlow: nodo \"{}\" no encontrado -- usando la posición de a_root de reserva.",
+			Constants::kWeaponHammerHeadNodeName);
+		return a_root->world.translate;
 	}
 
 	void StartWeaponGlow(RE::Actor& a_actor)

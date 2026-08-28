@@ -9,6 +9,8 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
+#include "8.- ANIMATION/WeaponGlow.h"
+#include "8.- ANIMATION/WeaponImpactVFX.h"
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 #include "9.- MATH/RotationMath.h"
 
@@ -332,6 +334,25 @@ namespace Throw
 					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
 					trail->Update(stickPoint, a_deltaSeconds);
 					logs::info("Throw::LaunchWeapon: impacto en ({:.1f},{:.1f},{:.1f})", hit.point.x, hit.point.y, hit.point.z);
+
+					// VFX de impacto -- fire-and-forget, ver
+					// Animation::SpawnImpactVFX. Se dispara aquí tanto
+					// contra actor como contra superficie (a petición del
+					// usuario, solo en el impacto de la ida, no en los
+					// golpes de paso del regreso en ReturnManager.cpp).
+					//
+					// Anclado a la cabeza del martillo (Animation::
+					// GetGlowAnchorPosition, mismo mecanismo ya usado por
+					// el destello -- nodo "Gold" + Constants::
+					// kGlowAnchorLocalOffset), no en stickPoint crudo: el
+					// nodo raíz de la réplica (lo que stickPoint posiciona)
+					// cae en la base del mango del modelo, no en la cabeza
+					// (ver CLAUDE.md) -- a petición del usuario, para que
+					// el destello nazca de donde golpea de verdad el arma,
+					// no del mango. a_refr ya tiene su 3D actualizado en
+					// este punto (SetPosition+SyncHavok justo arriba).
+					const auto impactVfxPosition = a_refr.Get3D() ? Animation::GetGlowAnchorPosition(a_refr.Get3D()) : stickPoint;
+					Animation::SpawnImpactVFX(a_refr, impactVfxPosition);
 
 					// Punto 10 (segunda mitad, caso impacto): eliminado el
 					// enderezado al clavarse (decisión del usuario,

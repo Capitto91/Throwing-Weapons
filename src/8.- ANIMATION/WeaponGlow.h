@@ -42,6 +42,18 @@
 
 namespace Animation
 {
+	// Posición mundial de la cabeza del martillo (nodo "Gold",
+	// Constants::kWeaponHammerHeadNodeName + kGlowAnchorLocalOffset) bajo
+	// a_root -- misma lógica ya usada internamente por el destello (ver
+	// WeaponGlow.cpp), expuesta aquí para que otros VFX que deban nacer de
+	// la cabeza del arma en vez de su nodo raíz (que cae en la base del
+	// mango, ver CLAUDE.md) puedan reutilizarla sin duplicar el cálculo --
+	// primer caso real, Animation::SpawnImpactVFX (WeaponImpactVFX.cpp),
+	// anclado aquí en vez de al punto crudo del raycast de impacto. Si
+	// a_root no tiene el nodo "Gold" (NIF sin él, o sin 3D todavía), cae de
+	// vuelta a la posición de a_root, con aviso en el log.
+	RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root);
+
 	// Coloca Constants::kGlowEffectPath sobre a_actor (PlaceObjectAtMe) y
 	// arranca un bucle de tick que lo sigue pegado al hueso "WEAPON" de su
 	// esqueleto -- pensada para el instante exacto en que empieza la
