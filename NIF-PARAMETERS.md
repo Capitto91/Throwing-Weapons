@@ -91,32 +91,25 @@ el arma se quedó clavada.
 | `kWeaponGlowLightLocalFormID` | `RE::FormID` | `0x6DE` | — | FormID local del `TESObjectLIGH` (luz dinámica, pendiente de conectar del todo) |
 | `kWeaponGlowLightNodeName` | `string_view` | `"CAP_ThorMjolnir_GlowLight"` | — | Nombre que tendrá el `NiPointLight` creado por código |
 
-## VFX de impacto (`8.- ANIMATION/WeaponImpactVFX.h`) — 2026-08-28
+## VFX de impacto (`8.- ANIMATION/WeaponImpactVFX.h`) -- histórico 2026-08-28/29, ya no aplica
 
-.nif afectado: `ThorMjolnirImpact.nif`. Sin partículas en v1 (decisión del
-usuario: el `.nif` sigue llevando `PCloudPowerHand`/`PCloudPowerCore`/
-`lightRays01`/`FlameCloakMesh01`, pero inertes/sin usar — montar a mano en
-NifSkope la `NiControllerSequence` que necesita el birth rate resultó más
-complicado de lo que compensaba de momento).
-
-**Posición de nacimiento** (2026-08-28, a petición del usuario): ya no nace
-en `stickPoint` (el punto crudo donde se posiciona el nodo raíz de la
-réplica, que cae en la base del mango del modelo — ver CLAUDE.md), sino en
-la posición real de la cabeza del martillo — reutiliza
-`Animation::GetGlowAnchorPosition` (nodo `Gold`, ver la tabla del destello
-más abajo), el mismo mecanismo ya usado por `ThorMjolnirLight.nif`, expuesto
-ahora en `WeaponGlow.h` para que otros VFX lo compartan sin duplicar el
-cálculo.
-
-| Constante | Tipo | Valor actual | Nodo/campo del NIF | Qué controla |
-|---|---|---|---|---|
-| `kImpactVfxActivatorLocalFormID` | `RE::FormID` | `0xC41` | — | FormID local del Activator del impacto |
-| `kImpactGlowNodeName` | `string_view` | `"glow"` | Nombre real del `NiBillboardNode` | Nodo sobre el que se escribe `local.scale`/`world.scale` |
-| `kImpactGlowGeometryNodeName` | `string_view` | `"glow:0"` | Nombre real del `BSTriShape` hijo | Malla cuyo `BSEffectShaderProperty`/`baseColorScale` pulsa |
-| `kImpactPulseDurationSeconds` | `float` | `0.6f` (s) | — | Duración total del pulso "crece y mengua" |
-| `kImpactPulseGrowFraction` | `float` | `0.28f` | — | Fracción de la duración hasta el pico |
-| `kImpactPulseScaleBase` / `kImpactPulseScalePeak` / `kImpactPulseScaleEnd` | `float` | `3.15f` / `18.0f` / `0.0f` | — | Factores de escala inicial/pico/final. `End=0.0` a propósito (antes `3.45`) — así el pulso se desvanece solo antes de que `kImpactVfxLifetime` destruya el Activator, sin dejar una esfera pequeña congelada flotando |
-| `kImpactVfxLifetime` | `chrono::ms` | `1500` (placeholder) | — | Margen antes de destruir el Activator (solo tiene que cubrir el pulso de `glow`, sin ráfaga de partículas que esperar) |
+**Sección retirada (2026-08-29): el VFX de impacto ya no usa ningún `.nif`
+propio**, así que queda fuera del alcance de este documento (registro de
+constantes que controlan algo sobre un `.nif`). Tras varias rondas con un
+`ThorMjolnirImpact.nif` propio (copiado de `fxshockcloakhandeffects.nif`,
+con crashes de carga nativa nunca pinpointeados del todo pese a
+verificación exhaustiva -- ver `CHANGELOG.md` v1.17.1-v1.17.9 para el
+histórico completo), el usuario pasó a usar una explosión vanilla
+(`ExplosionRuneShock01`) como plantilla y duplicó un `BGSExplosion` propio
+en la Creation Kit (`CAP_ThorMjolnir_Explosion...`, FormID `0x0101BC69` en
+`ThorMjolnirOAR.esp`, enmascarado a 12 bits por ESL --
+`Constants::kImpactExplosionLocalFormID = 0xC69`), colocado con
+`RE::TESObjectREFR::PlaceObjectAtMe` -- sin `.nif`, sin NifSkope, sin nada
+que animar por código; el motor lo reproduce y limpia solo. El tamaño
+visual se ajusta con el campo `Radius` de la propia explosión en la
+Creation Kit (`BGSExplosionData::radius`), no con ningún parámetro de
+código. `kImpactExplosionLocalFormID` es un FormID de plugin, no un
+parámetro de `.nif`, así que no le corresponde fila en esta tabla.
 
 ## Notas para un futuro menú MCM
 

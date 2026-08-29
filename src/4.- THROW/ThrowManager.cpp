@@ -17,6 +17,7 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
+#include <thread>
 
 namespace Throw
 {
@@ -350,9 +351,37 @@ namespace Throw
 					// (ver CLAUDE.md) -- a petición del usuario, para que
 					// el destello nazca de donde golpea de verdad el arma,
 					// no del mango. a_refr ya tiene su 3D actualizado en
-					// este punto (SetPosition+SyncHavok justo arriba).
+					// este punto (SetPosition+SyncHavok justo arriba), así
+					// que la posición se calcula ya (solo lectura, sin
+					// riesgo) -- pero el propio Animation::SpawnImpactVFX
+					// (PlaceObjectAtMe) se difiere un tick en vez de
+					// llamarse aquí mismo.
+					//
+					// CRASH real confirmado por el usuario (2026-08-28):
+					// llamar a Animation::SpawnImpactVFX síncronamente
+					// desde aquí (dentro del propio callback de
+					// Physics::StartTickLoop, ya en marcha dentro de una
+					// tarea de SKSE::GetTaskInterface()->AddTask) colgaba
+					// el juego unos segundos y acababa crasheando --mismo
+					// tipo de problema ya documentado en CLAUDE.md
+					// ("nunca reencolar AddTask desde dentro de la propia
+					// tarea que se ejecuta"), aquí con PlaceObjectAtMe en
+					// vez de un AddTask explícito, pero la misma clase de
+					// reentrada dentro del bucle de tareas del motor.
+					// Mismo patrón hilo-que-duerme-y-reencola de siempre
+					// para salir de ese contexto antes de tocar el motor
+					// otra vez -- se usa a_shooter (el jugador, estable)
+					// en vez de a_refr/a_handle para no depender de que la
+					// réplica siga viva cuando despierte el hilo.
 					const auto impactVfxPosition = a_refr.Get3D() ? Animation::GetGlowAnchorPosition(a_refr.Get3D()) : stickPoint;
-					Animation::SpawnImpactVFX(a_refr, impactVfxPosition);
+					std::thread([a_shooter, impactVfxPosition]() {
+						std::this_thread::sleep_for(Constants::kTickInterval);
+						SKSE::GetTaskInterface()->AddTask([a_shooter, impactVfxPosition]() {
+							if (a_shooter) {
+								Animation::SpawnImpactVFX(*a_shooter, impactVfxPosition);
+							}
+						});
+					}).detach();
 
 					// Punto 10 (segunda mitad, caso impacto): eliminado el
 					// enderezado al clavarse (decisión del usuario,

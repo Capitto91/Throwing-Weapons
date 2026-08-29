@@ -1415,77 +1415,34 @@ namespace Constants
 
 	// -- VFX de impacto (destello al clavarse, ver
 	// 8.- ANIMATION/WeaponImpactVFX.h) -- 2026-08-28. Punto "polish" nuevo,
-	// sin número en Mecanica del arma.txt, mismo criterio que
-	// kMovementVfx*/kGlow*. A diferencia de esos dos, fire-and-forget puro:
-	// sin estado global, sin generación, sin Stop() -- cada llamada a
-	// Animation::SpawnImpactVFX crea su propia instancia independiente, ver
-	// ese archivo para el porqué.
+	// sin número en Mecanica del arma.txt. Pivote 2026-08-29: descartado
+	// por completo el .nif propio (ThorMjolnirImpact.nif -- varias rondas
+	// de crashes de carga nativa nunca pinpointeados del todo, ver el
+	// histórico largo en CHANGELOG.md) a favor de una explosión 100%
+	// vanilla real -- sin .nif propio, sin NifSkope, sin nada que hornear
+	// ni animar por código. Fire-and-forget puro: sin estado global, sin
+	// generación, sin Stop() -- cada llamada a Animation::SpawnImpactVFX
+	// coloca su propia instancia independiente, el motor se encarga solo
+	// de reproducirla y limpiarla.
 
-	// .nif (ThorMjolnirImpact.nif) construido copiando el vanilla
-	// fxshockcloakhandeffects.nif y verificado byte a byte en esta sesión
-	// (ver el histórico de la conversación) -- BSFadeNode raíz con un
-	// NiBillboardNode ("glow" -> "glow:0"), más "lightRays01"/
-	// "FlameCloakMesh01" (:0/:1) y los dos NiParticleSystem
-	// ("PCloudPowerHand"/"PCloudPowerCore") sin usar en v1 (decisión del
-	// usuario: montar a mano en NifSkope la NiControllerSequence que
-	// necesitan para el birth rate resultó más complicado de lo que
-	// compensaba de momento -- ver WeaponImpactVFX.h). Activator creado
-	// por el usuario en la Creation Kit con ese .nif como modelo, FormID
-	// dado tal cual en xEdit/CK (0101AC41) -- ThorMjolnirOAR.esp con flag
-	// ESL, enmascarado a 12 bits: 0x0101AC41 & 0xFFF = 0xC41, mismo patrón
-	// que kMovementVfxActivatorLocalFormID/kWeaponGlowActivatorLocalFormID.
-	inline constexpr RE::FormID kImpactVfxActivatorLocalFormID = 0xC41;
-
-	// Nombre real del NiBillboardNode "glow" y de su hijo BSTriShape
-	// "glow:0" dentro de ThorMjolnirImpact.nif -- confirmados byte a byte
-	// (no nombres generados por un exportador, a diferencia de
-	// FindGlowScrollGeometry en WeaponGlow.cpp), así que GetObjectByName
-	// basta para los dos sin necesitar ninguna búsqueda estructural.
-	inline constexpr std::string_view kImpactGlowNodeName{ "glow" };
-	inline constexpr std::string_view kImpactGlowGeometryNodeName{ "glow:0" };
-
-	// Perfil del pulso "crece y luego mengua" sobre "glow"
-	// (Animation::ApplyImpactPulse) -- curva cerrada, no acumulada tick a
-	// tick, mismo estilo que Throw::ComputeGravityDrop. Valores de partida
-	// decodificados del perfil real de referencia (NIF vanilla
-	// fxshockcloakhandeffects.nif, secuencias mCast/mCastCon, nodo "glow":
-	// factor de escala relativo sube de ~1.05 a un pico de 2.0 en el
-	// primer ~28% de la duración, y baja a ~1.15 el resto) -- duración
-	// acortada a 0.6s desde los ~1.3s de la referencia (pensada para un
-	// hechizo canalizado, no para un golpe instantáneo). PLACEHOLDER, sin
-	// calibrar en el juego con ESTE .nif todavía.
+	// BGSExplosion propio ("CAP_ThorMjolnir_Explosion...", duplicado en la
+	// Creation Kit a partir de la vanilla "ExplosionRuneShock01" como
+	// plantilla, con Radius/Damage/Force ya ajustados por el usuario) --
+	// vive en ThorMjolnirOAR.esp, no en Skyrim.esm, así que usa
+	// Constants::kSoundPluginName como cualquier otro formulario propio
+	// del proyecto. Es un TESBoundObject como cualquier Activator (ver
+	// RE/B/BGSExplosion.h), así que se coloca con el mismo
+	// RE::TESObjectREFR::PlaceObjectAtMe ya usado en todo el proyecto.
 	//
-	// kImpactPulseScalePeak subido a 6.0 (2026-08-28, diagnóstico):
-	// confirmado en el juego que con el pico en 2.0 no se veía nada
-	// perceptible -- la malla "glow:0" es un quad pequeño (pensado en el
-	// NIF de referencia como brillo de mano de hechizo), x2 momentáneo
-	// sobre algo ya pequeño era imperceptible en combate. Con 6.0 sí se ve
-	// -- a petición del usuario, subido otra vez x3 sobre los tres valores
-	// (base/pico/final) para que se note claramente más grande. Sigue
-	// siendo placeholder, ajustable a ojo si resulta excesivo.
+	// FormID dado tal cual en la Creation Kit (0x0101BC69, cambiado de
+	// plantilla 2026-08-29 -- antes 0x0101B706) -- enmascarado a 12 bits
+	// por el flag ESL de ThorMjolnirOAR.esp (ver CLAUDE.md, "Errores
+	// comunes a vigilar"): 0x0101BC69 & 0xFFF = 0xC69.
 	//
-	// kImpactPulseScaleEnd bajado de 3.45 a 0.0 (2026-08-28, bug reportado
-	// por el usuario): con un valor final "pequeño pero visible", el
-	// pulso terminaba y dejaba el glow congelado en ese tamaño durante
-	// todo el margen restante hasta Constants::kImpactVfxLifetime (~900ms
-	// con los valores de entonces) -- se veía como una esfera quieta
-	// flotando en el aire antes de desaparecer de golpe. Terminando en 0
-	// (Animation::ApplyImpactPulse también multiplica baseColorScale por
-	// el mismo factor, así que el brillo se apaga a la vez que el tamaño),
-	// el propio pulso se desvanece solo antes de que kImpactVfxLifetime
-	// destruya el Activator -- ya no depende de afinar ese margen con
-	// precisión milimétrica para que no se note el corte.
-	inline constexpr float kImpactPulseDurationSeconds = 0.6f;
-	inline constexpr float kImpactPulseGrowFraction = 0.28f;
-	inline constexpr float kImpactPulseScaleBase = 3.15f;
-	inline constexpr float kImpactPulseScalePeak = 18.0f;
-	inline constexpr float kImpactPulseScaleEnd = 0.0f;
-
-	// Margen antes de destruir el Activator de impacto de verdad
-	// (Physics::DestroyReplica) -- técnico, no estético: sin partículas en
-	// v1 (ver arriba), solo tiene que cubrir el pulso de "glow"
-	// (kImpactPulseDurationSeconds, 0.6s) con margen de sobra para el
-	// sondeo de carga del 3D. PLACEHOLDER, pendiente de ajustar en el
-	// juego.
-	inline constexpr std::chrono::milliseconds kImpactVfxLifetime{ 1500 };
+	// Pendiente de que el usuario confirme en el juego que Damage/Force no
+	// duplican el daño que Combat::ApplyDamage ya calcula por separado
+	// (ver CLAUDE.md, "Arquitectura de física de proyectiles") -- si se
+	// nota daño/empuje de más, poner esos dos campos a 0 en la Creation
+	// Kit (Radius puede quedarse, solo controla el tamaño visual).
+	inline constexpr RE::FormID kImpactExplosionLocalFormID = 0xC69;
 }
