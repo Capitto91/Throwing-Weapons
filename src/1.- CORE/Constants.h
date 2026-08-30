@@ -1406,9 +1406,34 @@ namespace Constants
 	// ThorMjolnirSparks.nif, ver CLAUDE.md) con una oscilación seno, en
 	// vez de un valor fijo. Frecuencia y amplitud de partida, sin ajustar
 	// a ojo en el juego todavía.
+	//
+	// Reajustado 2026-08-30 a petición del usuario: el rango 0.4-1.6 caía
+	// "demasiado bajo" y el tope se quedaba corto -- el pulso debe ser
+	// sutil (poca variación) pero verse brillante en general. Subido el
+	// tope y el mínimo mucho más cerca de él (rango de oscilación
+	// estrecho en vez de 0.4-1.6) en vez de partir de la mitad hacia
+	// abajo. Segunda vuelta, mismo día: mínimo bajado de 1.8 a 1.2 ("un
+	// poco más bajo"), tope se mantiene en 2.2. Todavía placeholder,
+	// pendiente de afinar a ojo.
 	inline constexpr float kGlowPulseFrequencyHz = 1.0f;  // ciclos/segundo
-	inline constexpr float kGlowPulseScaleMin = 0.4f;
-	inline constexpr float kGlowPulseScaleMax = 1.6f;
+	inline constexpr float kGlowPulseScaleMin = 1.2f;
+	inline constexpr float kGlowPulseScaleMax = 2.2f;
+
+	// Rotación continua de "RingGlow" sobre su propio eje -- a petición
+	// del usuario 2026-08-30 ("¿puedes hacer que rote?"). Mismo mecanismo
+	// que Animation::TickSpin (escritura directa cada tick sobre
+	// NiAVObject::local.rotate, sin NiTransformController -- misma razón
+	// de fondo ya documentada en CLAUDE.md para el giro del arma:
+	// PlaceObjectAtMe no tickea controllers horneados) pero compuesta
+	// sobre la rotación local que ya trajera el nodo (ver
+	// Animation::TickGlowRingRotation), no sustituida desde cero, por si
+	// el propio NIF le da una orientación de reposo con intención.
+	// kGlowRingRotationAxisLocal (eje Z local) es una suposición de
+	// partida, sin verificar contra el NIF real de ThorMjolnirLight.nif
+	// -- si el anillo no gira sobre su propio plano visible, hay que
+	// probar otro eje.
+	inline constexpr float        kGlowRingRotationSpeed = 1.5f;  // rad/s
+	inline constexpr RE::NiPoint3 kGlowRingRotationAxisLocal{ 0.0f, 0.0f, 1.0f };
 
 	// FormID local (0101A6DE, ESL -- ya enmascarado: 0xA6DE & 0xFFF, ver
 	// CLAUDE.md) del TESObjectLIGH creado por el usuario 2026-08-27. Radio,

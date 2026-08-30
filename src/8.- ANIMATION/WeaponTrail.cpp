@@ -99,6 +99,21 @@ namespace Animation
 			}
 		}
 
+		// "Bone001".."Bone030" -- convención de nombre confirmada en el
+		// .nif real (grep binario, 2026-08-30), mismo padding a 3 dígitos
+		// para los 30 huesos existentes.
+		std::string BoneNameForOneBasedIndex(std::uint32_t a_oneBasedIndex)
+		{
+			std::string name = "Bone";
+			if (a_oneBasedIndex < 10) {
+				name += "00";
+			} else if (a_oneBasedIndex < 100) {
+				name += "0";
+			}
+			name += std::to_string(a_oneBasedIndex);
+			return name;
+		}
+
 	}
 
 	WeaponTrail::~WeaponTrail()
@@ -119,6 +134,7 @@ namespace Animation
 	{
 		diagLoggedTrailRootResolved = false;
 		diagLastLogTime = -1.0f;
+		orderedSegments.clear();
 		upReference = a_upReference;
 		roll = a_roll;
 		anchorWorldOffset = a_anchorWorldOffset;
@@ -211,7 +227,36 @@ namespace Animation
 			return;
 		}
 
-		auto&      segments = trailRootNode->GetChildren();
+		// Resuelto por NOMBRE ("Bone001".."BoneNNN", orden numérico), no
+		// por el orden crudo de NiNode::GetChildren() -- ver el comentario
+		// de orderedSegments en WeaponTrail.h para el porqué (el array
+		// Children real de este .nif no viene en orden numérico). Se
+		// resuelve una sola vez por Start() y se cachea.
+		if (orderedSegments.empty()) {
+			auto&      rawChildren = trailRootNode->GetChildren();
+			const auto rawCount = static_cast<std::uint32_t>(rawChildren.size());
+
+			bool allResolvedByName = rawCount > 0;
+			for (std::uint32_t i = 1; i <= rawCount; ++i) {
+				auto* bone = trailRootNode->GetObjectByName(BoneNameForOneBasedIndex(i));
+				if (!bone) {
+					allResolvedByName = false;
+					break;
+				}
+				orderedSegments.emplace_back(bone);
+			}
+
+			if (!allResolvedByName) {
+				logs::warn("Animation::WeaponTrail::Update: no se pudieron resolver los {} huesos de '{}' por nombre (convención 'BoneNNN' no coincide) -- usando el orden crudo del archivo como respaldo, con riesgo de costuras mal conectadas.", rawCount, Constants::kTrailRootNodeName);
+				orderedSegments.clear();
+				orderedSegments.reserve(rawCount);
+				for (std::uint32_t i = 0; i < rawCount; ++i) {
+					orderedSegments.emplace_back(rawChildren[static_cast<std::uint16_t>(i)]);
+				}
+			}
+		}
+
+		auto&      segments = orderedSegments;
 		const auto segmentCount = static_cast<std::uint32_t>(segments.size());
 		if (segmentCount == 0) {
 			currentTime += a_deltaSeconds;
@@ -219,7 +264,7 @@ namespace Animation
 		}
 
 		if (!diagLoggedTrailRootResolved) {
-			logs::info("Animation::WeaponTrail::Update: nodo '{}' resuelto con {} segmentos hijos.", Constants::kTrailRootNodeName, segmentCount);
+			logs::info("Animation::WeaponTrail::Update: nodo '{}' resuelto con {} segmentos hijos (ordenados por nombre).", Constants::kTrailRootNodeName, segmentCount);
 			diagLoggedTrailRootResolved = true;
 		}
 

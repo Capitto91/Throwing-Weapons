@@ -123,6 +123,26 @@ namespace Animation
 		RE::NiPointer<RE::BSTempEffectParticle> particle;
 		std::vector<RE::NiPoint3>               history;
 
+		// Huesos de Constants::kTrailRootNodeName, resueltos por NOMBRE
+		// ("Bone001".."Bone0XX", en orden numérico) y cacheados en la
+		// primera llamada a Update() que resuelve el nodo -- NO el orden
+		// crudo de NiNode::GetChildren(). Confirmado en el .nif real
+		// desplegado (2026-08-30, lector binario dirigido sobre el array
+		// Children de TrailRoot): ese array NO viene en orden numérico
+		// (llega como Bone029, Bone030, Bone001, Bone002, ..., Bone028 --
+		// rotado, no se sabe por qué exportó así el autor de la malla).
+		// El código de más abajo asume que la posición i del array de
+		// huesos es la posición i a lo largo del historial de vuelo: con
+		// el array crudo, el borde real que comparten Bone028 y Bone029
+		// (vecinos de verdad en la malla) se estiraba desde el extremo
+		// más nuevo del historial hasta el más antiguo (casi
+		// Constants::kTrailLength unidades), un remiendo enorme y
+		// estirado -- reportado por el usuario como "veo muchos rayos"
+		// tras arreglar el centrado de NiSkinData (ver ese mismo
+		// CHANGELOG.md). Resolver por nombre no depende de qué orden
+		// arbitrario traiga el archivo.
+		std::vector<RE::NiPointer<RE::NiAVObject>> orderedSegments;
+
 		// Referencia de "hacia arriba" y ángulo de roll, capturados una
 		// única vez en Start() (ver su doc comment) -- fijan el plano y el
 		// giro sobre el eje de avance durante todo el tramo, constantes

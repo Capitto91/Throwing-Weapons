@@ -254,7 +254,17 @@ namespace Animation
 		// real esta vez (Constants::kGlowRingGlowNodeName), no por
 		// estructura.
 		RE::NiPointer<RE::BSEffectShaderProperty> g_ringGlowShaderProperty;
-		float                                      g_pulseElapsed = 0.0f;
+		float                                     g_pulseElapsed = 0.0f;
+
+		// Nodo "RingGlow" en sí (no solo su shader) -- para poder rotarlo
+		// cada tick (ver TickGlowRingRotation). g_ringGlowBaseLocalRotation
+		// captura la rotación local que ya trajera al resolverlo (mismo
+		// criterio que Animation::TickSpin con a_baseLocal): el giro se
+		// compone sobre esa base en vez de sustituirla, por si el propio
+		// NIF le da una orientación de reposo con intención.
+		RE::NiPointer<RE::NiAVObject> g_ringGlowNode;
+		RE::NiMatrix3                 g_ringGlowBaseLocalRotation;
+		float                         g_ringRotationElapsed = 0.0f;
 
 		// Pulso de energía sobre "RingGlow" -- ver
 		// Constants::kGlowPulseFrequencyHz/kGlowPulseScaleMin/Max. Oscila
@@ -277,6 +287,24 @@ namespace Animation
 			if (auto* material = g_ringGlowShaderProperty->GetMaterial()) {
 				material->baseColorScale = scale;
 			}
+		}
+
+		// Rotación continua de "RingGlow" sobre su propio eje -- ver
+		// Constants::kGlowRingRotationSpeed/kGlowRingRotationAxisLocal.
+		// Mismo motivo que TickGlowUVScroll/TickGlowPulse para escribirlo
+		// a mano en vez de hornear un controller (no se reproduciría
+		// solo, misma causa ya confirmada en este archivo).
+		void TickGlowRingRotation(float a_deltaSeconds)
+		{
+			if (!g_ringGlowNode) {
+				return;
+			}
+
+			g_ringRotationElapsed += a_deltaSeconds;
+
+			RE::NiMatrix3 spin;
+			spin.MakeRotation(Constants::kGlowRingRotationSpeed * g_ringRotationElapsed, Constants::kGlowRingRotationAxisLocal);
+			g_ringGlowNode->local.rotate = g_ringGlowBaseLocalRotation * spin;
 		}
 
 		// Guarda de reentrancia para los reintentos de espera de 3D (ver
@@ -333,18 +361,23 @@ namespace Animation
 				logs::warn("Animation::WeaponGlow: no se encontró la geometría del NiBillboardNode -- sin scroll de UV.");
 			}
 
-			// Shader de "RingGlow" -- resuelto por nombre real (ver
+			// Shader y nodo de "RingGlow" -- resuelto por nombre real (ver
 			// Constants::kGlowRingGlowNodeName), para el pulso de energía
-			// (TickGlowPulse).
+			// (TickGlowPulse) y la rotación (TickGlowRingRotation).
 			g_pulseElapsed = 0.0f;
+			g_ringRotationElapsed = 0.0f;
 			if (auto* ringGlow = node3D->GetObjectByName(Constants::kGlowRingGlowNodeName)) {
+				g_ringGlowNode = RE::NiPointer<RE::NiAVObject>(ringGlow);
+				g_ringGlowBaseLocalRotation = ringGlow->local.rotate;
 				if (auto* geometry = ringGlow->AsGeometry()) {
 					g_ringGlowShaderProperty = RE::NiPointer<RE::BSEffectShaderProperty>(
 						skyrim_cast<RE::BSEffectShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get()));
 				}
 			}
-			if (!g_ringGlowShaderProperty) {
-				logs::warn("Animation::WeaponGlow: no se encontró \"{}\" -- sin pulso de energía.", Constants::kGlowRingGlowNodeName);
+			if (!g_ringGlowNode) {
+				logs::warn("Animation::WeaponGlow: no se encontró \"{}\" -- sin pulso de energía ni rotación.", Constants::kGlowRingGlowNodeName);
+			} else if (!g_ringGlowShaderProperty) {
+				logs::warn("Animation::WeaponGlow: \"{}\" sin BSEffectShaderProperty -- sin pulso de energía (la rotación sí aplica).", Constants::kGlowRingGlowNodeName);
 			}
 
 			// Luz real -- adjuntada al propio nodo raíz del Activator, se
@@ -357,6 +390,7 @@ namespace Animation
 				Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 				TickGlowUVScroll(a_deltaSeconds);
 				TickGlowPulse(a_deltaSeconds);
+				TickGlowRingRotation(a_deltaSeconds);
 				TickGlowFade(a_refr, a_deltaSeconds);
 				return true;
 			});
@@ -448,6 +482,7 @@ namespace Animation
 			g_tickToken = {};
 			g_shaderProperty.reset();
 			g_ringGlowShaderProperty.reset();
+			g_ringGlowNode.reset();
 			DetachGlowLight();
 			Physics::DestroyReplica(g_activeHandle);
 			g_activeHandle = {};
@@ -507,6 +542,7 @@ namespace Animation
 			Physics::SyncHavok(a_refr, lastPosition, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 			TickGlowUVScroll(a_deltaSeconds);
 			TickGlowPulse(a_deltaSeconds);
+			TickGlowRingRotation(a_deltaSeconds);
 			TickGlowFade(a_refr, a_deltaSeconds);
 			return true;
 		});
@@ -530,6 +566,7 @@ namespace Animation
 			Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 			TickGlowUVScroll(a_deltaSeconds);
 			TickGlowPulse(a_deltaSeconds);
+			TickGlowRingRotation(a_deltaSeconds);
 			TickGlowFade(a_refr, a_deltaSeconds);
 			return true;
 		});
@@ -568,6 +605,7 @@ namespace Animation
 
 				g_shaderProperty.reset();
 				g_ringGlowShaderProperty.reset();
+				g_ringGlowNode.reset();
 				DetachGlowLight();
 
 				if (g_activeHandle) {

@@ -63,7 +63,7 @@ el arma se quedó clavada.
 |---|---|---|---|---|
 | `kTrailEffectPath` | `const char*` | `"Effects/ThorMjolnirTrail.nif"` | Ruta del `.nif`, relativa a `meshes/` | Cuál `.nif` se instancia |
 | `kTrailRootNodeName` | `string_view` | `"TrailRoot"` | Nombre del nodo padre de la cadena de huesos | Nodo cuyos hijos se reposicionan cada tick |
-| `kTrailAnchorLocalOffset` | `NiPoint3` | `{0, 5, 0}` | — | Desplazamiento del punto de anclaje, espacio local del nodo raíz del arma |
+| `kTrailAnchorLocalOffset` | `NiPoint3` | `{0, 0, 0}` | — | Desplazamiento del punto de anclaje, espacio local del nodo raíz del arma |
 | `kTrailRollDegrees` | `float` | `-45.0f` | — | Inclinación fija de la cinta sobre su eje de avance |
 | `kTrailCopyCount` | `uint32_t` | `4` | — | Nº de copias en paralelo (`WeaponTrailGroup`) — único punto de control, ver la siguiente fila |
 | `kTrailCopyRollStepDegrees` | `float` | `180.0f / kTrailCopyCount` (`45.0f` con N=4) | — | Separación angular entre copias consecutivas — **derivada** de `kTrailCopyCount` (180/N), no editable de forma independiente |
@@ -71,7 +71,7 @@ el arma se quedó clavada.
 | `kTrailLightningHoldSeconds` | `float` | `0.05f` (s) | — | Cada cuánto se re-sortea el desvío |
 | `kTrailLength` | `float` | `900.0f` | — | Alcance total deseado de la estela (asume 30 huesos reales en el NIF) |
 | `kTrailSegmentSpacing` | `float` | `30.0f` | — | Distancia entre segmentos consecutivos |
-| `kTrailSegmentScale` | `float` | `1.0f` | — | Escala de cada copia individual |
+| `kTrailSegmentScale` | `float` | `0.5f` | — | Escala de cada copia individual |
 
 ## Destello de la réplica (`8.- ANIMATION/WeaponGlow.h`)
 
@@ -85,9 +85,11 @@ el arma se quedó clavada.
 | `kWeaponGlowActivatorLocalFormID` | `RE::FormID` | `0xC19` | — | FormID local del Activator del destello |
 | `kGlowFadeDuration` / `kGlowFadeDurationSeconds` | `chrono::ms` / `float` | `300` / `0.3f` | — | Duración del fundido de encendido/apagado (malla + luz) |
 | `kGlowUVScrollSpeed` | `float` | `-1/7.083333f` | `BSShaderMaterial::texCoordOffset[0]` de la malla bajo el `NiBillboardNode` (sin nombre útil, localizada por estructura) | Velocidad de scroll de UV, derivada de las claves reales horneadas (que nunca se reproducen solas, ver el comentario) |
-| `kGlowRingGlowNodeName` | `string_view` | `"RingGlow"` | Nombre real del `BSTriShape` | Malla cuyo `baseColorScale` pulsa |
+| `kGlowRingGlowNodeName` | `string_view` | `"RingGlow"` | Nombre real del `BSTriShape` | Malla cuyo `baseColorScale` pulsa y que rota |
 | `kGlowPulseFrequencyHz` | `float` | `1.0f` | — | Frecuencia del pulso de energía (onda seno) |
-| `kGlowPulseScaleMin` / `kGlowPulseScaleMax` | `float` | `0.4f` / `1.6f` | — | Rango de `baseColorScale` del pulso |
+| `kGlowPulseScaleMin` / `kGlowPulseScaleMax` | `float` | `1.2f` / `2.2f` | — | Rango de `baseColorScale` del pulso |
+| `kGlowRingRotationSpeed` | `float` | `1.5f` (rad/s) | — (no hornea nada, escritura directa) | Velocidad angular de la rotación continua de `"RingGlow"` |
+| `kGlowRingRotationAxisLocal` | `NiPoint3` | `{0,0,1}` | — | Eje local de esa rotación — **sin verificar contra el NIF real**, suposición de partida (ver el propio comentario en `Constants.h`) |
 | `kWeaponGlowLightLocalFormID` | `RE::FormID` | `0x6DE` | — | FormID local del `TESObjectLIGH` (luz dinámica, pendiente de conectar del todo) |
 | `kWeaponGlowLightNodeName` | `string_view` | `"CAP_ThorMjolnir_GlowLight"` | — | Nombre que tendrá el `NiPointLight` creado por código |
 
