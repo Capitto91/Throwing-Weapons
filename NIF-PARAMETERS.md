@@ -65,13 +65,13 @@ el arma se quedó clavada.
 | `kTrailRootNodeName` | `string_view` | `"TrailRoot"` | Nombre del nodo padre de la cadena de huesos | Nodo cuyos hijos se reposicionan cada tick |
 | `kTrailAnchorLocalOffset` | `NiPoint3` | `{0, 5, 0}` | — | Desplazamiento del punto de anclaje, espacio local del nodo raíz del arma |
 | `kTrailRollDegrees` | `float` | `-45.0f` | — | Inclinación fija de la cinta sobre su eje de avance |
-| `kTrailCopyCount` | `uint32_t` | `8` | — | Nº de copias en paralelo (`WeaponTrailGroup`) |
-| `kTrailCopyRollStepDegrees` | `float` | `22.5f` | — | Separación angular entre copias consecutivas |
+| `kTrailCopyCount` | `uint32_t` | `4` | — | Nº de copias en paralelo (`WeaponTrailGroup`) — único punto de control, ver la siguiente fila |
+| `kTrailCopyRollStepDegrees` | `float` | `180.0f / kTrailCopyCount` (`45.0f` con N=4) | — | Separación angular entre copias consecutivas — **derivada** de `kTrailCopyCount` (180/N), no editable de forma independiente |
 | `kTrailLightningMaxDeviation` | `float` | `15.0f` | — | Desviación lateral máxima aleatoria del efecto rayo |
 | `kTrailLightningHoldSeconds` | `float` | `0.05f` (s) | — | Cada cuánto se re-sortea el desvío |
 | `kTrailLength` | `float` | `900.0f` | — | Alcance total deseado de la estela (asume 30 huesos reales en el NIF) |
 | `kTrailSegmentSpacing` | `float` | `30.0f` | — | Distancia entre segmentos consecutivos |
-| `kTrailSegmentScale` | `float` | `0.25f` | — | Escala de cada copia individual |
+| `kTrailSegmentScale` | `float` | `1.0f` | — | Escala de cada copia individual |
 
 ## Destello de la réplica (`8.- ANIMATION/WeaponGlow.h`)
 
@@ -90,6 +90,16 @@ el arma se quedó clavada.
 | `kGlowPulseScaleMin` / `kGlowPulseScaleMax` | `float` | `0.4f` / `1.6f` | — | Rango de `baseColorScale` del pulso |
 | `kWeaponGlowLightLocalFormID` | `RE::FormID` | `0x6DE` | — | FormID local del `TESObjectLIGH` (luz dinámica, pendiente de conectar del todo) |
 | `kWeaponGlowLightNodeName` | `string_view` | `"CAP_ThorMjolnir_GlowLight"` | — | Nombre que tendrá el `NiPointLight` creado por código |
+
+## Brillo de manos (`8.- ANIMATION/HandGlow.h`) -- 2026-08-30
+
+.nif afectado: copia editada por el usuario de `lightningstormhandeffects.nif`
+(asset vanilla de Skyrim), envuelta en un `BGSArtObject` propio.
+
+| Constante | Tipo | Valor actual | Nodo/campo del NIF | Qué controla |
+|---|---|---|---|---|
+| `kHandGlowArtObjectLocalFormID` | `RE::FormID` | `0x72E` | — | FormID local del `BGSArtObject` que envuelve el `.nif` |
+| `kHandGlowLeftHandNodeName` / `kHandGlowRightHandNodeName` | `const char*` | `"NPC L Hand [LHnd]"` / `"NPC R Hand [RHnd]"` | Nombre de hueso del esqueleto del actor (**sin verificar en el juego**, ver `CLAUDE.md`) | Nodo al que se adjunta el `.nif` (`RE::TESObjectREFR::ApplyArtObject`) |
 
 ## VFX de impacto (`8.- ANIMATION/WeaponImpactVFX.h`) -- histórico 2026-08-28/29, ya no aplica
 

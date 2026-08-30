@@ -10,6 +10,7 @@
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/HandGlow.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
@@ -538,6 +539,11 @@ namespace Weapon
 		// callbacks.onSpawned más abajo, Animation::RetargetWeaponGlowToReplica).
 		Animation::StartWeaponGlow(*player);
 
+		// Brillo de manos (2026-08-30, ver Constants.h "-- Brillo de
+		// manos --"): destello de un solo uso en el mismo instante,
+		// independiente del destello del arma de arriba.
+		Animation::TriggerHandGlow(*player);
+
 		// Fin del zoom de apuntado (ver BeginAiming) -- el gesto de Lanzar ya
 		// no es "apuntando".
 		Animation::SetAimZoom(false);
@@ -812,6 +818,11 @@ namespace Weapon
 		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
 
 		Animation::SetCatchTrigger(*player, true);
+
+		// Brillo de manos (2026-08-30, ver Constants.h "-- Brillo de
+		// manos --"): destello de un solo uso en el mismo instante que
+		// empieza el gesto de Atrape.
+		Animation::TriggerHandGlow(*player);
 
 		// Diagnóstico (2026-08-28, ver CHANGELOG.md) -- Atrape sí recibe la
 		// anotación real siempre; sirve de referencia para comparar contra

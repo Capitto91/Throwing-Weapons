@@ -1161,9 +1161,14 @@ namespace Constants
 	// ("sobresale bastante") -> +10 ("se aleja aún más", probado el eje:
 	// a lo largo del mango/hacha, no lateral) -> -10 ("mucho peor" que
 	// +10, confirma que el signo positivo era el correcto, no el eje) ->
-	// +5 (signo positivo restaurado, magnitud reducida de nuevo). Sigue
-	// pendiente de ajuste fino.
-	inline constexpr RE::NiPoint3 kTrailAnchorLocalOffset{ 0.0f, 5.0f, 0.0f };
+	// +5 (signo positivo restaurado, magnitud reducida de nuevo). Puesto
+	// a 0 (2026-08-30): todo ese ajuste se hizo a ojo contra el aspecto
+	// ANTIGUO de la estela (asimétrica, pivote en una esquina -- ver el
+	// arreglo de centrado en NiSkinData, CHANGELOG.md); el usuario
+	// sospecha que esa referencia visual era engañosa sin la malla ya
+	// centrada. Repetir el ajuste desde 0 con la forma corregida en vez
+	// de partir de +5.
+	inline constexpr RE::NiPoint3 kTrailAnchorLocalOffset{ 0.0f, 0.0f, 0.0f };
 
 	// Ángulo (grados) al que se inclina la cinta sobre su propio eje de
 	// avance -- ver Math::SetRotationFromForwardUp/8.- ANIMATION/WeaponTrail.cpp.
@@ -1195,21 +1200,24 @@ namespace Constants
 	// simple, ya probado, sin ese problema -- varias copias giradas entre
 	// sí dan el mismo efecto visual de "cobertura desde cualquier
 	// ángulo" sin tocar NifSkope ni arriesgar el mismo aplastado.
-	// Subido de 4 a 8 (2026-08-26, "el doble, cada 22,5º") junto con
-	// kTrailCopyRollStepDegrees -- para mantener la misma cobertura
-	// simétrica (ver ese comentario), duplicar la densidad angular
-	// (45°->22,5°) exige duplicar también el número de copias (4->8):
-	// con N copias en pasos de S grados y cada plano simétrico a ambos
-	// lados de su eje, se cubren 2N posiciones de S grados en 360°, así
-	// que 2N·S = 360 tiene que seguir cumpliéndose.
-	inline constexpr std::uint32_t kTrailCopyCount = 8;
+	//
+	// Único punto de control del reparto angular (2026-08-30): antes había
+	// que mantener este valor Y kTrailCopyRollStepDegrees sincronizados a
+	// mano (2N·S = 360, ver más abajo). Ahora kTrailCopyRollStepDegrees se
+	// calcula solo a partir de este, así que basta con tocar este número
+	// para repartir N estelas equitativamente (2 -> cruzadas a 90°, 3 ->
+	// 60°, 4 -> 45°, 5 -> 36°...). Puesto a 4 (2026-08-30, test del
+	// usuario tras probar con 1 copia).
+	inline constexpr std::uint32_t kTrailCopyCount = 4;
 
-	// Separación angular (grados) entre copias consecutivas -- a petición
-	// del usuario, primero "una cada 45°", luego "el doble, cada 22,5º".
-	// Con 8 copias (0°/22,5°/45°/.../157,5°) y cada plano extendiéndose a
-	// ambos lados de su eje (simétrico), cubre las 16 posiciones de 22,5°
-	// en 360° sin necesitar 16 copias reales.
-	inline constexpr float kTrailCopyRollStepDegrees = 22.5f;
+	// Separación angular (grados) entre copias consecutivas -- derivada de
+	// kTrailCopyCount, no un valor independiente. Con N copias en pasos de
+	// S grados y cada plano extendiéndose a ambos lados de su eje
+	// (simétrico), se cubren 2N posiciones de S grados en 360°, así que
+	// 2N·S = 360 -> S = 180/N. Con N=8 esto da los 22,5° pedidos por el
+	// usuario ("el doble, cada 22,5º" al subir de 4 a 8); con N=1 el valor
+	// no tiene efecto (no hay segunda copia con la que formar el ángulo).
+	inline constexpr float kTrailCopyRollStepDegrees = 180.0f / static_cast<float>(kTrailCopyCount);
 
 	// Desviación lateral máxima (unidades de mundo) del efecto rayo
 	// (Animation::WeaponTrailGroup::Update, 2026-08-26, a petición del
@@ -1281,8 +1289,11 @@ namespace Constants
 	// copias giradas entre sí en vez de una sola, cada una necesita menos
 	// tamaño individual para el mismo volumen visual conjunto. Todavía
 	// placeholder pendiente de reajustar a ojo. Bajada de 0.35 a 0.25
-	// (2026-08-26, "un poco más estrecho").
-	inline constexpr float kTrailSegmentScale = 0.25f;
+	// (2026-08-26, "un poco más estrecho"); subida a 1.0 (2026-08-30,
+	// test del usuario con kTrailCopyCount ya en 4, para visualizar el
+	// arreglo de centrado de NiSkinData); bajada a 0.5 una vez confirmado
+	// el centrado, para volver a medidas normales.
+	inline constexpr float kTrailSegmentScale = 0.5f;
 
 	// Destello + luz real que acompaña al arma desde que empieza el gesto de
 	// Lanzar hasta que se completa el Atrape (2026-08-27, ver
@@ -1412,6 +1423,70 @@ namespace Constants
 	// conecte la luz (pendiente, ver arriba) -- namespacing igual que el
 	// resto del proyecto, ver kThrowTriggerGlobalEditorID.
 	inline constexpr std::string_view kWeaponGlowLightNodeName{ "CAP_ThorMjolnir_GlowLight" };
+
+	// -- Brillo de manos (2026-08-30) -- destello de un solo uso sobre las
+	// dos manos del jugador al lanzar/recibir el arma. A diferencia del
+	// destello del arma (WeaponGlow, malla+luz propias), este usa un
+	// BGSArtObject (RE::TESObjectREFR::ApplyArtObject) en vez de un
+	// TESEffectShader (RE::TESObjectREFR::ApplyEffectShader) -- decisión
+	// tomada con el usuario: un TESEffectShader recolorea TODA la
+	// geometría visible del actor (piel Y equipo, mismo comportamiento
+	// que "Become Ethereal"), sin forma de aislarlo a la piel de la
+	// mano; un BGSArtObject en cambio adjunta un .nif propio en un nodo
+	// concreto sin tocar la geometría existente, así que se ve igual
+	// lleve el jugador guantes puestos o no.
+	//
+	// El .nif es una copia editada de "lightningstormhandeffects.nif"
+	// (mod/asset vanilla de Skyrim, ver la skill nif-vfx-practices para
+	// el análisis completo de su estructura) -- el propio usuario ya la
+	// ha intensificado a mano en NifSkope (Base Color Scale, Soft
+	// Falloff Depth, etc.), así que aquí NO se aplica varias veces
+	// superpuesto por código (alternativa descartada -- el shader del
+	// efecto es aditivo puro, apilar N instancias habría sumado brillo
+	// igual, pero editar el .nif una sola vez es más simple y barato).
+	//
+	// PENDIENTE DE VERIFICAR EN EL JUEGO (sin confirmar, documentado
+	// explícitamente en vez de asumido): este .nif trae varias
+	// NiControllerSequence con nombre (mIntro/mIdle/mCharge/mReady/
+	// mCast...) para las fases de lanzar un hechizo real -- normalmente
+	// el motor selecciona cuál reproducir a través de
+	// RE::ActorMagicCaster (el sistema real de lanzamiento de hechizos),
+	// que aquí NO se usa (se llama a ApplyArtObject directamente sobre
+	// el actor). Si nada selecciona una secuencia, es posible que no se
+	// vea ninguna partícula/animación pese a que el modelo se adjunte
+	// correctamente -- mismo síntoma ya documentado en la skill
+	// nif-vfx-practices para otro tipo de NIF de partículas Bethesda
+	// ("Activación de partículas... vía NiControllerManager + graph
+	// variable"). Probar en el juego antes de dar esto por terminado; si
+	// no se ve nada, el arreglo es activar una secuencia concreta a mano
+	// (RE::NiControllerSequence::Activate) sobre el
+	// RE::ModelReferenceEffect que devuelve ApplyArtObject.
+	//
+	// FormID dado por el usuario tal cual en la Creation Kit
+	// (0101C72E) -- enmascarado a 12 bits por el flag ESL de
+	// ThorMjolnirOAR.esp (ver CLAUDE.md, "Errores comunes a vigilar"):
+	// 0101C72E & 0xFFF = 0x72E.
+	inline constexpr RE::FormID kHandGlowArtObjectLocalFormID = 0x72E;
+
+	// Duración (segundos) que se le pide a ApplyArtObject -- pasado este
+	// tiempo, el motor retira el modelo solo (RE::ModelReferenceEffect
+	// gestiona su propio ciclo de vida, no hace falta guardar el
+	// puntero devuelto para destruirlo a mano). Pensado como un
+	// destello breve en el instante de soltar/recibir el arma, no un
+	// brillo sostenido durante todo el vuelo (eso ya lo cubre
+	// Animation::WeaponGlow, sobre el arma). Placeholder, pendiente de
+	// ajustar en el juego contra la duración real de Throw.hkx/Catch.hkx.
+	inline constexpr float kHandGlowDuration = 0.6f;
+
+	// Nombres de hueso del esqueleto vanilla -- SIN VERIFICAR contra un
+	// esqueleto real de este proyecto (a diferencia de "WEAPON", que sí
+	// se comprobó con log de diagnóstico, ver CLAUDE.md): convención
+	// estándar de modding de Skyrim, pendiente de confirmar en el
+	// juego. Si Actor::GetNodeByName no encuentra el nodo,
+	// Animation::TriggerHandGlow avisa por log y sigue con la otra mano
+	// en vez de crashear.
+	inline constexpr const char* kHandGlowLeftHandNodeName = "NPC L Hand [LHnd]";
+	inline constexpr const char* kHandGlowRightHandNodeName = "NPC R Hand [RHnd]";
 
 	// -- VFX de impacto (destello al clavarse, ver
 	// 8.- ANIMATION/WeaponImpactVFX.h) -- 2026-08-28. Punto "polish" nuevo,
