@@ -560,6 +560,19 @@ namespace Constants
 	// en el juego.
 	inline constexpr float kStaggerMagnitude = 1.0f;
 
+	// -- Poder Lightning Dash (fuera de Mecanica del arma.txt) --
+	// EditorID del hechizo (creado en la Creation Kit, tipo Lesser Power)
+	// que el jugador tiene en su menú de Poderes mientras lleva equipada el
+	// arma arrojadiza. Lo concede y retira Weapon::WeaponManager
+	// (OnThrowableWeaponEquipChanged) con Actor::AddSpell/RemoveSpell -- el
+	// campo "Equip Ability" de un Magic Effect no sirve aquí, espera un
+	// Ability (pasivo), no un Lesser Power. El cooldown de uso
+	// (CAP_ThorMjolnir_Spell_LightningDash_Cooldown, hechizo aparte que se
+	// adhiere al jugador) no lo gestiona el plugin: quitar o volver a dar el
+	// poder no lo reinicia, así que desequipar y reequipar el arma no sirve
+	// para saltárselo.
+	inline constexpr std::string_view kLightningDashSpell{ "CAP_ThorMjolnir_Spell_LightningDash" };
+
 	// -- Temblor al clavarse (punto 11) --
 	// Duración *mínima* de la vibración antes de desprenderse al iniciar
 	// el regreso desde un objetivo clavado. Mecanica del arma.txt da 0,1s
@@ -653,14 +666,13 @@ namespace Constants
 	// arma (Throw::LaunchWeapon) como al iniciar el tramo de movimiento del
 	// regreso (Return::BeginReturnMovement). Dado por el usuario como
 	// 0x01014092 (visto en xEdit/CK, con el byte de índice de carga
-	// incluido) -- `ThorMjolnirOAR.esp` tiene el flag ESL activo (ver
-	// CLAUDE.md, "Errores comunes a vigilar"), así que el valor real de 12
-	// bits se obtiene enmascarando los últimos 3 dígitos hex
-	// (0x01014092 & 0xFFF = 0x092), independientemente de si se enmascara
-	// el valor completo o solo su parte local de 6 dígitos (0x014092) --
-	// el resultado es el mismo, el índice de carga cae siempre fuera de
-	// los 12 bits bajos.
-	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x092;
+	// incluido) -- `ThorMjolnirOAR.esp` tenía el flag ESL activo, así que el
+	// valor real en tiempo de ejecución se obtenía enmascarando los últimos
+	// 3 dígitos hex (0x01014092 & 0xFFF = 0x092). Desmarcado el flag ESL
+	// (2026-09-09, confirmado en xEdit que el FormID local no cambió al
+	// quitar el flag) -- vuelve a usarse el valor local completo de 6
+	// dígitos (0x014092) tal cual.
+	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x014092;
 
 	// EditorID del mismo Sound Marker, dado por el usuario -- necesario
 	// para el RE::PlaySound de refuerzo de Audio::PlayReliableOneShot (ver
@@ -1013,10 +1025,12 @@ namespace Constants
 	// Activator "continuo" (chispas mientras el arma se mueve de verdad),
 	// creado por el usuario en la Creation Kit copiando el vanilla
 	// FXSparkFountainToggleHeavy: EditorID CAP_ThorMjolnir_Activator_Sparkles,
-	// FormID dado por el usuario tal cual en xEdit/CK (0x01014B57) --
-	// ThorMjolnirOAR.esp tiene el flag ESL activo (ver CLAUDE.md), así que
-	// se enmascara a 12 bits: 0x01014B57 & 0xFFF = 0xB57.
-	inline constexpr RE::FormID kMovementVfxActivatorLocalFormID = 0xB57;
+	// FormID dado por el usuario tal cual en xEdit/CK (0x01014B57). Mientras
+	// ThorMjolnirOAR.esp tuvo el flag ESL activo se usaba enmascarado a 12
+	// bits (0x01014B57 & 0xFFF = 0xB57); desmarcado el flag (2026-09-09,
+	// FormID local sin cambios en xEdit), vuelve a usarse el valor local
+	// completo de 6 dígitos (0x014B57).
+	inline constexpr RE::FormID kMovementVfxActivatorLocalFormID = 0x014B57;
 
 	// Histórico extenso de cómo dejar de mostrar el VFX sin cortarlo en
 	// seco (ver CHANGELOG.md para el detalle completo de cada ronda,
@@ -1050,8 +1064,10 @@ namespace Constants
 	// CYCLE_CLAMP, BirthRate cae a 0 por su propia curva). EditorID
 	// CAP_ThorMjolnir_Activator_SparklesOff, FormID dado por el usuario tal
 	// cual en la Creation Kit (0x0101561C) -- mismo criterio de enmascarado
-	// ESL que el de arriba: 0x0101561C & 0xFFF = 0x61C.
-	inline constexpr RE::FormID kMovementVfxOffActivatorLocalFormID = 0x61C;
+	// ESL que el de arriba mientras el flag estuvo activo (0x0101561C &
+	// 0xFFF = 0x61C); desmarcado el flag (2026-09-09), vuelve a usarse el
+	// valor local completo de 6 dígitos (0x01561C).
+	inline constexpr RE::FormID kMovementVfxOffActivatorLocalFormID = 0x01561C;
 
 	// Cuánto tiempo MÍNIMO se solapan de verdad el VFX a punto de
 	// destruirse y el que lo releva (recién colocado) antes de que el
@@ -1348,10 +1364,13 @@ namespace Constants
 	inline constexpr RE::NiPoint3 kGlowAnchorLocalOffset{ 0.0f, 15.0f, 0.0f };
 
 	// FormID local del Activator creado por el usuario 2026-08-27
-	// (01019C19, ESL activo -- ya enmascarado: 0x9C19 & 0xFFF, ver
-	// CLAUDE.md), Model=kGlowEffectPath, sin script, mismo patrón que
+	// (01019C19). Mientras ThorMjolnirOAR.esp tuvo el flag ESL activo se
+	// usaba enmascarado a 12 bits (0x9C19 & 0xFFF = 0xC19); desmarcado el
+	// flag (2026-09-09, FormID local sin cambios en xEdit), vuelve a
+	// usarse el valor local completo de 6 dígitos (0x019C19). Model=
+	// kGlowEffectPath, sin script, mismo patrón que
 	// kMovementVfxActivatorLocalFormID.
-	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0xC19;
+	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0x019C19;
 
 	// Duración de la transición de encendido/apagado del destello (malla +
 	// luz) -- a petición del usuario 2026-08-27 ("no se apague/encienda de
@@ -1435,14 +1454,17 @@ namespace Constants
 	inline constexpr float        kGlowRingRotationSpeed = 1.5f;  // rad/s
 	inline constexpr RE::NiPoint3 kGlowRingRotationAxisLocal{ 0.0f, 0.0f, 1.0f };
 
-	// FormID local (0101A6DE, ESL -- ya enmascarado: 0xA6DE & 0xFFF, ver
-	// CLAUDE.md) del TESObjectLIGH creado por el usuario 2026-08-27. Radio,
+	// FormID local (0101A6DE) del TESObjectLIGH creado por el usuario
+	// 2026-08-27. Mientras ThorMjolnirOAR.esp tuvo el flag ESL activo se
+	// usaba enmascarado a 12 bits (0xA6DE & 0xFFF = 0x6DE); desmarcado el
+	// flag (2026-09-09, FormID local sin cambios en xEdit), vuelve a
+	// usarse el valor local completo de 6 dígitos (0x01A6DE). Radio,
 	// color, fade y demás saldrán directamente de ese formulario en tiempo
 	// de ejecución cuando se conecte la luz (segunda mitad de esta
 	// funcionalidad, todavía sin implementar -- de momento este destello
 	// solo cuelga la malla visual) -- no se duplican aquí como constantes
 	// propias.
-	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x6DE;
+	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x01A6DE;
 
 	// Nombre que se le dará al RE::NiPointLight creado por código cuando se
 	// conecte la luz (pendiente, ver arriba) -- namespacing igual que el
@@ -1487,11 +1509,14 @@ namespace Constants
 	// (RE::NiControllerSequence::Activate) sobre el
 	// RE::ModelReferenceEffect que devuelve ApplyArtObject.
 	//
-	// FormID dado por el usuario tal cual en la Creation Kit
-	// (0101C72E) -- enmascarado a 12 bits por el flag ESL de
-	// ThorMjolnirOAR.esp (ver CLAUDE.md, "Errores comunes a vigilar"):
-	// 0101C72E & 0xFFF = 0x72E.
-	inline constexpr RE::FormID kHandGlowArtObjectLocalFormID = 0x72E;
+	// FormID dado por el usuario tal cual en la Creation Kit (0101C72E).
+	// Mientras ThorMjolnirOAR.esp tuvo el flag ESL activo se usaba
+	// enmascarado a 12 bits (0101C72E & 0xFFF = 0x72E); desmarcado el flag
+	// (2026-09-09, FormID local sin cambios en xEdit), vuelve a usarse el
+	// valor local completo de 6 dígitos (0x01C72E). El usuario reactivará
+	// el flag ESL al terminar el mod -- si eso ocurre, ver la tabla de
+	// reversión enmascarado<->completo en NIF-PARAMETERS.md.
+	inline constexpr RE::FormID kHandGlowArtObjectLocalFormID = 0x01C72E;
 
 	// Duración (segundos) que se le pide a ApplyArtObject -- pasado este
 	// tiempo, el motor retira el modelo solo (RE::ModelReferenceEffect
@@ -1535,14 +1560,18 @@ namespace Constants
 	// RE::TESObjectREFR::PlaceObjectAtMe ya usado en todo el proyecto.
 	//
 	// FormID dado tal cual en la Creation Kit (0x0101BC69, cambiado de
-	// plantilla 2026-08-29 -- antes 0x0101B706) -- enmascarado a 12 bits
-	// por el flag ESL de ThorMjolnirOAR.esp (ver CLAUDE.md, "Errores
-	// comunes a vigilar"): 0x0101BC69 & 0xFFF = 0xC69.
+	// plantilla 2026-08-29 -- antes 0x0101B706). Mientras
+	// ThorMjolnirOAR.esp tuvo el flag ESL activo se usaba enmascarado a 12
+	// bits (0x0101BC69 & 0xFFF = 0xC69); desmarcado el flag (2026-09-09,
+	// FormID local sin cambios en xEdit), vuelve a usarse el valor local
+	// completo de 6 dígitos (0x01BC69). El usuario reactivará el flag ESL
+	// al terminar el mod -- si eso ocurre, ver la tabla de reversión
+	// enmascarado<->completo en NIF-PARAMETERS.md.
 	//
 	// Pendiente de que el usuario confirme en el juego que Damage/Force no
 	// duplican el daño que Combat::ApplyDamage ya calcula por separado
 	// (ver CLAUDE.md, "Arquitectura de física de proyectiles") -- si se
 	// nota daño/empuje de más, poner esos dos campos a 0 en la Creation
 	// Kit (Radius puede quedarse, solo controla el tamaño visual).
-	inline constexpr RE::FormID kImpactExplosionLocalFormID = 0xC69;
+	inline constexpr RE::FormID kImpactExplosionLocalFormID = 0x01BC69;
 }

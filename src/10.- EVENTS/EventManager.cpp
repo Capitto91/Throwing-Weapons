@@ -156,6 +156,61 @@ namespace Events
 			~EquipGuard() override = default;
 		};
 
+		// Concede/retira el Lesser Power Constants::kLightningDashSpell
+		// según el jugador equipe o desequipe el arma arrojadiza (ver
+		// WeaponManager::OnThrowableWeaponEquipChanged, donde vive la
+		// decisión de cuándo se retira de verdad). Sink aparte de
+		// EquipGuard: aquel deshace equipados ajenos al ciclo, este solo
+		// reacciona al arma propia -- no comparten ninguna lógica.
+		class LightningDashWatcher final : public RE::BSTEventSink<RE::TESEquipEvent>
+		{
+		public:
+			static LightningDashWatcher* GetSingleton()
+			{
+				static LightningDashWatcher singleton;
+				return &singleton;
+			}
+
+			LightningDashWatcher(const LightningDashWatcher&) = delete;
+			LightningDashWatcher(LightningDashWatcher&&) = delete;
+			LightningDashWatcher& operator=(const LightningDashWatcher&) = delete;
+			LightningDashWatcher& operator=(LightningDashWatcher&&) = delete;
+
+		protected:
+			RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent* a_event, RE::BSTEventSource<RE::TESEquipEvent>*) override
+			{
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				if (!a_event || !player || a_event->actor.get() != player) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
+				// Durante una pantalla de carga el motor puede reequipar/
+				// desequipar por su cuenta el equipo del jugador, sin que
+				// sea una decisión suya -- se ignora, y kPostLoadGame
+				// (WeaponManager::RestoreLightningDashPower) ya cubre
+				// concederlo si hace falta. No verificado que esos eventos
+				// lleguen de verdad en una carga; la guarda solo evita
+				// quitar y volver a dar el poder si llegan.
+				if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
+				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
+				auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+				if (!weapon || !weapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
+				Weapon::WeaponManager::GetSingleton()->OnThrowableWeaponEquipChanged(a_event->equipped);
+
+				return RE::BSEventNotifyControl::kContinue;
+			}
+
+		private:
+			LightningDashWatcher() = default;
+			~LightningDashWatcher() override = default;
+		};
+
 		// Recupera el arma si el ciclo estaba en marcha cuando se cierra
 		// cualquier pantalla de carga (puerta, viaje rápido...). A
 		// diferencia de la resincronización de kPostLoadGame, aquí sí es
@@ -248,6 +303,7 @@ namespace Events
 				// kInputLoaded, ver CLAUDE.md "Errores comunes a
 				// vigilar".
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
+				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());
 				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
 				Combat::Init();
 				// Precarga de los Sound Descriptor del arma (ver
@@ -256,7 +312,7 @@ namespace Events
 				// audio tarda en cargar de forma asíncrona la primera vez
 				// que se solicita (comprobado en el juego).
 				Audio::PrecacheAll();
-				logs::info("Events::OnSKSEMessage: kDataLoaded, EquipGuard/LoadingScreenWatcher registrados y Combat::Init() ejecutado.");
+				logs::info("Events::OnSKSEMessage: kDataLoaded, EquipGuard/LightningDashWatcher/LoadingScreenWatcher registrados y Combat::Init() ejecutado.");
 				break;
 			case SKSE::MessagingInterface::kNewGame:
 				logs::info("Events::OnSKSEMessage: kNewGame");
@@ -274,6 +330,9 @@ namespace Events
 				// guardada con el arma ya en mano), se comporta igual que
 				// ResetToInHand().
 				Weapon::WeaponManager::GetSingleton()->RecoverOrReset(g_pendingRecovery.value_or(Weapon::WeaponManager::SaveCycleData{}));
+				// Poder Lightning Dash: solo concede si el arma ya está en la
+				// mano, ver WeaponManager::RestoreLightningDashPower.
+				Weapon::WeaponManager::GetSingleton()->RestoreLightningDashPower();
 				g_pendingRecovery.reset();
 				break;
 			default:

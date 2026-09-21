@@ -4,6 +4,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "4.- THROW/ThrowManager.h"
@@ -363,6 +364,57 @@ namespace Weapon
 		}
 
 		ResetToInHand();
+	}
+
+	namespace
+	{
+		// Concede o retira el Lesser Power de Constants::kLightningDashSpell.
+		// Idempotente (HasSpell antes de cada cambio): se llama desde varios
+		// sitios y no debe duplicar ni quitar nada que ya esté en el estado
+		// pedido. AddSpell/RemoveSpell están declarados en Actor, sin el
+		// problema de offset por versión de las clases base secundarias (ver
+		// CLAUDE.md).
+		void SetLightningDashPower(bool a_granted)
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player) {
+				return;
+			}
+
+			auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kLightningDashSpell);
+			if (!spell) {
+				logs::warn(
+					"WeaponManager: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).",
+					Constants::kLightningDashSpell);
+				return;
+			}
+
+			const bool hasSpell = player->HasSpell(spell);
+			if (a_granted && !hasSpell) {
+				player->AddSpell(spell);
+				logs::info("WeaponManager: poder \"{}\" concedido.", Constants::kLightningDashSpell);
+			} else if (!a_granted && hasSpell) {
+				player->RemoveSpell(spell);
+				logs::info("WeaponManager: poder \"{}\" retirado.", Constants::kLightningDashSpell);
+			}
+		}
+	}
+
+	void WeaponManager::OnThrowableWeaponEquipChanged(bool a_equipped)
+	{
+		// "Tener el arma" = en la mano, o fuera de ella por el propio ciclo
+		// (apuntando, lanzada, clavada, llamando, regresando): en esos
+		// estados el desequipado lo hace este mismo plugin, no el jugador, y
+		// el poder no debe irse con él -- ver el comentario del header.
+		SetLightningDashPower(a_equipped || weaponState.GetState() != State::kInHand);
+	}
+
+	void WeaponManager::RestoreLightningDashPower()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (player && ActorUtils::IsThrowableWeaponEquipped(player)) {
+			SetLightningDashPower(true);
+		}
 	}
 
 	void WeaponManager::OnLoadingScreenClosed()

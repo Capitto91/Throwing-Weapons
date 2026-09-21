@@ -1062,7 +1062,255 @@ binario antes de dar por buena una tabla vieja.
 | 37 | `NiPSysBoxEmitter` | `Speed`/`InitialRadius`/`LifeSpan` (estáticos) | **No usar** — estos campos existen pero los pisa el controlador de `partA` cada frame (bloques 21/19/7 de arriba); editarlos aquí no tiene efecto visible | — |
 | 42 | `NiPSysGravityModifier` | `Strength` | Fuerza que tira de la partícula tras nacer — si es mucho mayor que `Speed` (21), domina la trayectoria real y enmascara cambios en `Speed` | `180.0` (`ForceType=planar`, `Axis=(0,0,1)`, `WorldAligned=true`) |
 
-## Formato de salida al responder
+## Objeto estático animado (loop infinito, sin controlador SKSE) — caso de estudio real (2026-09-07, `FarmhouseWindMillFan.nif` → `JormungandrStatic.nif`)
+
+Caso distinto a todo lo anterior: aquí el objeto **no** lo crea ni lo mueve
+ningún plugin SKSE en tiempo de ejecución — es un `Static`/`Activator`
+colocado normalmente en la Creation Kit, cargado por el motor "de forma
+normal" (la misma categoría que ya distingue la nota "Matiz importante" más
+arriba: el motor SÍ tickea de forma fiable los controllers horneados de un
+NIF cargado así, a diferencia de una réplica creada con `PlaceObjectAtMe`
+por código). Es la arquitectura real detrás de las aspas de un molino, una
+bandera ondeando, un cartel colgante, etc. — cualquier "objeto de mundo con
+una animación en bucle que nunca se detiene".
+
+### Mecanismo real, decodificado byte a byte (método (c)) contra el vanilla de verdad
+
+Extraído con `BSArch.exe unpack "Skyrim - Meshes0.bsa" <carpeta> farmhousewind`
+(herramienta ya presente en el equipo,
+`.../2.- HERRAMIENTAS/ESLifier/bsarch/BSArch.exe`, o la copia del modlist en
+`tools/Bethesda Archive Extractor`/`tools/ESLifier`) —
+`meshes/architecture/farmhouse/farmhousewindmill/farmhousewindmillfan.nif`
+(las aspas en sí; `farmhousewindmill.nif` es solo la estructura de madera
+estática sin animar, con un `NiParticleSystem` de polvo aparte, no
+relevante aquí). Bloques reales, en orden:
+
+```
+[0]  BSFadeNode "FarmhouseWindMillFan"   Controller → [3]   (root, T=0,0,0)
+[1]  BSBehaviorGraphExtraData "BGED" → GenericBehaviors\IdlePlayIdle.hkx
+[2]  BSXFlags = 0x201 (bit0 Animated=1, bit9 sin uso claro aquí)
+[3]  NiControllerManager   Cumulative=False  Sequences=[5]  ObjectPalette=[9]
+[4]  NiMultiTargetTransformController   Target=[0]  (legacy, ver nota abajo)
+[5]  NiControllerSequence "AnimIdle"  CycleType=CYCLE_LOOP  Freq=1.0  Start=0.0  Stop=13.333s
+       ControlledBlocks[0]: Interpolator=[6]  Controller=[4]  NodeName="SFarmhouseMillFanMesh"  ControllerType="NiTransformController"
+[6]  NiTransformInterpolator → Data=[7]
+[7]  NiTransformData  (rotación XYZ Euler, ver abajo)
+[8]  NiTextKeyExtraData: 0.0="start", ~0="SoundPlay.OBJWindmillBlade", 6.667="SoundPlay.OBJWindmillBlade", 13.333="end"
+[9]  NiDefaultAVObjectPalette  (resuelve "SFarmhouseMillFanMesh" → nodo [10] por nombre)
+[10] NiNode "SFarmhouseMillFanMesh"   T=(68.07, 0, 0)  Controller=-1  hijos=[11,14,17] (3× BSTriShape)
+```
+
+**Piezas imprescindibles para que el loop funcione, en orden de dependencia:**
+
+1. **`BSXFlags` con bit 0 (`Animated`) activo** (`nif.xml`: "Bit 0: enable
+   havok, bAnimated(Skyrim)") — confirmado en el archivo real, valor `513`
+   (`0x201`) en la variante final del proyecto (bit0 + bit9), pero el bit
+   que importa es el `0x1`.
+2. **Un nodo hijo dedicado**, no el nodo raíz — mismo patrón que
+   `Animation::TickSpin` en `CLAUDE.md`, ahora confirmado como técnica
+   nativa de Bethesda: `SFarmhouseMillFanMesh` cuelga del root con un
+   offset propio (`(68.07, 0, 0)`, la posición del eje real de las aspas),
+   y **las 3 mallas visibles están reenganchadas como sus hijos** — ni una
+   sola cuelga del root. Confirma al 100% la advertencia ya existente en
+   la skill ("reenganchar *todas* las mallas visibles, fácil dejarse una
+   pieza colgada del nodo raíz por error").
+3. **El `Controller` del nodo raíz apunta a un `NiControllerManager`**
+   (`root.Controller = 3`) — el nodo animado en sí (`[10]`) tiene su propio
+   `Controller = -1`, sin nada colgado directamente. Toda la resolución
+   pasa por nombre.
+4. **`NiControllerManager`** con `Cumulative=False`, una entrada en
+   `Controller Sequences`, y un `Object Palette` (`NiDefaultAVObjectPalette`)
+   — este último es el que traduce el string `"SFarmhouseMillFanMesh"` (que
+   es todo lo que sabe la secuencia) al puntero real al nodo `[10]`.
+5. **`NiControllerSequence`** con `Cycle Type = CYCLE_LOOP` (enum real,
+   `nif.xml`: `0=Loop, 1=Reverse, 2=Clamp`) y `Start Time`/`Stop Time`
+   reales (no los centinelas `FLT_MAX`/`-FLT_MAX` — esos solo aparecen en
+   el `NiTimeController` crudo de abajo, que delega el tiempo real a la
+   secuencia). Cada entrada de su lista `Controlled Blocks` (compound
+   `ControlledBlock`, `nif.xml`) lleva **tanto** `Interpolator` como
+   `Controller` como refs independientes, más `Node Name`/`Controller
+   Type` como strings — es lo que permite añadir una segunda entrada para
+   un segundo nodo sin tocar nada más.
+6. **`NiTransformData`**: aquí Bethesda usó `Rotation Type =
+   XYZ_ROTATION_KEY` (no cuaternión) — eje X y Z llevan una única key
+   estática (`90°`/`-90°`, corrección de encuadre del exportador, no gira),
+   y el eje Y lleva las 2 keys reales que animan: `0.0 rad` en `t=0` →
+   `2π rad` en `t=13.333s`, interpolación `QUADRATIC_KEY` con tangentes
+   ~0 en ambos extremos — esto es un *ease-in/ease-out* real (las aspas
+   aceleran al empezar el ciclo y frenan antes de completarlo, no giran a
+   velocidad constante). Para un giro a velocidad constante basta con
+   `LINEAR_KEY` y 2 keys sin tangentes — más simple, decisión estética.
+
+**Piezas presentes pero NO imprescindibles para el loop (no las repliques
+sin motivo)**:
+
+- `BSBehaviorGraphExtraData` → `GenericBehaviors\IdlePlayIdle.hkx`: mismo
+  tipo de bloque boilerplate que ya se documentó presente en el hacha de
+  Kratos — no se ha confirmado que tenga ningún efecto sobre el loop en sí
+  (el loop ya está gobernado por el manager/secuencia); probable residuo
+  del pipeline de exportación, no una dependencia real.
+- `NiTextKeyExtraData` con las claves `SoundPlay.OBJWindmillBlade`: dispara
+  el sonido de madera crujiendo sincronizado con el giro (convención real
+  de Bethesda, `"SoundPlay.<EditorID de un Sound Descriptor>"` como texto
+  de key en un NIF con animación horneada) — es un extra, no hace falta
+  para que el objeto gire.
+- `NiMultiTargetTransformController` en sí (bloque `[4]`): es la variante
+  **`DEPRECATED (20.6)`** según el propio `nif.xml` — Bethesda la sigue
+  usando aquí porque este asset es viejo (Skyrim LE), pero **no hay que
+  imitarla en contenido nuevo**. Un `NiTransformController` normal (no
+  "MultiTarget") ya trae su propio campo `Interpolator` (hereda
+  `NiSingleInterpController`, `nif.xml`) — más simple, un bloque menos por
+  nodo animado, y es exactamente lo que ya existe en `JormungandrStatic.nif`
+  (ver abajo). Usa esa variante para trabajo nuevo, no la de este fósil
+  vanilla.
+
+### Comparativa contra `JormungandrStatic.nif` (estado real, 2026-09-07)
+
+Decodificado con los mismos scripts. El archivo **ya trae la mitad del
+trabajo hecho**, y no por casualidad — es un export directo del esqueleto
+real de la criatura (root `BSFadeNode` literalmente nombrado
+`"skeleton.nif"`, ~15 `NiNode` de hueso con `BSLagBoneController` colgando
+de casi todos — la física de "cola" ya documentada en `CLAUDE.md` — y una
+única `BSTriShape` con `BSDismemberSkinInstance`/`NiSkinData`/`NiSkinPartition`
+que skinea el cuerpo entero a esa cadena de huesos):
+
+- **Ya tiene, y ya sirve tal cual**: dos huesos, `"NPC Root [Root]"`
+  (bloque `[2]`) y `"IW Head"` (bloque `[6]`), cada uno con su propio
+  `NiTransformController` (bloques `[3]`/`[7]`, ya con `Interpolator` →
+  `NiTransformInterpolator` → `NiTransformData` propios, bloques
+  `[4]`/`[8]`/`[5]`/`[9]`) — **y esos controllers ya tienen `Cycle Type
+  = Loop`, `Active = 1`, `Start Time = 0.0`, `Stop Time = 1.0667s`
+  horneados**, con 33 keys de rotación + 33 de traslación cada uno
+  (`QUADRATIC_KEY`, ~31 muestras/s — huele a clip real capturado, no a
+  relleno). `BSXFlags = 0x20B` ya trae el bit 0 (`Animated`) activo
+  (heredado de ser un mesh de actor, no puesto a propósito, pero ya
+  cumple el requisito 1 de arriba).
+- **Lo que falta de verdad, comparado punto por punto con la lista de
+  arriba**: no hay `NiControllerManager`, no hay `NiControllerSequence`,
+  no hay `NiDefaultAVObjectPalette`. Los dos `NiTransformController`
+  cuelgan **directamente** del `Controller` de su propio hueso
+  (`node[2].Controller=3`, `node[6].Controller=7`) — la cadena "suelta"
+  que la propia skill ya advertía que falla de forma intermitente para
+  réplicas creadas por código (`PlaceObjectAtMe`), pero que **no se ha
+  verificado, ni a favor ni en contra, para este caso** (un `Static`
+  colocado normalmente por la Creation Kit) — es la única pieza de este
+  análisis sin confirmar contra un NIF vanilla real que use exactamente
+  este patrón "suelto". El patrón que SÍ está confirmado al 100% contra
+  vanilla es el de manager+secuencia+paleta de arriba.
+
+### Receta de adaptación recomendada (pendiente de aplicar en NifSkope por el usuario)
+
+Reutilizando tal cual lo que ya existe (nada de esto necesita nuevas keys
+de animación, ya están todas):
+
+1. Insertar `NiControllerManager`: `Cumulative=false`.
+2. Insertar `NiControllerSequence`: `Cycle Type=CYCLE_LOOP`,
+   `Frequency=1.0`, `Start Time=0.0`, `Stop Time=1.0666667` (igual que ya
+   llevan los dos controllers sueltos). Dos entradas en `Controlled
+   Blocks`, reutilizando los bloques ya existentes sin duplicar nada:
+   - `Interpolator=[4]` (el de Root), `Controller=[3]`, `Node Name="NPC
+     Root [Root]"`, `Controller Type="NiTransformController"`.
+   - `Interpolator=[8]` (el de Head), `Controller=[7]`, `Node Name="IW
+     Head"`, `Controller Type="NiTransformController"`.
+3. Insertar `NiDefaultAVObjectPalette`: `Scene` → el root; `Objs` = las
+   mismas 2 parejas nombre/nodo (`"NPC Root [Root]"`→`[2]`, `"IW
+   Head"`→`[6]`).
+4. `NiControllerManager.Controller Sequences` → la secuencia nueva;
+   `Object Palette` → la paleta nueva.
+5. **Repuntar `root.Controller` de `-1` al índice del `NiControllerManager`
+   nuevo** — exactamente como en el vanilla (`root.Controller=3`).
+6. **Poner `node[2].Controller` y `node[6].Controller` a `-1`** — en el
+   vanilla, el nodo animado nunca referencia su propio controller
+   directamente (bloque `[10]`, `Controller=-1`); toda la resolución pasa
+   por el nombre vía la paleta. Dejar el link directo antiguo no debería
+   romper nada por sí solo, pero no es el patrón confirmado — quitarlo
+   deja el archivo idéntico en estructura al vanilla verificado.
+7. `BSXFlags` no hace falta tocarlo, el bit `Animated` ya está puesto.
+
+No se ha decidido/verificado si hace falta también un `NiTextKeyExtraData`
+mínimo (`"start"`/`"end"`) en la secuencia — en el vanilla está, pero
+lleva además las keys de sonido, que aquí no aplican; probablemente
+opcional, ver más arriba por qué no se considera imprescindible.
+
+## Colisión de un `MiscObject` estático — flag `ACTIVE` ausente rompe la activación de forma permanente al primer contacto (caso de estudio real, 2026-09-12, `asteroid.nif`)
+
+Síntoma reportado: un `MiscObject` recogible (colisión = una única
+`bhkBoxShape`, vía `bhkRigidBody`/`bhkCollisionObject` colgado del nodo
+raíz) dejaba de mostrar el prompt de activar **de forma permanente e
+independiente de la posición** en cuanto el jugador se acercaba lo
+bastante como para tocar físicamente la colisión — alejarse, volver a
+acercarse o cambiar de ángulo después no lo recuperaba. Antes de tocar
+nada, se descartaron por evidencia real (no solo teoría) dos hipótesis
+obvias:
+- **No es un problema de tamaño/encaje de la caja contra la malla** — ese
+  tipo de desajuste sería dependiente de la posición (recuperable
+  cambiando de sitio), y aquí no lo era.
+- **No es que el jugador empuje/desplace la colisión** — decodificado el
+  bloque `bhkRigidBody` (método (c), ver más abajo): `Motion System =
+  MO_SYS_FIXED`, `Quality Type = MO_QUAL_FIXED`, capa `SKYL_STATIC` en los
+  dos `HavokFilter` del cuerpo. Un cuerpo `Fixed` es inamovible por
+  definición de Havok — descarta la física como mecanismo del síntoma.
+- Confirmado con pruebas en consola del propio usuario: la posición
+  (`getpos x/y/z`) no cambiaba antes/después de romperse, la referencia
+  seguía figurando como *enabled*, y con `tcl` (no-colisión) activado
+  *antes* de tocar el objeto nunca llegaba a romperse — pero activarlo
+  *después* de que ya se hubiera roto no lo arreglaba. Esto último es la
+  pista decisiva: el disparador es el contacto físico real jugador↔caja,
+  y el daño que provoca es permanente a partir de ese instante, no
+  depende de dónde esté el jugador después.
+
+**Causa real, encontrada decodificando a mano el bloque `bhkCollisionObject`
+(offset+tamaño de bloque, método (c))**: su campo `Flags` (`bhkCOFlags`,
+`nif.xml`) valía `0x80` (solo el bit 7, `SYNC_ON_UPDATE`). El propio
+`nif.xml` documenta el default de este campo para `bhkCollisionObject` en
+Skyrim/post-FO3 como `0x81` — bit 0 (`ACTIVE`) + bit 7
+(`SYNC_ON_UPDATE`). **Al fichero le faltaba el bit `ACTIVE`.** Encaja con
+las cuatro pruebas de arriba: sin `ACTIVE`, el pick por raycast a
+distancia seguía funcionando (no depende de que el cuerpo esté activo en
+la simulación), pero el primer contacto físico real contra un cuerpo
+Havok marcado como no-activo rompía algo internamente (mecanismo exacto
+no verificable desde el formato del fichero — vive dentro del motor, no
+en el `.nif`) que sacaba el cuerpo de la recogida de física/pick de forma
+irreversible, sin tocar ni la posición de la referencia ni su flag
+Enabled/Disabled a nivel de juego.
+
+**Fix aplicado y confirmado en el juego**: en NifSkope, poner `Flags` del
+`bhkCollisionObject` a `0x81` (marcar el bit/casilla `ACTIVE`). Arregló la
+pérdida permanente del prompt.
+
+### Matiz posterior: `Fixed` no fue realmente inmovible hasta subir la masa
+
+Tras el fix de `ACTIVE`, apareció un segundo síntoma: al primer contacto,
+el objeto se desplazaba un poquito (a pesar de seguir siendo
+`MO_SYS_FIXED`/`MO_QUAL_FIXED`, con velocidad lineal/angular en `(0,0,0)`
+— releído y confirmado que no cambió nada de esto al arreglar `ACTIVE`).
+Según el formato Havok en bruto, un cuerpo `Fixed` no debería depender de
+la masa en absoluto para su inmovilidad. **Empíricamente, en el juego, sí
+dependía**: con `Mass = 10.0` se movía un poco al contacto; subiéndola a
+`Mass = 600.0` (mismo `Motion System`/`Quality Type`, nada más cambiado)
+dejó de moverse por completo, por mucho que el jugador empujara.
+
+**Esto no es verificable desde el propio formato del `.nif`** — es
+comportamiento real del Creation Engine no documentado en `nif.xml`, así
+que se reporta aquí como dato empírico confirmado en el juego por el
+usuario, no como algo que se pueda releer del fichero. Sospecha razonada
+(no confirmada más allá de esta prueba): el pequeño desplazamiento con
+masa baja probablemente no era la simulación de Havok tratando el cuerpo
+como `Fixed` de verdad, sino algún tipo de resolución de
+interpenetración/anti-atasco del propio controlador del personaje que sí
+tiene en cuenta la masa del objeto aunque esté marcado `Fixed`, con un
+umbral a partir del cual deja de aplicar ese empujoncito. No se ha
+acotado el umbral mínimo real — `600` es el valor confirmado que
+funciona, no necesariamente el mínimo necesario.
+
+**Conclusión práctica para el próximo `MiscObject`/`Static` con colisión
+simple (caja/esfera/cápsula) que deba ser recogible e inamovible**:
+comprobar siempre, no solo `Motion System`/`Quality Type` en `Fixed`, sino
+también (a) que `bhkCollisionObject.Flags` incluya el bit `ACTIVE`
+(`0x81`, no `0x80`) y (b) si pese a `Fixed` se observa cualquier
+desplazamiento al contacto en el juego, no asumir que es un problema de
+la caja de colisión — probar subiendo `Mass` a un valor alto (cientos) antes
+de rediseñar la forma de colisión.
 
 Para cada afirmación concreta sobre estructura NIF:
 

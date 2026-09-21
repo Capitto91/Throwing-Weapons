@@ -178,6 +178,28 @@ namespace Weapon
 		// EquipGestureWeapon.
 		[[nodiscard]] bool IsEquipGuardSuppressed() const noexcept { return suppressEquipGuard; }
 
+		// Poder Lightning Dash (Constants::kLightningDashSpell, Lesser Power
+		// propio): llamado por Events::LightningDashWatcher cuando el jugador
+		// equipa/desequipa el arma arrojadiza. a_equipped es lo que dice el
+		// propio evento, no una consulta al actor -- así no depende del orden
+		// exacto entre la notificación y la actualización del estado
+		// equipado. El poder se concede al equiparla, y solo se retira si la
+		// desequipa el jugador de verdad (estado kInHand): durante el ciclo
+		// (state != kInHand) el propio plugin desequipa y reequipa el arma en
+		// cada lanzamiento, y quitar y volver a dar un Lesser Power en cada
+		// uno lo sacaría de la ranura de poder que el jugador tuviera
+		// seleccionada (sin verificar en el juego).
+		void OnThrowableWeaponEquipChanged(bool a_equipped);
+
+		// Para kPostLoadGame: si el arma ya está en la mano derecha al
+		// cargar, se asegura de que el poder esté concedido (p. ej. partida
+		// guardada antes de existir esta mecánica, en la que nunca llegó
+		// ningún evento de equipar). Solo concede, nunca retira -- en ese
+		// instante no está verificado que el estado equipado del jugador ya
+		// esté restaurado, y quitar el poder por error sin un evento que lo
+		// devuelva es peor que dejar uno de más.
+		void RestoreLightningDashPower();
+
 	private:
 		WeaponManager() = default;
 		~WeaponManager() = default;
