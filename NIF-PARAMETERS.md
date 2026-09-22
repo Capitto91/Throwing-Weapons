@@ -47,8 +47,8 @@ el arma se quedó clavada.
 
 | Constante | Tipo | Valor actual | Qué controla |
 |---|---|---|---|
-| `kMovementVfxActivatorLocalFormID` | `RE::FormID` | `0x014B57` | FormID local del Activator del VFX continuo |
-| `kMovementVfxOffActivatorLocalFormID` | `RE::FormID` | `0x01561C` | FormID local del Activator "de un solo uso" (apagado) |
+| `kMovementVfxActivatorLocalFormID` | `RE::FormID` | `0x025` | FormID local del Activator del VFX continuo |
+| `kMovementVfxOffActivatorLocalFormID` | `RE::FormID` | `0x026` | FormID local del Activator "de un solo uso" (apagado) |
 | `kMovementVfxSequenceName` | `const char*` | `"partA"` | Nombre de la `NiControllerSequence` activada por código en ambos `.nif` |
 | `kMovementVfxSwapOverlapDuration` | `chrono::ms` | `500` | Solape mínimo garantizado entre el VFX saliente y el que lo releva |
 | `kMovementVfxSwapSafetyTimeout` | `chrono::ms` | `1500` | Red de seguridad absoluta del mismo relevo |
@@ -82,7 +82,7 @@ el arma se quedó clavada.
 | `kGlowEffectPath` | `const char*` | `"Effects/ThorMjolnirLight.nif"` | Ruta del `.nif` | Cuál `.nif` se instancia |
 | `kWeaponHammerHeadNodeName` | `string_view` | `"Gold"` | Nombre de nodo real, dentro del NIF **del arma** (`Mjolnir.nif`), no de `ThorMjolnirLight.nif` | Punto que sigue el destello (cabeza del martillo) |
 | `kGlowAnchorLocalOffset` | `NiPoint3` | `{0, 15, 0}` | — | Desplazamiento del anclaje en espacio local de `"Gold"` |
-| `kWeaponGlowActivatorLocalFormID` | `RE::FormID` | `0x019C19` | — | FormID local del Activator del destello |
+| `kWeaponGlowActivatorLocalFormID` | `RE::FormID` | `0x027` | — | FormID local del Activator del destello |
 | `kGlowFadeDuration` / `kGlowFadeDurationSeconds` | `chrono::ms` / `float` | `300` / `0.3f` | — | Duración del fundido de encendido/apagado (malla + luz) |
 | `kGlowUVScrollSpeed` | `float` | `-1/7.083333f` | `BSShaderMaterial::texCoordOffset[0]` de la malla bajo el `NiBillboardNode` (sin nombre útil, localizada por estructura) | Velocidad de scroll de UV, derivada de las claves reales horneadas (que nunca se reproducen solas, ver el comentario) |
 | `kGlowRingGlowNodeName` | `string_view` | `"RingGlow"` | Nombre real del `BSTriShape` | Malla cuyo `baseColorScale` pulsa y que rota |
@@ -90,7 +90,7 @@ el arma se quedó clavada.
 | `kGlowPulseScaleMin` / `kGlowPulseScaleMax` | `float` | `1.2f` / `2.2f` | — | Rango de `baseColorScale` del pulso |
 | `kGlowRingRotationSpeed` | `float` | `1.5f` (rad/s) | — (no hornea nada, escritura directa) | Velocidad angular de la rotación continua de `"RingGlow"` |
 | `kGlowRingRotationAxisLocal` | `NiPoint3` | `{0,0,1}` | — | Eje local de esa rotación — **sin verificar contra el NIF real**, suposición de partida (ver el propio comentario en `Constants.h`) |
-| `kWeaponGlowLightLocalFormID` | `RE::FormID` | `0x01A6DE` | — | FormID local del `TESObjectLIGH` (luz dinámica, pendiente de conectar del todo) |
+| `kWeaponGlowLightLocalFormID` | `RE::FormID` | `0x028` | — | FormID local del `TESObjectLIGH` (luz dinámica, pendiente de conectar del todo) |
 | `kWeaponGlowLightNodeName` | `string_view` | `"CAP_ThorMjolnir_GlowLight"` | — | Nombre que tendrá el `NiPointLight` creado por código |
 
 ## Brillo de manos (`8.- ANIMATION/HandGlow.h`) -- 2026-08-30
@@ -100,7 +100,7 @@ el arma se quedó clavada.
 
 | Constante | Tipo | Valor actual | Nodo/campo del NIF | Qué controla |
 |---|---|---|---|---|
-| `kHandGlowArtObjectLocalFormID` | `RE::FormID` | `0x01C72E` | — | FormID local del `BGSArtObject` que envuelve el `.nif` |
+| `kHandGlowArtObjectLocalFormID` | `RE::FormID` | `0x02A` | — | FormID local del `BGSArtObject` que envuelve el `.nif` |
 | `kHandGlowLeftHandNodeName` / `kHandGlowRightHandNodeName` | `const char*` | `"NPC L Hand [LHnd]"` / `"NPC R Hand [RHnd]"` | Nombre de hueso del esqueleto del actor (**sin verificar en el juego**, ver `CLAUDE.md`) | Nodo al que se adjunta el `.nif` (`RE::TESObjectREFR::ApplyArtObject`) |
 
 ## VFX de impacto (`8.- ANIMATION/WeaponImpactVFX.h`) -- histórico 2026-08-28/29, ya no aplica
@@ -113,10 +113,9 @@ con crashes de carga nativa nunca pinpointeados del todo pese a
 verificación exhaustiva -- ver `CHANGELOG.md` v1.17.1-v1.17.9 para el
 histórico completo), el usuario pasó a usar una explosión vanilla
 (`ExplosionRuneShock01`) como plantilla y duplicó un `BGSExplosion` propio
-en la Creation Kit (`CAP_ThorMjolnir_Explosion_MjolnirImpact`, FormID
-`0x0101BC69` en `ThorMjolnirOAR.esp` -- `Constants::kImpactExplosionLocalFormID
-= 0x01BC69`; enmascarado a `0xC69` mientras el plugin tuvo el flag ESL
-activo, ver la nota de "Desmarcado ESL" al final de este documento),
+en la Creation Kit (`CAP_ThorMjolnir_Explosion_MjolnirImpact`, FormID local
+`0x029` en `ThorMjolnirOAR.esp` -- `Constants::kImpactExplosionLocalFormID
+= 0x029`; ver la nota de "ESL compactado" al final de este documento),
 colocado con
 `RE::TESObjectREFR::PlaceObjectAtMe` -- sin `.nif`, sin NifSkope, sin nada
 que animar por código; el motor lo reproduce y limpia solo. El tamaño
@@ -141,26 +140,32 @@ parámetro de `.nif`, así que no le corresponde fila en esta tabla.
   ajuste), se listan aquí solo como referencia de qué `.nif` corresponde a
   cada FormID.
 
-## Desmarcado temporal del flag ESL de `ThorMjolnirOAR.esp` (2026-09-09)
+## ESL compactado de `ThorMjolnirOAR.esp` (2026-09-22)
 
-El usuario desmarcó el flag ESL de `ThorMjolnirOAR.esp` para facilitar la
-edición durante el desarrollo — **lo volverá a marcar al terminar el mod**.
-Mientras el flag esté desactivado, los FormID de esta tabla son el valor
-local completo de 6 dígitos hex tal cual xEdit/CK (confirmado que la CK no
-renumera nada al desmarcar el flag, el valor en disco es el mismo con o sin
-ESL). Cuando se vuelva a marcar ESL, hay que revertir estas constantes a su
-valor enmascarado a 12 bits (últimos 3 dígitos hex del valor completo):
+`ThorMjolnirOAR.esp` volvió a marcarse como ESL tras la limpieza del plugin
+(QAC + Clean Masters + "Compact FormIDs for ESL" de xEdit). Cabecera 1.71 y
+**rango extendido de FormIDs 0x001-0xFFF** (soportado por el juego desde la
+1.6.1130; en SE 1.5.97/1.6.659 y anteriores hace falta "Backported Extended
+ESL Support", y en VR "Skyrim VR ESL Support"). Decisión del usuario:
+mantener este rango y esta cabecera.
 
-| Constante | Valor completo (sin ESL, actual) | Valor enmascarado (con ESL) |
+Al estar compactado, todos los FormID locales de este proyecto ya son de
+**12 bits** y se usan tal cual, sin enmascarar. Valores actuales (los que
+cambiaron el 2026-09-22 al renumerar el plugin):
+
+| Constante | Registro (EditorID) | Valor local |
 |---|---|---|
-| `kMovementVfxActivatorLocalFormID` | `0x014B57` | `0xB57` |
-| `kMovementVfxOffActivatorLocalFormID` | `0x01561C` | `0x61C` |
-| `kWeaponGlowActivatorLocalFormID` | `0x019C19` | `0xC19` |
-| `kWeaponGlowLightLocalFormID` | `0x01A6DE` | `0x6DE` |
-| `kHandGlowArtObjectLocalFormID` | `0x01C72E` | `0x72E` |
+| `kMovementVfxActivatorLocalFormID` | `CAP_ThorMjolnir_Activator_Sparkles` | `0x025` |
+| `kMovementVfxOffActivatorLocalFormID` | `CAP_ThorMjolnir_Activator_SparklesOff` | `0x026` |
+| `kWeaponGlowActivatorLocalFormID` | `CAP_ThorMjolnir_Activator_Light` | `0x027` |
+| `kWeaponGlowLightLocalFormID` | `CAP_ThorMjolnir_Light_Hammer` | `0x028` |
+| `kHandGlowArtObjectLocalFormID` | `CAP_ThorMjolnir_HandEffects` | `0x02A` |
 
-`kImpactExplosionLocalFormID` (`0x01BC69` completo / `0xC69` enmascarado,
-fuera de esta tabla por no controlar un `.nif`) y
-`Constants::kThrowLaunchSoundLocalFormID` (`12.- AUDIO`, `0x014092` completo
-/ `0x092` enmascarado, sonido, tampoco en esta tabla) siguen el mismo
-criterio — ver `Constants.h` directamente para esas dos.
+Fuera de esta tabla por no controlar un `.nif`: `kImpactExplosionLocalFormID`
+(`0x029`, `CAP_ThorMjolnir_Explosion_MjolnirImpact`),
+`kThrowLaunchSoundLocalFormID` (`0x024`), `kCallReleaseSoundLocalFormID`
+(`0x01E`), `kCatchStartSoundLocalFormID` (`0x01B`) y
+`kCatchEndSoundLocalFormID` (`0x01C`). Los tres `config.json` de Open
+Animation Replacer (`Throw`/`Call`/`Catch`) referencian sus TESGlobal con
+los FormID locales `01F`, `020` y `021`. **Si se vuelve a compactar o a
+renumerar el plugin, estos valores cambian y hay que releerlos de xEdit.**

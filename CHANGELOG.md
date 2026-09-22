@@ -1546,3 +1546,18 @@ Registro de cambios relevantes del plugin, en español. Versión `0.Y.Z`: `Y` su
   - El cooldown de uso (`CAP_ThorMjolnir_Spell_LightningDash_Cooldown`, FormID 03009EF1, hechizo aparte que se adhiere al jugador) **no lo toca el plugin**: quitar o volver a dar el poder no lo reinicia, así que desequipar y reequipar no sirve para saltárselo.
   - **Pendiente de verificar en el juego**: que el poder aparece al equipar y desaparece al desequipar; que no se retira durante un ciclo de lanzar/llamar/atrapar; que no aparece ningún aviso en pantalla al concederlo/retirarlo. Compila sin errores ni avisos (`xmake build`, 2026-09-21); sin probar en el juego.
 
+
+## 2026-09-22 (limpieza del plugin, ESL compactado y FormIDs nuevos)
+
+### v1.19.2
+
+- Limpieza de `ThorMjolnirOAR.esp` con xEdit 4.1.5 (solo datos del plugin, sin cambios de mecánica):
+  - Quick Auto Clean (3 pasadas): quitados los ITM (records idénticos al master) y los añadidos por la Creation Kit al revertir cambios (`XLRL`); las 39 referencias vanilla borradas para despejar el terreno del templo del atronach pasan a estar deshabilitadas ("Undelete and Disable"), verificadas una a una.
+  - Overrides accidentales de vanilla revertidos a mano: nubes y trigger `MQ206` movidos, 7 records de contenido tocados al duplicarlos (`ChainLightning`, `ShockStormFXShader`, `EnchWeaponFireDamage01`, `ExplosionRuneShock01`, `FireStormHandEffects`, `dunVolunruudPickaxe`, `AbStormAtronach`) y 3 referencias/celdas de libros descartadas.
+  - Celdas `00009766`/`00009767` restauradas a la versión de Dragonborn (recuperan su localización `DLC2ThroatoftheWorldPath`, que la copia del plugin —versión de Skyrim.esm— pisaba).
+  - 8 records propios sin uso quitados (`Activator_Trail`/`TrailOff`, `TriggerBox...TroattheWorld01`, `Activator_LightningEssence`, GLOB `Quest_JormungandrAlert`, 3 SOUN `MarkSound_*` sin uso) y la property fantasma `AtronachRef` del trigger `CAP_ThorMjolnir_Trigger_AtronachAtack`.
+  - Clean Masters quitó `Update.esm` (sin referencias): masters `Skyrim.esm` + `Dragonborn.esm`.
+- ESL: "Compact FormIDs for ESL" + flag ESL, cabecera 1.71, **rango extendido de FormIDs (0x001-0xFFF)**. Decisión del usuario: mantenerlo — exige el juego ≥ 1.6.1130 (o "Backported Extended ESL Support" en SE antiguo, "Skyrim VR ESL Support" en VR). `.seq` regenerado (`Quest_02` Start Game Enabled).
+- FormIDs locales actualizados al renumerar el plugin (12 bits, sin enmascarar): las 10 constantes `*LocalFormID` de `Constants.h` (`0x01E`, `0x024`, `0x01B`, `0x01C`, `0x025`, `0x026`, `0x027`, `0x028`, `0x029`, `0x02A`) y los tres `config.json` de Open Animation Replacer (`01F`/`020`/`021`). `NIF-PARAMETERS.md` y `CLAUDE.md` actualizados (la regla de enmascarar a 12 bits ya no aplica).
+- Motivo de que las animaciones OAR no se vieran desde el desmarcado de ESL del 2026-09-09: los `config.json` seguían con los FormIDs enmascarados (`03E`/`03F`/`040`) y OAR no encontraba los Globals; el ciclo funcionaba solo con el respaldo por tiempo de cada `Begin*Animation`.
+- Prueba en el juego del usuario (2026-09-22, antes de este cambio): todo correcto salvo las animaciones OAR (Lanzar/Llamada/Atrape), incluidos Lightning Dash, la quest completa y los libros-pista (`Quest_02`). Compila sin errores (`xmake`, DLL desplegada en la carpeta del mod). **Pendiente de verificar en el juego, con un save nuevo:** que vuelven las animaciones OAR sincronizadas con la suelta, y que los VFX (destello del arma y de las manos, chispas, explosión de impacto) y los sonidos siguen resolviendo con los FormIDs nuevos.
