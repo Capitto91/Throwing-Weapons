@@ -10,7 +10,7 @@
 // reescribe RE::PlaySound a RE::PlaySoundA -- mismo problema que min/max,
 // documentado en CLAUDE.md. Solo hace falta el guard en el punto de uso.
 #ifdef PlaySound
-#undef PlaySound
+#	undef PlaySound
 #endif
 
 namespace Audio
@@ -36,6 +36,37 @@ namespace Audio
 			}
 
 			return nullptr;
+		}
+
+		// Cuerpo compartido de Audio::PlayReliableOneShot y Audio::WarmUpAll
+		// -- mismo mecanismo triple exacto, con el volumen del
+		// RE::BSSoundHandle real como único parámetro que varía (normal
+		// para un uso real, 0 para el calentamiento silencioso -- salvo la
+		// pata RE::PlaySound, que no tiene volumen y siempre se oye, ver
+		// SoundResolver.h).
+		void PlayOneShotImpl(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID, float a_volume)
+		{
+			auto* audioManager = RE::BSAudioManager::GetSingleton();
+			auto* descriptor = audioManager ? ResolveSoundDescriptor(a_localFormID) : nullptr;
+			if (!descriptor) {
+				logs::warn("Audio::PlayReliableOneShot: no se pudo resolver el Sound Descriptor (FormID local 0x{:06X}).", a_localFormID);
+				return;
+			}
+
+			RE::BSSoundHandle primingHandle;
+			if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kSoundHandleFlags)) {
+				primingHandle.FadeInPlay(0);
+			}
+
+			RE::PlaySound(a_editorID);
+
+			RE::BSSoundHandle handle;
+			if (audioManager->GetSoundHandle(handle, descriptor, Constants::kSoundHandleFlags)) {
+				handle.SetPosition(a_position);
+				handle.SetVolume(a_volume);
+				const bool played = handle.FadeInPlay(0);
+				logs::info("Audio::PlayReliableOneShot: FormID local 0x{:06X} -- FadeInPlay()={}.", a_localFormID, played);
+			}
 		}
 	}
 
@@ -72,41 +103,24 @@ namespace Audio
 
 	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID)
 	{
-		auto* audioManager = RE::BSAudioManager::GetSingleton();
-		auto* descriptor = audioManager ? ResolveSoundDescriptor(a_localFormID) : nullptr;
-		if (!descriptor) {
-			logs::warn("Audio::PlayReliableOneShot: no se pudo resolver el Sound Descriptor (FormID local 0x{:06X}).", a_localFormID);
-			return;
-		}
-
-		RE::BSSoundHandle primingHandle;
-		if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kSoundHandleFlags)) {
-			primingHandle.FadeInPlay(0);
-		}
-
-		RE::PlaySound(a_editorID);
-
-		RE::BSSoundHandle handle;
-		if (audioManager->GetSoundHandle(handle, descriptor, Constants::kSoundHandleFlags)) {
-			handle.SetPosition(a_position);
-			handle.SetVolume(Constants::kSoundHandleVolume);
-			const bool played = handle.FadeInPlay(0);
-			logs::info("Audio::PlayReliableOneShot: FormID local 0x{:06X} -- FadeInPlay()={}.", a_localFormID, played);
-		}
+		PlayOneShotImpl(a_position, a_localFormID, a_editorID, Constants::kSoundHandleVolume);
 	}
 
-	void PrecacheAll()
+	void WarmUpAll()
 	{
-		auto* audioManager = RE::BSAudioManager::GetSingleton();
-		if (!audioManager) {
-			return;
+		struct Entry
+		{
+			RE::FormID  localFormID;
+			const char* editorID;
+		};
+
+		for (const auto& entry : { Entry{ Constants::kThrowLaunchSoundLocalFormID, Constants::kThrowLaunchSoundEditorID },
+				 Entry{ Constants::kCatchStartSoundLocalFormID, Constants::kCatchStartSoundEditorID },
+				 Entry{ Constants::kCatchEndSoundLocalFormID, Constants::kCatchEndSoundEditorID },
+				 Entry{ Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID } }) {
+			PlayOneShotImpl(RE::NiPoint3{}, entry.localFormID, entry.editorID, 0.0f);
 		}
 
-		for (const auto localFormID : { Constants::kThrowLaunchSoundLocalFormID, Constants::kCatchStartSoundLocalFormID, Constants::kCatchEndSoundLocalFormID, Constants::kCallReleaseSoundLocalFormID }) {
-			if (auto* descriptor = ResolveSoundDescriptor(localFormID)) {
-				audioManager->PrecacheDescriptor(descriptor, 0);
-				logs::info("Audio::PrecacheAll: precacheado FormID local 0x{:06X}.", localFormID);
-			}
-		}
+		logs::info("Audio::WarmUpAll: gastado el primer intento de los 4 Sound Descriptor del arma.");
 	}
 }

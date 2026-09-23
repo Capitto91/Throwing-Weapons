@@ -76,23 +76,10 @@ namespace Combat
 			// el juego (comprobado). Actor::AsActorValueOwner() es el
 			// accessor de commonlibsse-ng que calcula el offset correcto
 			// según la versión real detectada en tiempo de ejecución.
-			auto*       avOwner = a_target->AsActorValueOwner();
-			const float before = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
-
+			auto* avOwner = a_target->AsActorValueOwner();
 			if (avOwner) {
 				avOwner->DamageActorValue(RE::ActorValue::kHealth, a_amount);
 			}
-
-			// Diagnóstico temporal (ver CHANGELOG): confirmar en el juego
-			// si Actor::HandleHealthDamage (llamado aparte en NotifyHit,
-			// justo después de esto en cada punto de llamada) vuelve a
-			// restar vida por su cuenta o no — sin fuente que lo
-			// documente con certeza. Comparar el "después" de este log
-			// con el "antes"/"después" del de NotifyHit.
-			const float after = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
-			logs::info(
-				"Combat::ApplyDamage: \"{}\" vida {:.1f} -> {:.1f} (DamageActorValue, importe pedido {:.1f})",
-				a_target->GetName(), before, after, a_amount);
 		}
 
 		// Actor::HandleHealthDamage + Actor::SetBeenAttacked (probado en

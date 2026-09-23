@@ -9,7 +9,17 @@
 build/
 vs*/
 _reference/
+/.claude/
+/Guides/
 
 # files
 *.zip
 compile_commands.json
+
+# project docs and notes (kept locally, not published to GitHub)
+/CHANGELOG.md
+/CLAUDE.md
+/NIF-PARAMETERS.md
+/QUEST-DESIGN.md
+/Mecanica del arma.txt
+/console.html

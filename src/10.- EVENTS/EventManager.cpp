@@ -306,12 +306,17 @@ namespace Events
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());
 				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
 				Combat::Init();
-				// Precarga de los Sound Descriptor del arma (ver
+				// Calentamiento de los Sound Descriptor del arma (ver
 				// 12.- AUDIO/SoundResolver.h): sin esto, el primer
-				// lanzamiento de la partida no se oye -- el recurso de
-				// audio tarda en cargar de forma asíncrona la primera vez
-				// que se solicita (comprobado en el juego).
-				Audio::PrecacheAll();
+				// lanzamiento/llamada/atrape de la partida no se oye --
+				// investigado a fondo (CHANGELOG.md v1.19.3-v1.19.11), no
+				// es un problema de carga de recurso (esa hipótesis inicial
+				// se descartó), sino de que la primerísima vez que este
+				// mecanismo pide reproducir un Sound Descriptor concreto en
+				// la sesión, se pierde -- Audio::WarmUpAll gasta ese primer
+				// intento aquí, con un disparo real (audible una vez por
+				// cada uno) en vez de en el primer uso real del jugador.
+				Audio::WarmUpAll();
 				logs::info("Events::OnSKSEMessage: kDataLoaded, EquipGuard/LightningDashWatcher/LoadingScreenWatcher registrados y Combat::Init() ejecutado.");
 				break;
 			case SKSE::MessagingInterface::kNewGame:

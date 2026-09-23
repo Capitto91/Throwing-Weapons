@@ -7,7 +7,7 @@
 namespace Audio
 {
 	// Resuelve el RE::BGSSoundDescriptorForm identificado por
-	// a_localFormID dentro del plugin a_modName -- usado tanto por
+	// a_localFormID dentro de ThorMjolnirOAR.esp -- usado tanto por
 	// Audio::PlayReliableOneShot como por Audio::CatchCue.
 	//
 	// Prueba primero RE::TESDataHandler::LookupForm<RE::BGSSoundDescriptorForm>
@@ -29,22 +29,44 @@ namespace Audio
 	// sola basta (comprobado repetidas veces). Movida aquí desde
 	// CatchSound.cpp para compartirla con cualquier otro sonido suelto que
 	// necesite la misma fiabilidad (p. ej. Audio::CallSound).
+	//
+	// Bug de "no suena en el primer intento de la partida" (investigado a
+	// fondo 2026-09-22, ver CHANGELOG.md v1.19.3-v1.19.11): afecta a
+	// cualquier Sound Descriptor -- propio o vanilla -- la primerísima vez
+	// que este mecanismo se llama sobre él en la sesión, sea cual sea el
+	// tiempo real transcurrido desde la carga de la partida. No es un
+	// problema de caché de archivo (Audio::PrecacheDescriptor confirmado
+	// irrelevante, ver Audio::WarmUpAll más abajo) ni de qué función de
+	// RE::BSAudioManager se use para obtener el handle (GetSoundHandle por
+	// puntero a descriptor y GetSoundHandleByName por nombre se comportan
+	// igual). Mitigado por Audio::WarmUpAll, que gasta ese primer intento
+	// perdido al cargar partida en vez de en el primer uso real del jugador
+	// -- no es un arreglo de la causa raíz, que sigue sin identificarse con
+	// certeza (hipótesis más fundamentada: RE::BSAudioManager es un sistema
+	// de colas de mensajes con hilo propio, ver RE/B/BSSoundMessage.h, y la
+	// primera vez que se pide una identidad nueva hace falta que el hilo de
+	// audio procese un Init/LoadForPlayback antes de que un Play/FadeIn
+	// inmediatamente posterior tenga efecto -- sin confirmar, sin
+	// desensamblador disponible para verificarlo contra el código nativo
+	// real).
 	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID);
 
-	// Precarga en caché los cuatro Sound Descriptor del arma (lanzamiento,
-	// vuelo, arranque y golpe final del atrape, ver Constants.h) -- llamar
-	// una vez en Events::OnSKSEMessage(kDataLoaded), antes del primer
-	// lanzamiento.
+	// Gasta, al cargar partida (Events::OnSKSEMessage(kDataLoaded)), el
+	// "primer intento perdido" de cada uno de los cuatro Sound Descriptor
+	// del arma (lanzamiento, llamada, arranque y golpe final del atrape,
+	// ver Constants.h) -- mismo mecanismo exacto que PlayReliableOneShot
+	// (mismo RE::PlaySound incluido, a petición del usuario, para
+	// calentar exactamente lo mismo que calienta un uso real), pero con
+	// volumen 0 en el RE::BSSoundHandle real. Sin forma de silenciar la
+	// pata RE::PlaySound (no tiene parámetro de volumen) -- consecuencia
+	// aceptada: cada uno de los 4 sonidos se oye una vez, de verdad, justo
+	// al cargar partida. Decisión explícita del usuario (2026-09-22, ver
+	// CHANGELOG.md v1.19.11) para maximizar la fiabilidad mientras se
+	// evalúa si hace falta silenciarlo del todo más adelante.
 	//
-	// Motivo (comprobado en el juego): el primer acceso a un recurso de
-	// audio nunca antes solicitado tarda en cargar de forma asíncrona --
-	// mismo patrón ya documentado para el 3D de una réplica recién creada
-	// (ver CLAUDE.md) -- y sin precarga, BSAudioManager::GetSoundHandle +
-	// Play() reportan éxito (IsPlaying()=true, GetDuration() con un valor
-	// real) pero no se oye nada durante los primeros lanzamientos, hasta
-	// que el recurso queda cacheado. RE::BSAudioManager::PrecacheDescriptor
-	// existe justo para esto (RE/B/BSAudioManager.h) -- a_flags sin
-	// documentar en commonlibsse-ng, se usa 0 sin ninguna base más que ser
-	// el valor neutro.
-	void PrecacheAll();
+	// Sustituye a Audio::PrecacheAll/RE::BSAudioManager::PrecacheDescriptor,
+	// confirmado irrelevante para este bug (ver el comentario de
+	// PlayReliableOneShot) tras varias rondas de pruebas -- no comprueba
+	// nada, no calienta nada que el propio bug necesite.
+	void WarmUpAll();
 }

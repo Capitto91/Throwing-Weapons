@@ -132,8 +132,6 @@ namespace Animation
 
 	void WeaponTrail::Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset)
 	{
-		diagLoggedTrailRootResolved = false;
-		diagLastLogTime = -1.0f;
 		orderedSegments.clear();
 		upReference = a_upReference;
 		roll = a_roll;
@@ -179,23 +177,19 @@ namespace Animation
 		roll = a_roll;
 	}
 
-	void WeaponTrail::Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds)
+	void WeaponTrail::Update(const RE::NiPoint3& a_currentPosition, [[maybe_unused]] float a_deltaSeconds)
 	{
 		if (!particle || !particle->particleObject) {
-			// Diagnóstico temporal (ver WeaponTrail.h): este return también
-			// era silencioso -- si particleObject nunca llega a resolver
-			// (carga asíncrona que nunca termina, o particle nulo por el
-			// caso de arriba), Update() no hacía nada tick tras tick sin
-			// dejar ningún rastro. history tampoco se llena en este caso.
-			currentTime += a_deltaSeconds;
+			// particleObject puede tardar en cargar su 3D de forma asíncrona
+			// (ver Start) -- mientras no esté listo, Update() no hace nada;
+			// history tampoco se llena en este caso.
 			return;
 		}
 
 		// a_currentPosition es la posición LÓGICA del arma (nodo raíz de
-		// la réplica) -- se ancla aquí, no en cada llamante, para que
-		// todo lo demás en esta función (historial, log de diagnóstico)
-		// use siempre el punto ya compensado. Ver WeaponTrail.h,
-		// a_anchorWorldOffset.
+		// la réplica) -- se ancla aquí, no en cada llamante, para que todo
+		// lo demás en esta función (historial, segmentos) use siempre el
+		// punto ya compensado. Ver WeaponTrail.h, a_anchorWorldOffset.
 		const RE::NiPoint3 anchoredPosition = a_currentPosition + anchorWorldOffset;
 
 		const float distanceThisTick = history.empty() ? 0.0f : (anchoredPosition - history.back()).Length();
@@ -223,7 +217,6 @@ namespace Animation
 		auto* trailRootNode = trailRoot ? trailRoot->AsNode() : nullptr;
 		if (!trailRootNode) {
 			logs::warn("Animation::WeaponTrail::Update: el efecto '{}' no tiene el nodo '{}' (NIF sin la convención de estela esperada).", Constants::kTrailEffectPath, Constants::kTrailRootNodeName);
-			currentTime += a_deltaSeconds;
 			return;
 		}
 
@@ -254,18 +247,14 @@ namespace Animation
 					orderedSegments.emplace_back(rawChildren[static_cast<std::uint16_t>(i)]);
 				}
 			}
+
+			logs::info("Animation::WeaponTrail::Update: nodo '{}' resuelto con {} segmentos hijos (ordenados por nombre).", Constants::kTrailRootNodeName, static_cast<std::uint32_t>(orderedSegments.size()));
 		}
 
 		auto&      segments = orderedSegments;
 		const auto segmentCount = static_cast<std::uint32_t>(segments.size());
 		if (segmentCount == 0) {
-			currentTime += a_deltaSeconds;
 			return;
-		}
-
-		if (!diagLoggedTrailRootResolved) {
-			logs::info("Animation::WeaponTrail::Update: nodo '{}' resuelto con {} segmentos hijos (ordenados por nombre).", Constants::kTrailRootNodeName, segmentCount);
-			diagLoggedTrailRootResolved = true;
 		}
 
 		// Hacen falta al menos 2 muestras para tener una dirección real --
@@ -276,7 +265,6 @@ namespace Animation
 			parkedTransform.translate = history.back();
 			parkedTransform.scale = 0.0f;
 			ParkAllSegments(*trailRootNode, parkedTransform);
-			currentTime += a_deltaSeconds;
 			return;
 		}
 
@@ -392,16 +380,6 @@ namespace Animation
 				segmentBone->local = GetLocalTransform(segmentBone.get(), newTransform);
 				segmentBone->world = newTransform;
 
-				if (diagLastLogTime < 0.0f || currentTime - diagLastLogTime >= 0.15f) {
-					const float lag = (anchoredPosition - interpolatedPos).Length();
-					logs::info(
-						"Animation::WeaponTrail::Update: t={:.2f}s dist={:.1f}u segmento#{} a {:.1f}u del arma (segmento=({:.1f},{:.1f},{:.1f}) arma=({:.1f},{:.1f},{:.1f})).",
-						currentTime, totalDistance, currentBoneIdx, lag,
-						interpolatedPos.x, interpolatedPos.y, interpolatedPos.z,
-						anchoredPosition.x, anchoredPosition.y, anchoredPosition.z);
-					diagLastLogTime = currentTime;
-				}
-
 				segmentDistances.emplace_back(totalDistance - distanceThisTick * (1.0f - t));
 				++currentBoneIdx;
 			}
@@ -451,7 +429,5 @@ namespace Animation
 				}
 			}
 		}
-
-		currentTime += a_deltaSeconds;
 	}
 }

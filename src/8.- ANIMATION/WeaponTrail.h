@@ -115,8 +115,10 @@ namespace Animation
 		// distancia recorrida desde el tick anterior (no el tiempo -- ver
 		// Constants::kTrailLength/kTrailSegmentSpacing). Sin efecto si
 		// Start no llegó a crear el efecto, o si su NIF no tiene esa
-		// cadena de segmentos. a_deltaSeconds ya no participa en el
-		// espaciado/reciclado de segmentos, solo en el log de diagnóstico.
+		// cadena de segmentos. a_deltaSeconds no participa en el
+		// espaciado/reciclado de segmentos (por distancia, no por tiempo)
+		// -- se mantiene en la firma por si hace falta más adelante, y
+		// para no tener que tocar las llamadas existentes.
 		void Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds);
 
 	private:
@@ -162,31 +164,6 @@ namespace Animation
 		float             totalDistance{ 0.0f };
 
 		std::uint32_t currentBoneIdx{ 0 };
-		float         currentTime{ 0.0f };  // solo para espaciar el log de diagnóstico
 		float         segmentsToAddRemainder{ 0.0f };
-
-		// Diagnóstico temporal (2026-08-26): el log de una sesión de prueba
-		// real no tenía ni una sola línea de WeaponTrail (ni las de éxito ni
-		// las de warn ya existentes), pese a varios ciclos completos de
-		// lanzamiento/regreso -- indica que el sistema no llega a correr en
-		// absoluto, no que corra con datos equivocados. Estos flags evitan
-		// inundar el log (una vez por Start()) mientras se localiza en cuál
-		// de los tres puntos silenciosos posibles se está cayendo. Quitar en
-		// cuanto se identifique la causa real.
-		bool diagLoggedTrailRootResolved{ false };
-
-		// Segundo hallazgo (mismo diagnóstico, 2026-08-26): el sistema sí
-		// corre (nodo resuelto, segmentos colocados), pero el primer
-		// segmento del regreso quedaba a ~1 unidad del arma, contra ~105 en
-		// el lanzamiento -- puede ser un bug real, o puede ser que el
-		// regreso arranca a velocidad 0 (Return::ComputeReturnAcceleration)
-		// y a los ~66ms del primer segmento apenas se ha movido nada,
-		// comportamiento físicamente correcto. Sustituye el log de "primer
-		// segmento" (una sola muestra, no distingue los dos casos) por
-		// muestreo periódico durante toda la vida del efecto, para ver si
-		// el retraso crece con la velocidad real o se queda plano. Quitar
-		// junto con diagLoggedTrailRootResolved en cuanto se
-		// diagnostique/arregle.
-		float diagLastLogTime{ -1.0f };
 	};
 }

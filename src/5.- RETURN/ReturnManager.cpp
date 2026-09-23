@@ -371,7 +371,7 @@ namespace Return
 						const RE::NiPoint3 handUpAxis = -Animation::GetHandBoneWorldRotation(*a_player).GetVectorZ();
 						const float        targetRoll = Math::ComputeRoll(travelDir / travelLength, trailUpReference, handUpAxis);
 
-						float diff = targetRoll - trailRoll;
+						float           diff = targetRoll - trailRoll;
 						constexpr float pi = std::numbers::pi_v<float>;
 						while (diff > pi) {
 							diff -= 2.0f * pi;
@@ -475,6 +475,22 @@ namespace Return
 					// Golpe final del atrape: siempre, sin condición (ver
 					// Audio::CatchCue::PlayEnd), no depende de que el
 					// arranque haya llegado a sonar.
+					//
+					// v1.19.14 probó diferir esta llamada con
+					// SKSE::GetTaskInterface()->AddTask -- revertido
+					// (2026-09-22, ver CHANGELOG.md v1.19.15): AddTask no
+					// separa nada en tiempo real (el log mostró el mismo
+					// milisegundo exacto que "la réplica ha llegado a la
+					// mano"), solo reordenó -- como AddTask encola en vez de
+					// ejecutar al momento, el efecto real fue mover esta
+					// llamada a DESPUÉS de toda la cascada de reequipado
+					// (onArrived -> ... -> ReequipAndReset) en vez de antes,
+					// que es como estaba en el código original. Resultado:
+					// catch end pasó de sonar "a veces" a no sonar nunca
+					// (0/5) -- peor que el original, no mejor. Conclusión:
+					// importa el ORDEN (ir antes que el reequipado, no
+					// después), no solo la separación. Vuelto a la llamada
+					// síncrona original, en primer lugar, sin diferir.
 					Audio::CatchCue::PlayEnd(handPos);
 					// Redes de seguridad: con el vuelo ya ajustado lo
 					// necesario más arriba, esto no debería hacer falta en
@@ -567,8 +583,8 @@ namespace Return
 		const float requiredTotalForSettle = Constants::kMinCatchAnimationDelay + Constants::kCatchAnimationLeadTime;
 		const float shudderDeficit = requiredTotalForSettle - predictedMovementDuration;
 		const float shudderDuration = a_wasStuck ?
-		                                   (shudderDeficit > Constants::kStickShudderDuration ? shudderDeficit : Constants::kStickShudderDuration) :
-		                                   0.0f;
+		                                  (shudderDeficit > Constants::kStickShudderDuration ? shudderDeficit : Constants::kStickShudderDuration) :
+		                                  0.0f;
 
 		// Retardo del sonido de arranque del atrape (Audio::CatchCue),
 		// calculado una única vez aquí -- antes incluso del temblor de
