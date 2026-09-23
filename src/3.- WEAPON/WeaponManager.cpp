@@ -4,6 +4,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Scheduler.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
@@ -15,8 +16,6 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
-
-#include <thread>
 
 namespace Weapon
 {
@@ -368,6 +367,20 @@ namespace Weapon
 
 	namespace
 	{
+		// Formulario resuelto por EditorID una sola vez, no en cada
+		// equipado/desequipado (punto 6 de la revisión de buenas prácticas,
+		// 2026-09-23) -- static local (mismo patrón Meyers ya usado en los
+		// singletons de este proyecto, ver WeaponManager::GetSingleton()),
+		// resuelto la primera vez que hace falta de verdad.
+		RE::SpellItem* GetLightningDashSpell()
+		{
+			static RE::SpellItem* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kLightningDashSpell);
+			if (!spell) {
+				logs::warn("WeaponManager::GetLightningDashSpell: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).", Constants::kLightningDashSpell);
+			}
+			return spell;
+		}
+
 		// Concede o retira el Lesser Power de Constants::kLightningDashSpell.
 		// Idempotente (HasSpell antes de cada cambio): se llama desde varios
 		// sitios y no debe duplicar ni quitar nada que ya esté en el estado
@@ -381,11 +394,8 @@ namespace Weapon
 				return;
 			}
 
-			auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kLightningDashSpell);
+			auto* spell = GetLightningDashSpell();
 			if (!spell) {
-				logs::warn(
-					"WeaponManager: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).",
-					Constants::kLightningDashSpell);
 				return;
 			}
 
@@ -642,19 +652,17 @@ namespace Weapon
 		// o no confirmación de la anotación real (decisión del usuario,
 		// 2026-07-29) -- lo que se sigue depurando es solo la sincronía
 		// visual con la animación, nunca a costa de dejar el arma inutilizable
-		// si esa sincronía falla. Mismo patrón hilo-que-duerme-y-reencola del
-		// resto del proyecto; OnThrowReleaseAnimationEvent ya comprueba el
-		// estado, así que llamarla de más aquí si la anotación real llegó
-		// antes es inofensivo (no-op).
-		std::thread([this]() {
-			std::this_thread::sleep_for(Constants::kThrowReleaseFallbackWindow);
-			SKSE::GetTaskInterface()->AddTask([this]() {
-				if (weaponState.GetState() == State::kThrowing) {
-					logs::info("WeaponManager: red de seguridad disparada -- la anotación de liberación nunca llegó.");
-				}
-				OnThrowReleaseAnimationEvent();
-			});
-		}).detach();
+		// si esa sincronía falla. OnThrowReleaseAnimationEvent ya comprueba
+		// el estado, así que llamarla de más aquí si la anotación real llegó
+		// antes es inofensivo (no-op) -- sin cancelar este token a propósito,
+		// mismo comportamiento que antes. (void): descarta a conciencia el
+		// CancelToken [[nodiscard]], no hace falta guardarlo aquí.
+		(void)Scheduler::After(Constants::kThrowReleaseFallbackWindow, [this]() {
+			if (weaponState.GetState() == State::kThrowing) {
+				logs::info("WeaponManager: red de seguridad disparada -- la anotación de liberación nunca llegó.");
+			}
+			OnThrowReleaseAnimationEvent();
+		});
 	}
 
 	void WeaponManager::OnThrowReleaseAnimationEvent()
@@ -729,16 +737,13 @@ namespace Weapon
 
 		// Red de seguridad: el regreso físico debe empezar siempre, tenga o
 		// no confirmación de la anotación real -- mismo criterio que
-		// BeginThrowAnimation.
-		std::thread([this]() {
-			std::this_thread::sleep_for(Constants::kCallReleaseFallbackWindow);
-			SKSE::GetTaskInterface()->AddTask([this]() {
-				if (weaponState.GetState() == State::kCalling) {
-					logs::info("WeaponManager: red de seguridad de Llamada disparada -- la anotación de liberación nunca llegó.");
-				}
-				OnCallReleaseAnimationEvent();
-			});
-		}).detach();
+		// BeginThrowAnimation. (void): ver ese mismo comentario.
+		(void)Scheduler::After(Constants::kCallReleaseFallbackWindow, [this]() {
+			if (weaponState.GetState() == State::kCalling) {
+				logs::info("WeaponManager: red de seguridad de Llamada disparada -- la anotación de liberación nunca llegó.");
+			}
+			OnCallReleaseAnimationEvent();
+		});
 	}
 
 	void WeaponManager::OnCallReleaseAnimationEvent()
@@ -759,12 +764,11 @@ namespace Weapon
 		// difiere, ver FinishCallAnimation.
 		BeginReturn(wasStuckBeforeCalling);
 
-		std::thread([this]() {
-			std::this_thread::sleep_for(Constants::kCallAnimationTailDuration);
-			SKSE::GetTaskInterface()->AddTask([this]() {
-				FinishCallAnimation();
-			});
-		}).detach();
+		// (void): FinishCallAnimation ya comprueba callAnimationActive por
+		// su cuenta, no hace falta cancelar este token desde fuera.
+		(void)Scheduler::After(Constants::kCallAnimationTailDuration, [this]() {
+			FinishCallAnimation();
+		});
 	}
 
 	void WeaponManager::FinishCallAnimation()
@@ -895,16 +899,14 @@ namespace Weapon
 		// (1.5s) debe ser mayor que Constants::kCatchAnimationLeadTime (0,5s,
 		// ver Constants.h para la medición sobre el propio clip) con margen
 		// de sobra, o esta red de seguridad podría dispararse antes de que
-		// la réplica llegue de verdad a la mano.
-		std::thread([this]() {
-			std::this_thread::sleep_for(Constants::kCatchReleaseFallbackWindow);
-			SKSE::GetTaskInterface()->AddTask([this]() {
-				if (catchAnimationActive) {
-					logs::info("WeaponManager: red de seguridad de Atrape disparada -- la anotación de liberación nunca llegó.");
-				}
-				OnCatchReleaseAnimationEvent();
-			});
-		}).detach();
+		// la réplica llegue de verdad a la mano. (void): ver el comentario de
+		// BeginThrowAnimation.
+		(void)Scheduler::After(Constants::kCatchReleaseFallbackWindow, [this]() {
+			if (catchAnimationActive) {
+				logs::info("WeaponManager: red de seguridad de Atrape disparada -- la anotación de liberación nunca llegó.");
+			}
+			OnCatchReleaseAnimationEvent();
+		});
 	}
 
 	void WeaponManager::OnCatchReleaseAnimationEvent()
@@ -1007,12 +1009,11 @@ namespace Weapon
 		// usuario: "la animación de Atrape queda cortada"). Mismo patrón
 		// que Throw::ThrowWeapon ya usa para su propio hueco
 		// (Constants::kThrowReleaseVisualHoldDuration).
-		std::thread([this]() {
-			std::this_thread::sleep_for(Constants::kCatchAnimationTailDuration);
-			SKSE::GetTaskInterface()->AddTask([this]() {
-				FinishCatchAnimation();
-			});
-		}).detach();
+		// (void): FinishCatchAnimation ya comprueba catchAnimationActive por
+		// su cuenta, no hace falta cancelar este token desde fuera.
+		(void)Scheduler::After(Constants::kCatchAnimationTailDuration, [this]() {
+			FinishCatchAnimation();
+		});
 	}
 
 	void WeaponManager::FinishCatchAnimation()
@@ -1110,14 +1111,12 @@ namespace Weapon
 		// pasar la animación real o el TESEquipEvent real sin suprimir. Se
 		// desactivan aparte, tras Constants::kSkipEquipAnimationWindow,
 		// mismo patrón hilo-que-duerme-y-reencola de todo el proyecto.
-		std::thread([this, player]() {
-			std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
-			SKSE::GetTaskInterface()->AddTask([this, player]() {
-				player->SetGraphVariableBool("SkipEquipAnimation", false);
-				suppressEquipGuard = false;
-				logs::info("WeaponManager::EquipGestureWeapon: ventana cumplida, SkipEquipAnimation/suppressEquipGuard desactivados.");
-			});
-		}).detach();
+		// (void): nada cancela esta ventana desde fuera todavía.
+		(void)Scheduler::After(Constants::kSkipEquipAnimationWindow, [this, player]() {
+			player->SetGraphVariableBool("SkipEquipAnimation", false);
+			suppressEquipGuard = false;
+			logs::info("WeaponManager::EquipGestureWeapon: ventana cumplida, SkipEquipAnimation/suppressEquipGuard desactivados.");
+		});
 	}
 
 	void WeaponManager::UnequipGestureWeapon()
@@ -1135,12 +1134,10 @@ namespace Weapon
 		RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 		logs::info("WeaponManager::UnequipGestureWeapon: UnequipObject llamado (arma señuelo), vuelta a desarmado genuino.");
 
-		std::thread([player]() {
-			std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
-			SKSE::GetTaskInterface()->AddTask([player]() {
-				player->SetGraphVariableBool("SkipEquipAnimation", false);
-			});
-		}).detach();
+		// (void): nada cancela esta ventana desde fuera todavía.
+		(void)Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
+			player->SetGraphVariableBool("SkipEquipAnimation", false);
+		});
 	}
 
 	void WeaponManager::ThrowWeapon()
@@ -1166,54 +1163,53 @@ namespace Weapon
 			// perderse en silencio si se dispara desde un evento de carga
 			// (comprobado en la iteración anterior). Diferido el margen de
 			// arriba en vez de hacerlo aquí mismo, por el motivo ya
-			// explicado. Comprobado por throwTailActive, no por una lista de
-			// estados esperados -- bug real (2026-08-28): recuperar casi al
-			// instante tras lanzar (kThrown -> kCalling) hacía que el
-			// estado ya no estuviera en esa lista cuando vencía el margen,
-			// así que el desequipado real y el desbloqueo de
-			// SetAnimationDriven/movimiento nunca llegaban a ejecutarse --
-			// el personaje se quedaba congelado a media animación de
-			// Lanzar, con Llamada ya intentando reproducirse encima.
-			// throwTailActive en cambio es verdad durante todo el ciclo
-			// mientras este cierre siga pendiente, sea cual sea el estado
-			// concreto en ese instante, y solo se apaga aquí mismo o en
-			// ReequipAndReset (recuperación completa/instantánea) -- si ya
-			// está a false aquí es que ese otro camino ya hizo este mismo
-			// trabajo, no hay nada que repetir.
-			std::thread([this, player, weapon]() {
-				std::this_thread::sleep_for(Constants::kThrowReleaseVisualHoldDuration);
-				SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
-					if (!throwTailActive) {
-						return;
-					}
-					throwTailActive = false;
+			// explicado. throwTailActive (bandera, no el token de abajo)
+			// sigue marcando "el cierre de Lanzar sigue pendiente" para
+			// quien pregunte desde fuera (OnAimButtonDown/Up) -- bug real
+			// (2026-08-28): antes se comprobaba una lista de estados
+			// esperados, y recuperar casi al instante tras lanzar
+			// (kThrown -> kCalling) hacía que el estado ya no estuviera en
+			// esa lista cuando vencía el margen, así que el desequipado
+			// real y el desbloqueo de SetAnimationDriven/movimiento nunca
+			// llegaban a ejecutarse -- el personaje se quedaba congelado a
+			// media animación de Lanzar, con Llamada ya intentando
+			// reproducirse encima. throwTailActive en cambio es verdad
+			// durante todo el ciclo mientras este cierre siga pendiente,
+			// sea cual sea el estado concreto en ese instante.
+			//
+			// throwTailToken (Scheduler::CancelToken) es la cancelación de
+			// verdad: si ReequipAndReset completa el ciclo (recuperación
+			// completa/instantánea) antes de que venza este margen, cancela
+			// el temporizador en el origen (ver ese comentario) en vez de
+			// que este callback tenga que comprobar una bandera de forma
+			// reactiva al final de su espera, como antes -- Scheduler::After
+			// ya no llama a este callback en absoluto si se cancela.
+			throwTailToken = Scheduler::After(Constants::kThrowReleaseVisualHoldDuration, [this, player, weapon]() {
+				throwTailActive = false;
 
-					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+				RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 
-					// El desequipado real de arriba debe ocurrir siempre,
-					// una sola vez -- pero el desbloqueo de
-					// SetAnimationDriven/movimiento que este mismo margen
-					// gestionaba solo es correcto si Lanzar sigue siendo el
-					// gesto vigente. Regresión real (2026-08-28, tras
-					// cambiar el chequeo de arriba de una lista de estados a
-					// throwTailActive): recuperar casi al instante tras
-					// lanzar hace que Llamada (callAnimationActive) ya se
-					// haya apropiado de estas mismas dos banderas para su
-					// propio gesto antes de que venza este margen --
-					// apagarlas aquí encima corta Call.hkx a mitad (se oía
-					// el sonido del chasquido pero la animación nunca
-					// llegaba a reproducirse) y deja el bloqueo de
-					// movimiento en un estado que ya no le corresponde
-					// gestionar a nadie. Si Llamada o Atrape ya están en
-					// marcha, son ellos quienes las apagarán al terminar
-					// (FinishCallAnimation/FinishCatchAnimation) -- aquí no
-					// hay nada más que hacer con ellas.
-					if (!callAnimationActive && !catchAnimationActive) {
-						Animation::SetAnimationDriven(*player, false);
-						Input::SetMovementLocked(false);
-					}
-				});
-			}).detach();
+				// El desequipado real de arriba debe ocurrir siempre, una
+				// sola vez -- pero el desbloqueo de
+				// SetAnimationDriven/movimiento que este mismo margen
+				// gestionaba solo es correcto si Lanzar sigue siendo el
+				// gesto vigente. Regresión real (2026-08-28): recuperar
+				// casi al instante tras lanzar hace que Llamada
+				// (callAnimationActive) ya se haya apropiado de estas
+				// mismas dos banderas para su propio gesto antes de que
+				// venza este margen -- apagarlas aquí encima corta
+				// Call.hkx a mitad (se oía el sonido del chasquido pero la
+				// animación nunca llegaba a reproducirse) y deja el
+				// bloqueo de movimiento en un estado que ya no le
+				// corresponde gestionar a nadie. Si Llamada o Atrape ya
+				// están en marcha, son ellos quienes las apagarán al
+				// terminar (FinishCallAnimation/FinishCatchAnimation) --
+				// aquí no hay nada más que hacer con ellas.
+				if (!callAnimationActive && !catchAnimationActive) {
+					Animation::SetAnimationDriven(*player, false);
+					Input::SetMovementLocked(false);
+				}
+			});
 
 			Throw::LaunchCallbacks callbacks;
 			callbacks.onSpawned = [this](RE::ObjectRefHandle a_handle) {
@@ -1373,12 +1369,13 @@ namespace Weapon
 	void WeaponManager::ReequipAndReset(bool a_reattachVfxToHand)
 	{
 		// El arma real se reequipa de verdad más abajo -- si el cierre
-		// diferido de Lanzar (ver ThrowWeapon/throwTailActive) seguía
-		// pendiente en este instante (recuperación instantánea disparada
-		// muy poco después de lanzar, p. ej. una pantalla de carga), se da
-		// por completado aquí mismo: sin este reseteo, ese cierre diferido
-		// llegaría más tarde y desequiparía de nuevo un arma que este mismo
-		// reequipado acaba de devolver a la mano.
+		// diferido de Lanzar (ver ThrowWeapon/throwTailActive/throwTailToken)
+		// seguía pendiente en este instante (recuperación instantánea
+		// disparada muy poco después de lanzar, p. ej. una pantalla de
+		// carga), se cancela de verdad aquí mismo: sin esto, ese cierre
+		// diferido llegaría más tarde y desequiparía de nuevo un arma que
+		// este mismo reequipado acaba de devolver a la mano.
+		Scheduler::Cancel(throwTailToken);
 		throwTailActive = false;
 
 		// A diferencia de antes (v1.14.23), ya NO dispara aquí el fundido
@@ -1419,9 +1416,7 @@ namespace Weapon
 			// de carga, el juego aceptaba la orden (sonaba el sonido de
 			// equipar) pero nunca llegaba a equipar el arma de verdad
 			// (comprobado en la iteración anterior).
-			const auto generation = ++reequipGeneration;
-
-			SKSE::GetTaskInterface()->AddTask([this, player, weapon, generation]() {
+			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
 				// Suprime la animación completa de equipar/desenvainar al
 				// volver el arma a la mano -- vía el mod externo
 				// SkipEquipAnimation (dependencia obligatoria del plugin,
@@ -1444,24 +1439,26 @@ namespace Weapon
 				// motivo por el que ya se difiere un tick, ver más arriba),
 				// así que la variable se apagaba antes de que el hook de
 				// SkipEquipAnimation llegara a leerla. Se desactiva aparte,
-				// tras Constants::kSkipEquipAnimationWindow, mismo patrón
-				// hilo-que-duerme-y-reencola de todo el proyecto. Guardado
-				// por generación (reequipGeneration, mismo patrón ya usado
-				// en Animation::WeaponVFX/WeaponGlow): si un ciclo nuevo
-				// empezó y volvió a poner esta misma variable a true para
-				// su propio reequipado antes de que venza esta ventana,
-				// esta instancia obsoleta no debe apagarla -- la instancia
-				// más reciente ya tiene su propio cierre programado para
-				// hacerlo en su momento.
-				std::thread([this, player, generation]() {
-					std::this_thread::sleep_for(Constants::kSkipEquipAnimationWindow);
-					SKSE::GetTaskInterface()->AddTask([this, player, generation]() {
-						if (generation != reequipGeneration) {
-							return;
-						}
-						player->SetGraphVariableBool("SkipEquipAnimation", false);
-					});
-				}).detach();
+				// tras Constants::kSkipEquipAnimationWindow.
+				//
+				// skipEquipAnimationToken (Scheduler::CancelToken) sustituye
+				// al contador de generación de antes (reequipGeneration,
+				// comparar "sigo siendo el más reciente" dentro del propio
+				// callback, mismo patrón que Animation::WeaponVFX/WeaponGlow):
+				// si un ciclo nuevo vuelve a llamar a ReequipAndReset antes de
+				// que venza esta ventana, cancela de verdad el temporizador
+				// viejo justo aquí, antes de pisar el miembro con el nuevo --
+				// ya no llega a dispararse en absoluto, en vez de dispararse
+				// igual y autodescartarse al comprobar la generación (bug
+				// real, 2026-09-23: este Cancel faltaba, así que el
+				// temporizador viejo seguía disparándose igual y apagaba
+				// SkipEquipAnimation a mitad de un ciclo nuevo -- reachable
+				// vía RecallWeapon, el camino de recuperación instantánea por
+				// pantalla de carga, poco después de un reequipado normal).
+				Scheduler::Cancel(skipEquipAnimationToken);
+				skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
+					player->SetGraphVariableBool("SkipEquipAnimation", false);
+				});
 			});
 		}
 

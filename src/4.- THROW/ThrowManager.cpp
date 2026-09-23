@@ -4,6 +4,7 @@
 #include "4.- THROW/ThrowManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Scheduler.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
@@ -17,7 +18,6 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
-#include <thread>
 
 namespace Throw
 {
@@ -374,14 +374,12 @@ namespace Throw
 					// en vez de a_refr/a_handle para no depender de que la
 					// réplica siga viva cuando despierte el hilo.
 					const auto impactVfxPosition = a_refr.Get3D() ? Animation::GetGlowAnchorPosition(a_refr.Get3D()) : stickPoint;
-					std::thread([a_shooter, impactVfxPosition]() {
-						std::this_thread::sleep_for(Constants::kTickInterval);
-						SKSE::GetTaskInterface()->AddTask([a_shooter, impactVfxPosition]() {
-							if (a_shooter) {
-								Animation::SpawnImpactVFX(*a_shooter, impactVfxPosition);
-							}
-						});
-					}).detach();
+					// (void): disparo suelto, nada cancela esto desde fuera.
+					(void)Scheduler::After(Constants::kTickInterval, [a_shooter, impactVfxPosition]() {
+						if (a_shooter) {
+							Animation::SpawnImpactVFX(*a_shooter, impactVfxPosition);
+						}
+					});
 
 					// Punto 10 (segunda mitad, caso impacto): eliminado el
 					// enderezado al clavarse (decisión del usuario,

@@ -126,6 +126,35 @@ namespace Combat
 				"Combat::NotifyHit: \"{}\" vida {:.1f} -> {:.1f} (DealDamage, sin usar) -> {:.1f} (compensado, debe = {:.1f})",
 				a_target->GetName(), before, afterDealDamage, afterCompensation, before);
 		}
+
+		// Formularios resueltos por EditorID una sola vez, no en cada golpe/
+		// recuperación (punto 6 de la revisión de buenas prácticas,
+		// 2026-09-23) -- ninguno de los dos cambia de FormID durante una
+		// sesión, así que repetir la búsqueda por cadena cada vez es trabajo
+		// de sobra. static local (mismo patrón Meyers ya usado en los
+		// singletons de este proyecto, ver WeaponManager::GetSingleton()):
+		// se resuelve solo la primera vez que hace falta de verdad, sin
+		// depender de enganchar esto a kDataLoaded aparte. El aviso de log
+		// se mantiene fuera del static, así que sigue avisando en cada
+		// llamada mientras el formulario no aparezca -- solo se ahorra la
+		// búsqueda en sí, no el aviso de que falta.
+		RE::SpellItem* GetEmbeddedParalysisSpell()
+		{
+			static RE::SpellItem* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell);
+			if (!spell) {
+				logs::warn("Combat::GetEmbeddedParalysisSpell: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).", Constants::kEmbeddedParalysisSpell);
+			}
+			return spell;
+		}
+
+		RE::EffectSetting* GetEmbeddedParalysisEffect()
+		{
+			static RE::EffectSetting* effect = RE::TESForm::LookupByEditorID<RE::EffectSetting>(Constants::kEmbeddedParalysisEffect);
+			if (!effect) {
+				logs::warn("Combat::GetEmbeddedParalysisEffect: no se encontró el efecto \"{}\" (revisa que exista en la Creation Kit).", Constants::kEmbeddedParalysisEffect);
+			}
+			return effect;
+		}
 	}
 
 	void Init()
@@ -182,12 +211,8 @@ namespace Combat
 		// solo requiere tocar la condición en el CK, nunca este código.
 		a_onStuck(RE::ActorHandle(a_target));
 
-		if (auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell)) {
+		if (auto* spell = GetEmbeddedParalysisSpell()) {
 			a_target->AddSpell(spell);
-		} else {
-			logs::warn(
-				"Combat::BeginEmbeddedEffect: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).",
-				Constants::kEmbeddedParalysisSpell);
 		}
 
 		// El propio efecto mágico (EffectSetting) dentro del hechizo,
@@ -195,12 +220,7 @@ namespace Combat
 		// abajo, con MagicTarget::HasMagicEffect, si de verdad ha quedado
 		// activo en el objetivo (AddSpell siempre tiene éxito aunque la
 		// condición del efecto se lo impida, ver Constants::kEmbeddedParalysisEffect).
-		auto* paralysisEffect = RE::TESForm::LookupByEditorID<RE::EffectSetting>(Constants::kEmbeddedParalysisEffect);
-		if (!paralysisEffect) {
-			logs::warn(
-				"Combat::BeginEmbeddedEffect: no se encontró el efecto \"{}\" (revisa que exista en la Creation Kit).",
-				Constants::kEmbeddedParalysisEffect);
-		}
+		auto* paralysisEffect = GetEmbeddedParalysisEffect();
 
 		// Desplazamiento respecto al hueso más cercano al punto de impacto
 		// (ActorUtils::FindNearestBoneName) en el instante del impacto,
@@ -304,7 +324,7 @@ namespace Combat
 			return;
 		}
 
-		if (auto* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell)) {
+		if (auto* spell = GetEmbeddedParalysisSpell()) {
 			a_target->RemoveSpell(spell);
 		}
 	}

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "1.- CORE/Scheduler.h"
 #include "3.- WEAPON/WeaponState.h"
 
 #include <chrono>
@@ -411,17 +412,31 @@ namespace Weapon
 		// cierre de golpe).
 		bool throwTailActive{ false };
 
-		// Incrementado cada vez que ReequipAndReset arranca un reequipado
-		// real (activa "SkipEquipAnimation" y llama a EquipObject) --
-		// capturado por el hilo que la apaga de nuevo pasado
-		// Constants::kSkipEquipAnimationWindow, para que solo el reequipado
-		// MÁS RECIENTE apague la variable. Sin esto, un ciclo nuevo que
-		// empezara (y volviera a poner esta misma variable a true para su
-		// propio reequipado) antes de que venciera esta ventana podía ver
-		// cómo el cierre diferido de un reequipado anterior la apagaba de
-		// en medio, dejando sin suprimir la animación de desenvainar de un
-		// ciclo distinto -- mismo patrón que throwTailActive.
-		std::uint64_t reequipGeneration{ 0 };
+		// Token de cancelación (Scheduler::CancelToken, ver 1.- CORE/Scheduler.h)
+		// del temporizador que ThrowWeapon arranca para ese mismo cierre
+		// diferido -- distinto de throwTailActive (que sigue marcando "sigue
+		// pendiente" para quien pregunte desde fuera): esto es lo que
+		// ReequipAndReset cancela de verdad si completa el ciclo antes de
+		// que venza el margen, en vez de que el propio callback tuviera que
+		// comprobar una bandera de forma reactiva al final de su espera.
+		Scheduler::CancelToken throwTailToken;
+
+		// Token de cancelación (mismo tipo que throwTailToken) del
+		// temporizador que ReequipAndReset arranca para apagar
+		// "SkipEquipAnimation" pasado Constants::kSkipEquipAnimationWindow --
+		// sustituye a un contador de generación (comparar "sigo siendo el
+		// más reciente" dentro del propio callback, mismo patrón que
+		// Animation::WeaponVFX/WeaponGlow): si un ciclo nuevo vuelve a
+		// llamar a ReequipAndReset antes de que venza esta ventana,
+		// ReequipAndReset cancela de verdad el temporizador viejo justo
+		// antes de reasignar este miembro (ver ese comentario) en vez de
+		// dejar que se dispare igual y se autodescarte -- sin ese Cancel, un
+		// reequipado nuevo (que vuelve a poner esta misma variable a true
+		// para su propio reequipado) podía ver cómo el cierre diferido de
+		// uno anterior la apagaba de en medio, dejando sin suprimir la
+		// animación de desenvainar de un ciclo distinto (bug real,
+		// 2026-09-23: faltaba esa llamada a Cancel, ver CHANGELOG.md).
+		Scheduler::CancelToken skipEquipAnimationToken;
 
 		// Instante real (reloj monotónico, no tiempo de juego) del último
 		// evento que tocó el grafo de animación por nuestra cuenta -- el
