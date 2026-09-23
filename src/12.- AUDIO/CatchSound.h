@@ -43,9 +43,12 @@ namespace Audio
 		// nada más en las llamadas siguientes.
 		void UpdateStart(const RE::NiPoint3& a_position, float a_deltaSeconds);
 
-		// Llamar exactamente una vez, al detectar la llegada real a la
-		// mano (Return::BeginReturnMovement) -- dispara el golpe grabado
-		// siempre, sin condición, haya sonado ya el arranque o no.
+		// Llamar exactamente una vez, al confirmar el reequipado real tras
+		// la llegada física (WeaponManager::PerformCatchReequip, ver ese
+		// comentario -- movido ahí 2026-09-23 desde Return::BeginReturnMovement,
+		// donde se perdía si ese bucle de tick se cancelaba desde fuera
+		// antes de evaluar su propio umbral de llegada) -- dispara el golpe
+		// grabado siempre, sin condición, haya sonado ya el arranque o no.
 		static void PlayEnd(const RE::NiPoint3& a_position);
 
 	private:

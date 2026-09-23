@@ -472,26 +472,16 @@ namespace Return
 
 				if (distanceToHand <= Constants::kReturnArrivalDistance) {
 					logs::info("Return::BeginReturnMovement: la réplica ha llegado a la mano.");
-					// Golpe final del atrape: siempre, sin condición (ver
-					// Audio::CatchCue::PlayEnd), no depende de que el
-					// arranque haya llegado a sonar.
+					// Golpe final del atrape (Audio::CatchCue::PlayEnd):
+					// movido (2026-09-23) a WeaponManager::PerformCatchReequip
+					// -- este bucle podía cancelarse desde fuera (vía
+					// ReequipAndReset) antes de llegar nunca a evaluar este
+					// umbral, si la anotación real de Catch.hkx completaba el
+					// reequipado primero, y con él se perdía el sonido en
+					// silencio (v1.19.14/v1.19.15 documentan dos intentos
+					// fallidos de arreglar esto sin moverlo de aquí). Ver ese
+					// comentario para el porqué del sitio nuevo.
 					//
-					// v1.19.14 probó diferir esta llamada con
-					// SKSE::GetTaskInterface()->AddTask -- revertido
-					// (2026-09-22, ver CHANGELOG.md v1.19.15): AddTask no
-					// separa nada en tiempo real (el log mostró el mismo
-					// milisegundo exacto que "la réplica ha llegado a la
-					// mano"), solo reordenó -- como AddTask encola en vez de
-					// ejecutar al momento, el efecto real fue mover esta
-					// llamada a DESPUÉS de toda la cascada de reequipado
-					// (onArrived -> ... -> ReequipAndReset) en vez de antes,
-					// que es como estaba en el código original. Resultado:
-					// catch end pasó de sonar "a veces" a no sonar nunca
-					// (0/5) -- peor que el original, no mejor. Conclusión:
-					// importa el ORDEN (ir antes que el reequipado, no
-					// después), no solo la separación. Vuelto a la llamada
-					// síncrona original, en primer lugar, sin diferir.
-					Audio::CatchCue::PlayEnd(handPos);
 					// Redes de seguridad: con el vuelo ya ajustado lo
 					// necesario más arriba, esto no debería hacer falta en
 					// la práctica, pero garantiza que tanto onApproaching

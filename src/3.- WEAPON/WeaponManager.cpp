@@ -6,6 +6,7 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "12.- AUDIO/CatchSound.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "4.- THROW/ThrowManager.h"
@@ -960,6 +961,31 @@ namespace Weapon
 		catchReequipDone = true;
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+			// Golpe final del atrape (Audio::CatchCue::PlayEnd) -- movido
+			// aquí (2026-09-23) desde dentro del propio bucle de tick de
+			// Return::BeginReturnMovement, donde vivía disparado solo si ese
+			// bucle en concreto llegaba a evaluar su propio umbral de
+			// distancia (distanceToHand <= Constants::kReturnArrivalDistance)
+			// antes de que este mismo método (llamado desde el otro camino,
+			// la anotación real de Catch.hkx u su red de seguridad) lo
+			// cancelara desde fuera vía ReequipAndReset -- exactamente la
+			// misma carrera que ya se documenta más abajo y que
+			// catchPhysicallyArrived/catchReequipPending ya resuelve para el
+			// reequipado en sí, pero que nunca se aplicó al sonido (seguía
+			// viviendo en el sitio original). PerformCatchReequip solo se
+			// llama una vez por ciclo, y solo cuando catchPhysicallyArrived
+			// ya es true (ver OnCatchReleaseAnimationEvent/OnPhysicalArrival)
+			// -- mismo embudo garantizado-una-vez que ya usa el chasquido de
+			// Llamada (OnCallReleaseAnimationEvent), así que el sonido ya no
+			// depende de que el bucle de física en concreto gane esa
+			// carrera. Se sigue disparando siempre, sin condición (ver
+			// Audio::CatchCue::PlayEnd), no depende de que el arranque haya
+			// sonado. player->GetPosition() en vez de la posición exacta de
+			// la mano (handPos, ya no disponible aquí) -- mismo criterio ya
+			// usado para el chasquido de Llamada, diferencia imperceptible
+			// para un sonido puntual.
+			Audio::CatchCue::PlayEnd(player->GetPosition());
+
 			// Temblor de cámara al cerrar la mano sobre el arma -- ver
 			// Constants::kCatchShakeStrength/kCatchShakeDuration. Debe
 			// coincidir con el reequipado real de abajo (el instante en que

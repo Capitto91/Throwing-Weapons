@@ -121,6 +121,19 @@ namespace Audio
 			PlayOneShotImpl(RE::NiPoint3{}, entry.localFormID, entry.editorID, 0.0f);
 		}
 
-		logs::info("Audio::WarmUpAll: gastado el primer intento de los 4 Sound Descriptor del arma.");
+		// "Catch end" necesita dos usos reales antes de estabilizarse, no
+		// solo uno como los otros 3 (comprobado en el juego 2026-09-23: con
+		// un único calentamiento seguía fallando en el primer catch real de
+		// cada partida, tanto en su sitio normal como probado en un punto
+		// distinto de la cadena -- con dos, funciona desde el primer catch
+		// real). Sin explicación firme de por qué este Sound Descriptor en
+		// concreto lo necesita y los otros no (comprobado que sus datos son
+		// copias idénticas salvo el archivo de audio) -- documentado como
+		// comportamiento empírico confirmado, mismo criterio que
+		// Constants::kSoundHandleFlags. Segundo calentamiento a volumen 0,
+		// igual que el primero, nada audible al cargar partida.
+		PlayOneShotImpl(RE::NiPoint3{}, Constants::kCatchEndSoundLocalFormID, Constants::kCatchEndSoundEditorID, 0.0f);
+
+		logs::info("Audio::WarmUpAll: gastado el primer intento de los 4 Sound Descriptor del arma (dos veces para catch end).");
 	}
 }

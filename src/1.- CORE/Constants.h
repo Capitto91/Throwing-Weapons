@@ -908,10 +908,11 @@ namespace Constants
 	// usada para el reequipado/attackStop) -- vía RE::ShakeCamera
 	// (RE/M/Misc.h), el mismo motor nativo detrás de Game.ShakeCamera() en
 	// Papyrus. No es un punto numerado de "Mecanica del arma.txt" (no cubre
-	// cámara en ningún punto) -- puro polish pedido aparte. Placeholders sin
-	// valor de referencia previo, pendientes de ajustar en el juego.
-	inline constexpr float kCatchShakeStrength = 1.5f;
-	inline constexpr float kCatchShakeDuration = 0.2f;
+	// cámara en ningún punto) -- puro polish pedido aparte. Ajustado varias
+	// veces a petición del usuario (2026-09-23): 1.5/0.2s (original) ->
+	// 3.0/0.4s -> 5.0/0.2s -> 10.0/0.3s -> 20.0/0.3s.
+	inline constexpr float kCatchShakeStrength = 20.0f;
+	inline constexpr float kCatchShakeDuration = 0.3f;
 
 	// -- Zoom de cámara al apuntar --
 	// Tampoco es un punto numerado de "Mecanica del arma.txt" (no cubre
