@@ -157,18 +157,12 @@ namespace Constants
 
 	// Sonido del chasquido de dedos, disparado desde el propio código (ya no
 	// vía SoundPlay vanilla) en el mismo instante que la anotación de
-	// liberación de Llamada (Events::OARFunctions::CallReleaseFunction) --
-	// FormID local de 12 bits en el plugin ESL compactado (2026-09-22, sin
-	// byte de índice de carga). "MarkSound" en el EditorID sugiere un Sound Marker
-	// (RE::TESSound), no un Sound Descriptor directo -- Audio::ResolveSoundDescriptor
-	// ya resuelve ambos tipos indistintamente (ver SoundResolver.h). Se
-	// reutiliza Audio::PlayReliableOneShot (movido de CatchSound.cpp a
-	// SoundResolver.h/.cpp para compartirlo) -- el mecanismo simple de un
-	// solo RE::BSSoundHandle nunca se ha confirmado fiable en el juego
-	// (reporta éxito en cada paso pero no llega a sonar), mientras que el
-	// mecanismo triple de PlayReliableOneShot sí (ver Constants::kSoundHandleFlags).
-	inline constexpr RE::FormID  kCallReleaseSoundLocalFormID = 0x01E;
-	inline constexpr const char* kCallReleaseSoundEditorID = "CAP_ThorMjolnir_MarkSound_FingerSnap";
+	// liberación de Llamada (Events::OARFunctions::CallReleaseFunction).
+	// Reproducido por archivo directo (Audio::PlayFileOneShot, ver
+	// Constants.h "Sonido de atrape" para el porqué del cambio de criterio
+	// 2026-09-23) -- ruta relativa a Data, no FormID/EditorID de ningún
+	// registro del juego.
+	inline constexpr const char* kCallReleaseSoundFilePath = "Sound/FX/ThorMjolnir/ThorMjolnir_FingerSnap.wav";
 
 	// -- Atrape: sustitución de animación vía Open Animation Replacer,
 	// mismo patrón que Llamada (iRightHandType directo, sin arma señuelo,
@@ -637,19 +631,14 @@ namespace Constants
 	// juego.
 	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
 
-	// -- Sonido de lanzamiento/atrape (12.- AUDIO) --
-	// Resolución por FormID local + nombre de plugin
-	// (RE::TESDataHandler::LookupForm<T>, verificado en TESDataHandler.h,
-	// ver Audio::ResolveSoundDescriptor en 12.- AUDIO/SoundResolver.cpp) --
-	// TESForm::LookupByEditorID (la tabla global de EditorID del motor) y
-	// BSAudioManager::GetSoundHandleByName no encuentran los Sound Marker/
-	// Sound Descriptor de este proyecto aunque el registro exista, esté
-	// guardado y el plugin esté activo (comprobado en el juego); el FormID
-	// local sí resuelve de forma fiable. No vale un FormID absoluto fijo
-	// porque este plugin no es un master que siempre cargue en el índice 0
-	// (a diferencia de Skyrim.esm) -- de ahí necesitar tanto el nombre del
-	// plugin como el FormID *local* (el que se ve en xEdit sin el byte de
-	// índice de carga).
+	// Nombre de este plugin, usado para resolver formularios propios por
+	// FormID local + nombre de plugin (RE::TESDataHandler::LookupForm<T>,
+	// verificado en TESDataHandler.h) en varios sitios del proyecto
+	// (Animation::HandGlow/WeaponGlow/WeaponImpactVFX/WeaponVFX). No vale
+	// un FormID absoluto fijo porque este plugin no es un master que
+	// siempre cargue en el índice 0 (a diferencia de Skyrim.esm) -- de ahí
+	// necesitar tanto el nombre del plugin como el FormID *local* (el que
+	// se ve en xEdit sin el byte de índice de carga).
 	//
 	// "ThorMjolnirOAR.esp", no "ThorMjolnir.esp" -- exclusivo de esta rama
 	// (oar): la copia del mod para probar OAR en paralelo a "behavior" quedó
@@ -660,24 +649,12 @@ namespace Constants
 	// de plugin no coincidía con ninguno realmente activo en la partida.
 	inline constexpr std::string_view kSoundPluginName = "ThorMjolnirOAR.esp";
 
-	// FormID local (visto en xEdit, sin el byte de índice de carga) del
-	// Sound Marker del silbido de lanzamiento -- sonado tanto al arrojar el
-	// arma (Throw::LaunchWeapon) como al iniciar el tramo de movimiento del
-	// regreso (Return::BeginReturnMovement). `ThorMjolnirOAR.esp` es ESL y
-	// está compactado desde 2026-09-22 (rango extendido 0x001-0xFFF, cabecera
-	// 1.71): el ID local es de 12 bits y se usa tal cual, sin enmascarar.
-	inline constexpr RE::FormID kThrowLaunchSoundLocalFormID = 0x024;
-
-	// EditorID del mismo Sound Marker, dado por el usuario -- necesario
-	// para el RE::PlaySound de refuerzo de Audio::PlayReliableOneShot (ver
-	// SoundResolver.h). Cambio de criterio (2026-08-08, ver CLAUDE.md): el
-	// silbido de lanzamiento usaba Audio::PlaySoundOneShot (ya retirada),
-	// el mecanismo más simple de un solo RE::BSSoundHandle -- confirmado
-	// en el juego que, igual que ya pasaba con los sonidos de Atrape/
-	// Llamada antes de este mismo cambio, GetSoundHandle/FadeInPlay()
-	// reportaban éxito en el log pero no sonaba nada. Movido al mecanismo
-	// triple ya confirmado fiable para esos otros dos.
-	inline constexpr const char* kThrowLaunchSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirThrow";
+	// -- Sonido de lanzamiento (12.- AUDIO) --
+	// Silbido sonado al arrojar el arma (Throw::LaunchWeapon). Reproducido
+	// por archivo directo (Audio::PlayFileOneShot, ver Constants.h "Sonido
+	// de atrape" para el porqué del cambio de criterio 2026-09-23) -- ruta
+	// relativa a Data, no FormID/EditorID de ningún registro del juego.
+	inline constexpr const char* kThrowLaunchSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirThrow02.wav";
 
 	// -- Sonido de atrape, en dos partes (12.- AUDIO/CatchSound) --
 	// Rediseño completo a petición del usuario, sustituyendo por completo
@@ -686,29 +663,34 @@ namespace Constants
 	// SetFrequency cada tick, ver CHANGELOG.md para el porqué se abandonó):
 	// en vez de estirar/comprimir un único clip para que su golpe grabado
 	// caiga siempre justo en el instante de la llegada, el sonido se
-	// divide en dos Sound Descriptor independientes --
-	// CAP_ThorMjolnir_Sound_MjolnirCatch_Start (arranque, sonado con
-	// antelación; una pequeña desincronización de este arranque es
-	// aceptable, nunca perfecta) y CAP_ThorMjolnir_Sound_MjolnirCatch_End
-	// (golpe final, disparado siempre exactamente en el instante real
-	// detectado de la llegada, sin depender de ningún cálculo ni de que el
-	// arranque haya sonado). Ver Audio::CatchCue
+	// divide en dos clips independientes -- arranque (sonado con
+	// antelación; una pequeña desincronización es aceptable, nunca
+	// perfecta) y golpe final (disparado siempre exactamente en el
+	// instante real detectado de la llegada, sin depender de ningún
+	// cálculo ni de que el arranque haya sonado). Ver Audio::CatchCue
 	// (12.- AUDIO/CatchSound.h/.cpp).
 	//
-	// FormID local de cada Sound Descriptor, tal cual los muestra xEdit (byte
-	// de índice de carga excluido). El plugin es ESL y está compactado desde
-	// 2026-09-22 (rango extendido 0x001-0xFFF, cabecera 1.71): son IDs de 12
-	// bits y se usan sin enmascarar. El reintento con máscara de
-	// Audio::ResolveSoundDescriptor queda como red de seguridad inocua.
-	inline constexpr RE::FormID kCatchStartSoundLocalFormID = 0x01B;
-	inline constexpr RE::FormID kCatchEndSoundLocalFormID = 0x01C;
+	// Reproducidos por archivo directo (Audio::PlayFileOneShot,
+	// RE::BSAudioManager::GetSoundHandleByFile + RE::BSResource::ID::
+	// GenerateFromPath), no por Sound Descriptor -- cambio de criterio
+	// 2026-09-23, a petición del usuario, tras una investigación muy larga
+	// (ver CHANGELOG.md v1.19.11-v1.19.26): con el mecanismo por Sound
+	// Descriptor (FormID+EditorID, CAP_ThorMjolnir_Sound_MjolnirCatch_Start/
+	// _End, aún existentes en la Creation Kit aunque el código ya no los
+	// referencie) "arranque" dejó de sonar de forma fiable sin ningún
+	// cambio de código de por medio, coincidiendo con una actualización de
+	// Skyrim -- mismo patrón ya usado en el proyecto para el .nif de la
+	// estela (Constants::kTrailEffectPath), referenciar el archivo
+	// directamente en vez de pasar por un registro del juego.
+	inline constexpr const char* kCatchStartSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirCall02_Start.wav";
+	inline constexpr const char* kCatchEndSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirCall02_End.wav";
 
-	// EditorID de cada Sound Descriptor -- no un std::string_view como
-	// kSoundPluginName porque RE::PlaySound(const char*) exige una cadena
-	// terminada en nulo (ver el porqué de esta llamada en el comentario de
-	// kSoundHandleFlags más abajo).
-	inline constexpr const char* kCatchStartSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_Start";
-	inline constexpr const char* kCatchEndSoundEditorID = "CAP_ThorMjolnir_Sound_MjolnirCatch_End";
+	// Prioridad pasada a RE::BSAudioManager::GetSoundHandleByFile -- sin
+	// ningún valor de referencia en el proyecto (primer uso de esta
+	// función) ni documentado en CommonLibSSE-NG. 0 como primer valor
+	// razonable, pendiente de ajustar en el juego si compitiera mal por
+	// voz con otros sonidos simultáneos.
+	inline constexpr std::uint32_t kFileSoundPriority = 0;
 
 	// Segundos antes del instante real de llegada en los que debe sonar el
 	// arranque -- dado por el usuario (medido a oído). Return::BeginReturn
@@ -987,6 +969,15 @@ namespace Constants
 	// cualquier atenuación por distancia/categoría que aplique el propio
 	// motor.
 	inline constexpr float kSoundHandleVolume = 1.0f;
+
+	// Volumen de refuerzo, solo para el chasquido de Llamada -- prueba
+	// 2026-09-23: el archivo suena muy bajo incluso subido de volumen en
+	// Audacity, con Audio::PlayFileOneShot (sin Sound Descriptor de por
+	// medio, sin atenuación/categoría/prioridad configurada en la Creation
+	// Kit como sí tenían los otros 3). Por encima de 1.0 para comprobar si
+	// RE::BSSoundHandle::SetVolume admite ganancia real o la satura a 1.0
+	// -- sin confirmar todavía cuál de las dos cosas pasa.
+	inline constexpr float kCallReleaseSoundVolume = 3.0f;
 
 	// -- VFX de movimiento (chispas), puro polish sin punto numerado en
 	// Mecanica del arma.txt -- activo mientras el arma se mueve de verdad

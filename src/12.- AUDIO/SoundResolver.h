@@ -1,72 +1,51 @@
-// Resolución compartida de Sound Descriptor por FormID -- ver Constants.h
-// ("Sonido de lanzamiento/atrape") para el porqué de resolver por FormID
-// en vez de por EditorID.
+// Reproducción de los sonidos sueltos del arma, por archivo directo.
+// Ver Constants.h ("Sonido de lanzamiento"/"Sonido de atrape") para el
+// porqué de referenciar el .wav directamente en vez de un Sound
+// Descriptor de la Creation Kit.
 
 #pragma once
 
 namespace Audio
 {
-	// Resuelve el RE::BGSSoundDescriptorForm identificado por
-	// a_localFormID dentro de ThorMjolnirOAR.esp -- usado tanto por
-	// Audio::PlayReliableOneShot como por Audio::CatchCue.
+	// Reproduce a_filePath (ruta relativa a Data, p. ej.
+	// "Sound/FX/ThorMjolnir/MjolnirCall02_End.wav") en a_position, vía
+	// RE::BSAudioManager::GetSoundHandleByFile (RE::BSResource::ID::
+	// GenerateFromPath) -- sin pasar por ningún Sound Descriptor ni
+	// EditorID del juego. Mismo patrón ya usado en el proyecto para el
+	// .nif de la estela (Constants::kTrailEffectPath): referenciar el
+	// archivo directamente en vez de un registro del juego.
 	//
-	// Prueba primero RE::TESDataHandler::LookupForm<RE::BGSSoundDescriptorForm>
-	// directamente; si a_localFormID resulta ser el de un Sound Marker
-	// (RE::TESSound) en vez de un Sound Descriptor, se resuelve como tal y
-	// se usa su campo "Sound" (RE::TESSound::descriptor) -- así el
-	// llamante no necesita saber cuál de los dos tipos de registro creó el
-	// usuario en la Creation Kit para un FormID dado. Devuelve nullptr (con
-	// aviso en el log) si no resuelve como ninguno de los dos.
-	RE::BGSSoundDescriptorForm* ResolveSoundDescriptor(RE::FormID a_localFormID);
-
-	// Reproducción fiable de un sonido suelto en a_position, identificado por
-	// a_localFormID (ver ResolveSoundDescriptor) y a_editorID (para el
-	// RE::PlaySound de refuerzo). Mecanismo confirmado en el juego para los
-	// sonidos de atrape (12.- AUDIO/CatchSound.cpp, ver Constants.h "Sonido
-	// de atrape, en dos partes"): un RE::BSSoundHandle de cebado sin
-	// posición, RE::PlaySound(a_editorID) en paralelo, y un RE::BSSoundHandle
-	// real posicionado con FadeInPlay(0) -- las tres cosas a la vez, ninguna
-	// sola basta (comprobado repetidas veces). Movida aquí desde
-	// CatchSound.cpp para compartirla con cualquier otro sonido suelto que
-	// necesite la misma fiabilidad (p. ej. Audio::CallSound).
-	//
-	// Bug de "no suena en el primer intento de la partida" (investigado a
-	// fondo 2026-09-22, ver CHANGELOG.md v1.19.3-v1.19.11): afecta a
-	// cualquier Sound Descriptor -- propio o vanilla -- la primerísima vez
-	// que este mecanismo se llama sobre él en la sesión, sea cual sea el
-	// tiempo real transcurrido desde la carga de la partida. No es un
-	// problema de caché de archivo (Audio::PrecacheDescriptor confirmado
-	// irrelevante, ver Audio::WarmUpAll más abajo) ni de qué función de
-	// RE::BSAudioManager se use para obtener el handle (GetSoundHandle por
-	// puntero a descriptor y GetSoundHandleByName por nombre se comportan
-	// igual). Mitigado por Audio::WarmUpAll, que gasta ese primer intento
-	// perdido al cargar partida en vez de en el primer uso real del jugador
-	// -- no es un arreglo de la causa raíz, que sigue sin identificarse con
-	// certeza (hipótesis más fundamentada: RE::BSAudioManager es un sistema
-	// de colas de mensajes con hilo propio, ver RE/B/BSSoundMessage.h, y la
-	// primera vez que se pide una identidad nueva hace falta que el hilo de
-	// audio procese un Init/LoadForPlayback antes de que un Play/FadeIn
-	// inmediatamente posterior tenga efecto -- sin confirmar, sin
-	// desensamblador disponible para verificarlo contra el código nativo
-	// real).
-	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID);
+	// Sustituye por completo (2026-09-23, a petición del usuario, ver
+	// CHANGELOG.md v1.19.26-v1.19.27) al mecanismo anterior por Sound
+	// Descriptor (FormID local + EditorID, con un cebado y un
+	// RE::PlaySound de refuerzo además del RE::BSSoundHandle real) --
+	// "arranque de Atrape" dejó de sonar de forma fiable con ese
+	// mecanismo, sin ningún cambio de código de por medio, coincidiendo
+	// con una actualización de Skyrim; usado como control fiable durante
+	// toda la investigación anterior, así que la causa apunta al entorno
+	// (versión del juego/CommonLibSSE-NG), no a la lógica de la
+	// aplicación. Sin explicación firme de la causa exacta -- el usuario
+	// no puede revertir la versión del juego para una prueba de control.
+	void PlayFileOneShot(const RE::NiPoint3& a_position, const char* a_filePath, float a_volume);
 
 	// Gasta, al cargar partida (Events::OnSKSEMessage(kDataLoaded)), el
-	// "primer intento perdido" de cada uno de los cuatro Sound Descriptor
-	// del arma (lanzamiento, llamada, arranque y golpe final del atrape,
-	// ver Constants.h) -- mismo mecanismo exacto que PlayReliableOneShot
-	// (mismo RE::PlaySound incluido, a petición del usuario, para
-	// calentar exactamente lo mismo que calienta un uso real), pero con
-	// volumen 0 en el RE::BSSoundHandle real. Sin forma de silenciar la
-	// pata RE::PlaySound (no tiene parámetro de volumen) -- consecuencia
-	// aceptada: cada uno de los 4 sonidos se oye una vez, de verdad, justo
-	// al cargar partida. Decisión explícita del usuario (2026-09-22, ver
-	// CHANGELOG.md v1.19.11) para maximizar la fiabilidad mientras se
-	// evalúa si hace falta silenciarlo del todo más adelante.
+	// "primer intento perdido" de cada uno de los cuatro sonidos del arma
+	// (lanzamiento, llamada, arranque y golpe final del atrape, ver
+	// Constants.h) -- mismo mecanismo exacto que PlayFileOneShot, con
+	// volumen 0.
 	//
-	// Sustituye a Audio::PrecacheAll/RE::BSAudioManager::PrecacheDescriptor,
-	// confirmado irrelevante para este bug (ver el comentario de
-	// PlayReliableOneShot) tras varias rondas de pruebas -- no comprueba
-	// nada, no calienta nada que el propio bug necesite.
+	// Bug de "no suena en el primer intento de la partida" (investigado a
+	// fondo 2026-09-22, ver CHANGELOG.md v1.19.3-v1.19.11, entonces sobre
+	// el mecanismo por Sound Descriptor ya retirado): no es un problema de
+	// caché de archivo (Audio::PrecacheDescriptor confirmado irrelevante)
+	// -- hipótesis más fundamentada, sin confirmar con certeza:
+	// RE::BSAudioManager es un sistema de colas de mensajes con hilo
+	// propio (ver RE/B/BSSoundMessage.h), y la primera vez que se pide una
+	// identidad nueva hace falta que el hilo de audio procese un Init/
+	// LoadForPlayback antes de que un Play/FadeIn inmediatamente
+	// posterior tenga efecto. "Catch end" en concreto necesitaba dos usos
+	// reales antes de estabilizarse, no uno como los otros 3 (v1.19.24) --
+	// sin datos todavía de si eso sigue aplicando a este mecanismo nuevo,
+	// se mantiene el doble calentamiento por precaución.
 	void WarmUpAll();
 }

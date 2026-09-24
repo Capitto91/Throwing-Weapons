@@ -20,11 +20,11 @@ namespace Audio
 		}
 
 		startFired = true;
-		PlayReliableOneShot(a_position, Constants::kCatchStartSoundLocalFormID, Constants::kCatchStartSoundEditorID);
+		PlayFileOneShot(a_position, Constants::kCatchStartSoundFilePath, Constants::kSoundHandleVolume);
 	}
 
 	void CatchCue::PlayEnd(const RE::NiPoint3& a_position)
 	{
-		PlayReliableOneShot(a_position, Constants::kCatchEndSoundLocalFormID, Constants::kCatchEndSoundEditorID);
+		PlayFileOneShot(a_position, Constants::kCatchEndSoundFilePath, Constants::kSoundHandleVolume);
 	}
 }

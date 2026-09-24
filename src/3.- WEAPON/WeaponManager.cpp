@@ -275,6 +275,7 @@ namespace Weapon
 		catchReequipDone = false;
 		catchPhysicallyArrived = false;
 		catchReequipPending = false;
+		catchEndSoundPlayed = false;
 		callAnimationActive = false;
 
 		// Por si el estado anterior era kAiming (sin esto, el offset de zoom
@@ -492,6 +493,7 @@ namespace Weapon
 			catchReequipDone = false;
 			catchPhysicallyArrived = false;
 			catchReequipPending = false;
+			catchEndSoundPlayed = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 				Animation::SetCatchTrigger(*player, false);
 				Animation::SetAnimationDriven(*player, false);
@@ -757,7 +759,7 @@ namespace Weapon
 			// El sonido del chasquido ya no depende de un SoundPlay vanilla
 			// (descartado, ver CHANGELOG.md) -- se dispara aquí mismo, en el
 			// mismo instante que el regreso físico real.
-			Audio::PlayReliableOneShot(player->GetPosition(), Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID);
+			Audio::PlayFileOneShot(player->GetPosition(), Constants::kCallReleaseSoundFilePath, Constants::kCallReleaseSoundVolume);
 		}
 
 		// Debe ocurrir exactamente en este instante, sincronizado con la
@@ -855,6 +857,7 @@ namespace Weapon
 		// weaponState ya haya cambiado de estado por su cuenta.
 		catchAnimationActive = true;
 		catchReequipDone = false;
+		catchEndSoundPlayed = false;
 
 		// Mismo motivo que en BeginCallAnimation: evitar que moverse durante
 		// el gesto de Atrape escale a un power attack direccional vanilla en
@@ -917,6 +920,37 @@ namespace Weapon
 		}
 		logs::info("WeaponManager::OnCatchReleaseAnimationEvent: anotación de liberación recibida.");
 
+		// Golpe final del atrape (Audio::CatchCue::PlayEnd), disparado aquí
+		// mismo -- el instante exacto en que la anotación PIE.ThorMjolnirCatch,
+		// ya horneada en Catch.hkx, marca que la mano se cierra sobre el
+		// arma en el propio clip. A propósito ANTES del chequeo de
+		// catchPhysicallyArrived de más abajo, que solo gatea el reequipado
+		// VISUAL (ReequipAndReset), no el sonido -- cambio de criterio
+		// 2026-09-23, a petición del usuario ("catch end suena tarde"): de
+		// v1.19.22 a v1.19.24 el sonido vivía en PerformCatchReequip, que
+		// solo se ejecuta cuando catchPhysicallyArrived ya es true, y en la
+		// práctica esa confirmación física llega sistemáticamente unos
+		// cientos de ms DESPUÉS de esta anotación (comprobado con logs
+		// reales: "la réplica todavía no ha llegado de verdad" se logueaba
+		// en efectivamente todos los ciclos probados, no solo en regresos
+		// largos como asumía el comentario original de más abajo) -- ese
+		// retraso es un compromiso deliberado y aceptado para el
+		// reequipado visual (no cortar Catch.hkx a medias si la predicción
+		// se queda corta), pero el sonido no tiene el mismo motivo para
+		// esperar. catchEndSoundPlayed en vez de catchReequipDone como
+		// guarda: esta función se llama dos veces seguidas por ciclo
+		// (comprobado con logs reales, "anotación de liberación recibida"
+		// repetido) y catchReequipDone no se pone a true hasta
+		// PerformCatchReequip, que en el caso diferido de abajo todavía no
+		// ha ocurrido en la segunda llamada -- sin esta guarda propia, el
+		// sonido se dispararía dos veces.
+		if (!catchEndSoundPlayed) {
+			catchEndSoundPlayed = true;
+			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Audio::CatchCue::PlayEnd(player->GetPosition());
+			}
+		}
+
 		// Cambio de criterio (2026-08-08, a petición del usuario, tras
 		// confirmar con logs reales del juego): esta anotación tiene
 		// temporización fija (ver Constants::kCatchAnimationLeadTime),
@@ -927,17 +961,13 @@ namespace Weapon
 		// haya llegado de verdad a la mano. Reequipar en ese caso cortaba
 		// la animación a medias y cancelaba el bucle de tick de
 		// Return::BeginReturnMovement antes de que este detectara la
-		// llegada física por su cuenta -- por eso tampoco sonaba
-		// Audio::CatchCue::PlayEnd (solo se dispara al detectarla). En vez
-		// de seguir afinando esa predicción (ya van dos rondas), se
-		// comprueba aquí la confirmación real de llegada física
-		// (catchPhysicallyArrived, ver Return::ReturnCallbacks::onArrived/
-		// OnPhysicalArrival) -- si todavía no ha llegado, se difiere el
-		// reequipado hasta que sí (catchReequipPending), en vez de fiarse a
-		// ciegas de esta temporización. En el caso normal (la réplica ya
-		// ha llegado, o llega antes que esta anotación -- la mayoría de las
-		// veces) no cambia nada, PerformCatchReequip se llama exactamente
-		// igual de inmediato.
+		// llegada física por su cuenta. Se comprueba aquí la confirmación
+		// real de llegada física (catchPhysicallyArrived, ver
+		// Return::ReturnCallbacks::onArrived/OnPhysicalArrival) -- si
+		// todavía no ha llegado, se difiere el reequipado VISUAL hasta que
+		// sí (catchReequipPending), en vez de fiarse a ciegas de esta
+		// temporización. Ya no afecta al sonido (ver arriba), solo al
+		// reequipado real.
 		if (!catchPhysicallyArrived) {
 			logs::info("WeaponManager::OnCatchReleaseAnimationEvent: la réplica todavía no ha llegado de verdad -- reequipado diferido hasta que llegue.");
 			catchReequipPending = true;
@@ -961,31 +991,6 @@ namespace Weapon
 		catchReequipDone = true;
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			// Golpe final del atrape (Audio::CatchCue::PlayEnd) -- movido
-			// aquí (2026-09-23) desde dentro del propio bucle de tick de
-			// Return::BeginReturnMovement, donde vivía disparado solo si ese
-			// bucle en concreto llegaba a evaluar su propio umbral de
-			// distancia (distanceToHand <= Constants::kReturnArrivalDistance)
-			// antes de que este mismo método (llamado desde el otro camino,
-			// la anotación real de Catch.hkx u su red de seguridad) lo
-			// cancelara desde fuera vía ReequipAndReset -- exactamente la
-			// misma carrera que ya se documenta más abajo y que
-			// catchPhysicallyArrived/catchReequipPending ya resuelve para el
-			// reequipado en sí, pero que nunca se aplicó al sonido (seguía
-			// viviendo en el sitio original). PerformCatchReequip solo se
-			// llama una vez por ciclo, y solo cuando catchPhysicallyArrived
-			// ya es true (ver OnCatchReleaseAnimationEvent/OnPhysicalArrival)
-			// -- mismo embudo garantizado-una-vez que ya usa el chasquido de
-			// Llamada (OnCallReleaseAnimationEvent), así que el sonido ya no
-			// depende de que el bucle de física en concreto gane esa
-			// carrera. Se sigue disparando siempre, sin condición (ver
-			// Audio::CatchCue::PlayEnd), no depende de que el arranque haya
-			// sonado. player->GetPosition() en vez de la posición exacta de
-			// la mano (handPos, ya no disponible aquí) -- mismo criterio ya
-			// usado para el chasquido de Llamada, diferencia imperceptible
-			// para un sonido puntual.
-			Audio::CatchCue::PlayEnd(player->GetPosition());
-
 			// Temblor de cámara al cerrar la mano sobre el arma -- ver
 			// Constants::kCatchShakeStrength/kCatchShakeDuration. Debe
 			// coincidir con el reequipado real de abajo (el instante en que
@@ -1053,6 +1058,7 @@ namespace Weapon
 		catchReequipDone = false;
 		catchPhysicallyArrived = false;
 		catchReequipPending = false;
+		catchEndSoundPlayed = false;
 
 		// Ver Constants::kMinAttackStartInterval/lastAttackAnimationEventTime
 		// -- bug real (2026-08-28, ver CHANGELOG.md), confirmado con logs:

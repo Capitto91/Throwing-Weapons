@@ -1,139 +1,48 @@
-// Implementación de la resolución compartida de Sound Descriptor.
+// Implementación de la reproducción de sonidos sueltos por archivo.
 // Ver SoundResolver.h para el porqué de cada decisión.
 
 #include "12.- AUDIO/SoundResolver.h"
 
 #include "1.- CORE/Constants.h"
-#include "RE/M/Misc.h"
-
-// mmsystem.h (arrastrado por Windows.h) define PlaySound como macro y
-// reescribe RE::PlaySound a RE::PlaySoundA -- mismo problema que min/max,
-// documentado en CLAUDE.md. Solo hace falta el guard en el punto de uso.
-#ifdef PlaySound
-#	undef PlaySound
-#endif
 
 namespace Audio
 {
-	namespace
+	void PlayFileOneShot(const RE::NiPoint3& a_position, const char* a_filePath, float a_volume)
 	{
-		// Un único intento de resolución (Sound Descriptor directo, o
-		// Sound Marker usando su campo "Sound") sobre un FormID local
-		// concreto -- separado para poder probar más de un candidato de
-		// FormID sin duplicar esta lógica (ver ResolveSoundDescriptor).
-		RE::BGSSoundDescriptorForm* TryResolve(RE::TESDataHandler& a_dataHandler, RE::FormID a_localFormID)
-		{
-			if (auto* descriptor = a_dataHandler.LookupForm<RE::BGSSoundDescriptorForm>(a_localFormID, Constants::kSoundPluginName)) {
-				return descriptor;
-			}
-
-			if (auto* markSound = a_dataHandler.LookupForm<RE::TESSound>(a_localFormID, Constants::kSoundPluginName)) {
-				if (!markSound->descriptor) {
-					logs::warn("Audio::ResolveSoundDescriptor: el Sound Marker 0x{:06X} de \"{}\" no tiene ningún Sound Descriptor asignado en su campo \"Sound\".", a_localFormID, Constants::kSoundPluginName);
-					return nullptr;
-				}
-				return markSound->descriptor;
-			}
-
-			return nullptr;
+		auto* audioManager = RE::BSAudioManager::GetSingleton();
+		if (!audioManager) {
+			return;
 		}
 
-		// Cuerpo compartido de Audio::PlayReliableOneShot y Audio::WarmUpAll
-		// -- mismo mecanismo triple exacto, con el volumen del
-		// RE::BSSoundHandle real como único parámetro que varía (normal
-		// para un uso real, 0 para el calentamiento silencioso -- salvo la
-		// pata RE::PlaySound, que no tiene volumen y siempre se oye, ver
-		// SoundResolver.h).
-		void PlayOneShotImpl(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID, float a_volume)
-		{
-			auto* audioManager = RE::BSAudioManager::GetSingleton();
-			auto* descriptor = audioManager ? ResolveSoundDescriptor(a_localFormID) : nullptr;
-			if (!descriptor) {
-				logs::warn("Audio::PlayReliableOneShot: no se pudo resolver el Sound Descriptor (FormID local 0x{:06X}).", a_localFormID);
-				return;
-			}
+		RE::BSResource::ID fileID;
+		fileID.GenerateFromPath(a_filePath);
 
-			RE::BSSoundHandle primingHandle;
-			if (audioManager->GetSoundHandle(primingHandle, descriptor, Constants::kSoundHandleFlags)) {
-				primingHandle.FadeInPlay(0);
-			}
-
-			RE::PlaySound(a_editorID);
-
-			RE::BSSoundHandle handle;
-			if (audioManager->GetSoundHandle(handle, descriptor, Constants::kSoundHandleFlags)) {
-				handle.SetPosition(a_position);
-				handle.SetVolume(a_volume);
-				const bool played = handle.FadeInPlay(0);
-				logs::info("Audio::PlayReliableOneShot: FormID local 0x{:06X} -- FadeInPlay()={}.", a_localFormID, played);
-			}
-		}
-	}
-
-	RE::BGSSoundDescriptorForm* ResolveSoundDescriptor(RE::FormID a_localFormID)
-	{
-		auto* dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!dataHandler) {
-			return nullptr;
-		}
-
-		if (auto* descriptor = TryResolve(*dataHandler, a_localFormID)) {
-			return descriptor;
-		}
-
-		// Constants.h guarda el FormID local "en bruto" del registro (el
-		// que se ve en la Creation Kit, hasta 24 bits) -- pero este plugin
-		// tiene el flag ESL activo (comprobado leyendo el header del propio
-		// .esp), y el direccionamiento comprimido de un plugin ligero solo
-		// usa 12 bits para la parte local. Si el FormID en bruto no
-		// resuelve y excede esos 12 bits, se prueba también enmascarado a
-		// ellos -- por si el valor que de verdad usa el motor en tiempo de
-		// ejecución es ese subconjunto, no el bruto.
-		if (a_localFormID > 0x00000FFF) {
-			const RE::FormID masked = a_localFormID & 0x00000FFF;
-			if (auto* descriptor = TryResolve(*dataHandler, masked)) {
-				logs::info("Audio::ResolveSoundDescriptor: FormID local 0x{:06X} no resolvió, pero su versión de 12 bits (plugin ESL) 0x{:03X} sí -- usar ese valor directamente en Constants.h.", a_localFormID, masked);
-				return descriptor;
-			}
-		}
-
-		logs::warn("Audio::ResolveSoundDescriptor: no se encontró ningún Sound Descriptor ni Sound Marker con FormID local 0x{:06X} (ni su variante de 12 bits) en \"{}\".", a_localFormID, Constants::kSoundPluginName);
-		return nullptr;
-	}
-
-	void PlayReliableOneShot(const RE::NiPoint3& a_position, RE::FormID a_localFormID, const char* a_editorID)
-	{
-		PlayOneShotImpl(a_position, a_localFormID, a_editorID, Constants::kSoundHandleVolume);
+		RE::BSSoundHandle handle;
+		audioManager->GetSoundHandleByFile(handle, fileID, Constants::kSoundHandleFlags, Constants::kFileSoundPriority);
+		handle.SetPosition(a_position);
+		handle.SetVolume(a_volume);
+		const bool played = handle.FadeInPlay(0);
+		logs::info("Audio::PlayFileOneShot: \"{}\" -- FadeInPlay()={}.", a_filePath, played);
 	}
 
 	void WarmUpAll()
 	{
-		struct Entry
-		{
-			RE::FormID  localFormID;
-			const char* editorID;
-		};
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kThrowLaunchSoundFilePath, 0.0f);
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kCatchStartSoundFilePath, 0.0f);
 
-		for (const auto& entry : { Entry{ Constants::kThrowLaunchSoundLocalFormID, Constants::kThrowLaunchSoundEditorID },
-				 Entry{ Constants::kCatchStartSoundLocalFormID, Constants::kCatchStartSoundEditorID },
-				 Entry{ Constants::kCatchEndSoundLocalFormID, Constants::kCatchEndSoundEditorID },
-				 Entry{ Constants::kCallReleaseSoundLocalFormID, Constants::kCallReleaseSoundEditorID } }) {
-			PlayOneShotImpl(RE::NiPoint3{}, entry.localFormID, entry.editorID, 0.0f);
-		}
+		// El chasquido de Llamada y "catch end" necesitan dos usos reales
+		// antes de estabilizarse, no uno como los otros 2 (comprobado en el
+		// juego para "catch end" con el mecanismo antiguo por Sound
+		// Descriptor, 2026-09-23, ver CHANGELOG.md v1.19.24; el chasquido se
+		// suma aquí como prueba tras fallar con un único calentamiento en
+		// v1.19.27, sin confirmar todavía si dos bastan). Sin explicación
+		// firme de por qué estos dos en concreto lo necesitan y los otros 2
+		// no.
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kCallReleaseSoundFilePath, 0.0f);
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kCallReleaseSoundFilePath, 0.0f);
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kCatchEndSoundFilePath, 0.0f);
+		PlayFileOneShot(RE::NiPoint3{}, Constants::kCatchEndSoundFilePath, 0.0f);
 
-		// "Catch end" necesita dos usos reales antes de estabilizarse, no
-		// solo uno como los otros 3 (comprobado en el juego 2026-09-23: con
-		// un único calentamiento seguía fallando en el primer catch real de
-		// cada partida, tanto en su sitio normal como probado en un punto
-		// distinto de la cadena -- con dos, funciona desde el primer catch
-		// real). Sin explicación firme de por qué este Sound Descriptor en
-		// concreto lo necesita y los otros no (comprobado que sus datos son
-		// copias idénticas salvo el archivo de audio) -- documentado como
-		// comportamiento empírico confirmado, mismo criterio que
-		// Constants::kSoundHandleFlags. Segundo calentamiento a volumen 0,
-		// igual que el primero, nada audible al cargar partida.
-		PlayOneShotImpl(RE::NiPoint3{}, Constants::kCatchEndSoundLocalFormID, Constants::kCatchEndSoundEditorID, 0.0f);
-
-		logs::info("Audio::WarmUpAll: gastado el primer intento de los 4 Sound Descriptor del arma (dos veces para catch end).");
+		logs::info("Audio::WarmUpAll: gastado el primer intento de los 4 sonidos del arma (dos veces para chasquido y catch end).");
 	}
 }

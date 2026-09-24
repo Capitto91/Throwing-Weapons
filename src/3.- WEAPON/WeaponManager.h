@@ -93,7 +93,7 @@ namespace Weapon
 		// mientras se reproduce Call.hkx -- o desde la red de seguridad por
 		// tiempo si esa anotación nunca llega (ver
 		// Constants::kCallReleaseFallbackWindow). También dispara el sonido
-		// del chasquido (Audio::PlayReliableOneShot) y arranca
+		// del chasquido (Audio::PlayFileOneShot) y arranca
 		// Return::BeginReturn -- ambos deben ocurrir exactamente en este
 		// instante (sincronizados con la anotación real). Sin efecto si el
 		// estado ya cambió por otra vía antes de que llegara.
@@ -493,9 +493,11 @@ namespace Weapon
 		// sobre una predicción que puede quedarse corta en regresos largos
 		// (bug reportado por el usuario, 2026-08-08, confirmado con logs
 		// reales: la anotación llegaba antes que la propia llegada física
-		// con la frecuencia suficiente para que el sonido de atrape casi
-		// nunca sonara). Reseteado a false al arrancar cada regreso
-		// (WeaponManager::BeginReturn).
+		// con la frecuencia suficiente para que el reequipado visual
+		// cortara Catch.hkx a medias). Solo gatea el reequipado VISUAL
+		// (ReequipAndReset) -- desde 2026-09-23 ya no afecta al sonido,
+		// ver catchEndSoundPlayed. Reseteado a false al arrancar cada
+		// regreso (WeaponManager::BeginReturn).
 		bool catchPhysicallyArrived{ false };
 
 		// True si OnCatchReleaseAnimationEvent quiso reequipar (la
@@ -506,6 +508,31 @@ namespace Weapon
 		// arrancar cada regreso (WeaponManager::BeginReturn) y al
 		// completarse (OnPhysicalArrival).
 		bool catchReequipPending{ false };
+
+		// True desde que OnCatchReleaseAnimationEvent dispara de verdad el
+		// golpe final del atrape (Audio::CatchCue::PlayEnd) hasta que se
+		// resetea junto con el resto del gesto -- evita que la anotación
+		// real y la red de seguridad (Constants::kCatchReleaseFallbackWindow)
+		// lo disparen dos veces si ambas llegan a pasar el primer chequeo de
+		// esa función (comprobado en el juego: "anotación de liberación
+		// recibida" se loguea dos veces seguidas cada ciclo).
+		//
+		// El sonido se dispara en OnCatchReleaseAnimationEvent -- el
+		// instante exacto en que la anotación PIE.ThorMjolnirCatch marca
+		// que la mano se cierra sobre el arma en el propio clip -- y NO en
+		// PerformCatchReequip (a diferencia de v1.19.22-v1.19.24, ver
+		// CHANGELOG.md): PerformCatchReequip solo se llama cuando
+		// catchPhysicallyArrived ya es true, y en la práctica eso llega
+		// sistemáticamente unos cientos de ms DESPUÉS de la anotación real
+		// (bug reportado por el usuario, 2026-09-23: "catch end suena
+		// tarde") -- ese retraso es un compromiso deliberado y aceptado
+		// para el reequipado visual (no cortar Catch.hkx a medias, ver
+		// catchPhysicallyArrived), pero el sonido no tiene ese mismo
+		// motivo para esperar: no pasa nada si suena un instante antes de
+		// que el reequipado visual se complete de verdad. Reseteado a
+		// false junto con catchReequipDone (BeginCatchAnimation,
+		// FinishCatchAnimation, OnLoadingScreenClosed, ResetToInHand).
+		bool catchEndSoundPlayed{ false };
 
 		// Mismo papel que catchAnimationActive pero para Llamada -- true
 		// desde BeginCallAnimation hasta FinishCallAnimation (ver esa

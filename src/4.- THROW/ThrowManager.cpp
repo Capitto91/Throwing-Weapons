@@ -162,7 +162,7 @@ namespace Throw
 		// hace falta esperar a que el 3D de la réplica cargue (~unos pocos
 		// Constants::kTickInterval de retraso real, ver Physics::SpawnReplica)
 		// para reproducirlo.
-		Audio::PlayReliableOneShot(origin, Constants::kThrowLaunchSoundLocalFormID, Constants::kThrowLaunchSoundEditorID);
+		Audio::PlayFileOneShot(origin, Constants::kThrowLaunchSoundFilePath, Constants::kSoundHandleVolume);
 
 		// Punto de partida real del giro (ver CLAUDE.md, "Arquitectura de
 		// física de proyectiles"): la rotación mundial que tenía la malla

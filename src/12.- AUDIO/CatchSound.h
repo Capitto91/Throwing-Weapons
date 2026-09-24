@@ -16,7 +16,7 @@
 namespace Audio
 {
 	// Sin RE::BSSoundHandle como miembro: cada sonido se dispara una sola
-	// vez y se deja sonar por su cuenta (igual que Audio::PlayReliableOneShot
+	// vez y se deja sonar por su cuenta (igual que Audio::PlayFileOneShot
 	// -- el motor sigue reproduciéndolo aunque el handle local que lo
 	// arrancó se destruya al momento), así que esta clase no gestiona
 	// ningún recurso que liberar, no hace falta RAII ni restringir copia/
@@ -43,9 +43,14 @@ namespace Audio
 		// nada más en las llamadas siguientes.
 		void UpdateStart(const RE::NiPoint3& a_position, float a_deltaSeconds);
 
-		// Llamar exactamente una vez, al confirmar el reequipado real tras
-		// la llegada física (WeaponManager::PerformCatchReequip, ver ese
-		// comentario -- movido ahí 2026-09-23 desde Return::BeginReturnMovement,
+		// Llamar exactamente una vez, en el instante exacto en que la
+		// anotación PIE.ThorMjolnirCatch (ya horneada en Catch.hkx) marca
+		// que la mano se cierra sobre el arma en el propio clip
+		// (WeaponManager::OnCatchReleaseAnimationEvent, ver ese comentario
+		// y catchEndSoundPlayed -- movido ahí 2026-09-23 desde
+		// PerformCatchReequip, que espera a la confirmación física de
+		// llegada y por tanto sonaba sistemáticamente tarde respecto al
+		// propio clip; antes de eso, desde Return::BeginReturnMovement,
 		// donde se perdía si ese bucle de tick se cancelaba desde fuera
 		// antes de evaluar su propio umbral de llegada) -- dispara el golpe
 		// grabado siempre, sin condición, haya sonado ya el arranque o no.
