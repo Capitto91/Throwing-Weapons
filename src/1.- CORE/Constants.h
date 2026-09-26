@@ -842,6 +842,23 @@ namespace Constants
 	inline constexpr std::chrono::milliseconds kAttackInterruptFallbackDelay{ 450 };
 	inline constexpr std::chrono::milliseconds kAttackInterruptWatchWindow{ 1500 };
 
+	// -- Cortar un bloqueo en curso antes de Lanzar/Llamada (2026-09-26) --
+	// Probado en el juego con escudo: lanzar bloqueando dejaba
+	// NotifyAnimationGraph(attackStart)=false -- en 1HM BlockState
+	// (_reference/1hm_behavior.xml) attackStart solo tiene transición con
+	// iBlockState == 1 o IsNPC == 1, así que para el jugador con el bloqueo
+	// levantado el evento se pierde y el arma sale por la red de seguridad;
+	// además el grafo se quedaba en BlockState en Llamada/Atrape después
+	// (causa sin confirmar). WeaponManager::InterruptAttackThen dispara
+	// kBlockStopInstantAnimationEvent (transición de BlockState a reposo sin
+	// condición ni mezcla, del propio behavior vanilla) y espera
+	// kBlockInterruptSettleDelay antes del gesto -- placeholder, sin medir.
+	// Sin confirmar si, con el botón de bloquear todavía pulsado, el motor
+	// vuelve a meter al personaje en bloqueo (el vigilante registra los
+	// eventos para comprobarlo).
+	inline constexpr const char*               kBlockStopInstantAnimationEvent = "blockStopInstant";
+	inline constexpr std::chrono::milliseconds kBlockInterruptSettleDelay{ 50 };
+
 	// Cuánto sigue reproduciéndose Call.hkx/Catch.hkx, en tiempo real,
 	// después de su propia anotación de liberación hasta que el propio
 	// clip termina del todo -- mismos 0.5s de cola ya medidos y descritos

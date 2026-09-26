@@ -263,6 +263,11 @@ namespace Weapon
 		// puede haber cambiado durante la espera.
 		void InterruptAttackThen(std::function<void()> a_action);
 
+		// Rama de bloqueo de InterruptAttackThen: corta el bloqueo en curso
+		// con Constants::kBlockStopInstantAnimationEvent y ejecuta a_action
+		// pasados Constants::kBlockInterruptSettleDelay.
+		void InterruptBlockThen(RE::PlayerCharacter& a_player, std::function<void()> a_action);
+
 		// Desequipa el arma activa (queda oculta y el jugador pasa a
 		// combate desarmado), pasa a estado "lanzada" y arranca
 		// Throw::LaunchWeapon para que la réplica visual vuele de verdad.

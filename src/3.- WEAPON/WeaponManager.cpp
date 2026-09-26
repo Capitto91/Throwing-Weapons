@@ -714,6 +714,14 @@ namespace Weapon
 		auto*      player = RE::PlayerCharacter::GetSingleton();
 		const auto attackState = player ? player->AsActorState()->GetAttackState() : RE::ATTACK_STATE_ENUM::kNone;
 		if (attackState == RE::ATTACK_STATE_ENUM::kNone) {
+			// Bloqueo en curso (no cuenta como ataque, GetAttackState() es
+			// kNone): mismo problema de fondo, attackStart no tiene
+			// transición desde BlockState para el jugador -- ver
+			// Constants::kBlockStopInstantAnimationEvent.
+			if (player && player->IsBlocking()) {
+				InterruptBlockThen(*player, std::move(a_action));
+				return;
+			}
 			a_action();
 			return;
 		}
@@ -751,6 +759,34 @@ namespace Weapon
 			static_cast<int>(attackState), Constants::kAttackStopAnimationEvent, notifyOk);
 
 		(void)Scheduler::After(Constants::kAttackInterruptFallbackDelay, [fire]() { fire("red de seguridad"); });
+	}
+
+	void WeaponManager::InterruptBlockThen(RE::PlayerCharacter& a_player, std::function<void()> a_action)
+	{
+		auto pending = std::make_shared<std::atomic<bool>>(true);
+		attackInterruptToken = pending;
+		attackInterruptActive = true;
+
+		// Vigilante armado solo para registrar los eventos del grafo tras el
+		// corte (sin callback): diagnóstico de si el motor vuelve a meter
+		// al personaje en bloqueo con el botón todavía pulsado.
+		Events::AttackInterruptWatcher::Arm(a_player, nullptr);
+
+		const bool notifyOk = a_player.NotifyAnimationGraph(Constants::kBlockStopInstantAnimationEvent);
+		logs::info("WeaponManager::InterruptBlockThen: bloqueo en curso (wantBlocking={}), '{}' disparado para cortarlo, NotifyAnimationGraph()={}.",
+			static_cast<bool>(a_player.AsActorState()->actorState2.wantBlocking), Constants::kBlockStopInstantAnimationEvent, notifyOk);
+
+		(void)Scheduler::After(Constants::kBlockInterruptSettleDelay, [this, pending, action = std::move(a_action)]() {
+			if (!pending->exchange(false)) {
+				return;
+			}
+			attackInterruptActive = false;
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			logs::info("WeaponManager::InterruptBlockThen: gesto tras {}ms -- IsBlocking()={}, wantBlocking={}.",
+				Constants::kBlockInterruptSettleDelay.count(), player && player->IsBlocking(),
+				player && player->AsActorState()->actorState2.wantBlocking);
+			action();
+		});
 	}
 
 	void WeaponManager::OnThrowReleaseAnimationEvent()
@@ -1445,7 +1481,18 @@ namespace Weapon
 			weaponState.SetActiveTickToken(a_token);
 		};
 		callbacks.onApproaching = [this]() {
-			BeginCatchAnimation();
+			// Mismo corte que Lanzar/Llamada (2026-09-26): con el botón de
+			// bloquear todavía pulsado, el motor vuelve a meter al personaje
+			// en BlockState al terminar Call.hkx ('blockStartOut' en el
+			// log) y el attackStart de Atrape se perdía
+			// (NotifyAnimationGraph()=false, red de seguridad). Retrasa el
+			// gesto lo que dure el corte (50ms bloqueando, ~250ms
+			// atacando) -- aceptable frente a perderlo entero.
+			InterruptAttackThen([this]() {
+				if (weaponState.GetState() == State::kReturning) {
+					BeginCatchAnimation();
+				}
+			});
 		};
 		callbacks.onArrived = [this]() {
 			// El reequipado real en sí sigue gatillado por la anotación de
