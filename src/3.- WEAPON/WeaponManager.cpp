@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
+#include "10.- EVENTS/AttackInterruptWatcher.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "12.- AUDIO/CatchSound.h"
 #include "12.- AUDIO/SoundResolver.h"
@@ -156,6 +157,12 @@ namespace Weapon
 				break;
 			}
 		case State::kAiming:
+			// Ya soltado y esperando el corte de un ataque (ver
+			// InterruptAttackThen): el lanzamiento sigue en marcha, no hay
+			// nada que reiniciar.
+			if (attackInterruptActive) {
+				break;
+			}
 			// Solo se puede recibir una pulsación nueva estando ya
 			// "apuntando" si nos perdimos el botón de soltar anterior (p.ej.
 			// una pantalla de carga a mitad de la pulsación): no hay nada
@@ -192,7 +199,20 @@ namespace Weapon
 			// carga, Mecanica del arma.txt punto 3), así que una vez dentro
 			// de kAiming el suelte debe completar el lanzamiento siempre,
 			// sin ninguna espera adicional.
-			BeginThrowAnimation();
+			//
+			// Excepción (2026-09-26): si el jugador está a mitad de un
+			// golpe normal, primero se corta (ver InterruptAttackThen) --
+			// sin eso Throw.hkx nunca se reproducía y el arma salía desde
+			// la pose del ataque. Mientras dura ese corte se ignoran
+			// pulsaciones nuevas.
+			if (attackInterruptActive) {
+				break;
+			}
+			InterruptAttackThen([this]() {
+				if (weaponState.GetState() == State::kAiming) {
+					BeginThrowAnimation();
+				}
+			});
 			break;
 		case State::kThrown:
 		case State::kStuck:
@@ -238,7 +258,18 @@ namespace Weapon
 				// resuelto para Lanzar en v1.9.16). Al soltar, el botón ya no
 				// está pulsado en el instante exacto de NotifyAnimationGraph, así
 				// que no hay ambigüedad que resolver.
-				BeginCallAnimation();
+				//
+				// Mismo corte de ataque en curso que Lanzar (ver arriba):
+				// visto en el log también llamando a mitad de un puñetazo.
+				if (attackInterruptActive) {
+					break;
+				}
+				InterruptAttackThen([this]() {
+					const auto state = weaponState.GetState();
+					if ((state == State::kThrown || state == State::kStuck) && !throwTailActive) {
+						BeginCallAnimation();
+					}
+				});
 				break;
 			}
 		default:
@@ -271,6 +302,9 @@ namespace Weapon
 		// graph variable no debe tocarse salvo que de verdad hayamos sido
 		// nosotros quienes la desincronizaron del equipado real.
 		const bool wasCallAnimationActive = callAnimationActive;
+		Scheduler::Cancel(attackInterruptToken);
+		Events::AttackInterruptWatcher::Disarm();
+		attackInterruptActive = false;
 		catchAnimationActive = false;
 		catchReequipDone = false;
 		catchPhysicallyArrived = false;
@@ -431,6 +465,13 @@ namespace Weapon
 
 	void WeaponManager::OnLoadingScreenClosed()
 	{
+		// Un corte de ataque pendiente (InterruptAttackThen) ya no tiene
+		// sentido tras una pantalla de carga -- el switch de abajo
+		// reordena el estado por su cuenta.
+		Scheduler::Cancel(attackInterruptToken);
+		Events::AttackInterruptWatcher::Disarm();
+		attackInterruptActive = false;
+
 		switch (weaponState.GetState()) {
 		case State::kThrown:
 		case State::kStuck:
@@ -666,6 +707,50 @@ namespace Weapon
 			}
 			OnThrowReleaseAnimationEvent();
 		});
+	}
+
+	void WeaponManager::InterruptAttackThen(std::function<void()> a_action)
+	{
+		auto*      player = RE::PlayerCharacter::GetSingleton();
+		const auto attackState = player ? player->AsActorState()->GetAttackState() : RE::ATTACK_STATE_ENUM::kNone;
+		if (attackState == RE::ATTACK_STATE_ENUM::kNone) {
+			a_action();
+			return;
+		}
+
+		// Un único disparo entre los dos caminos (evento o red de
+		// seguridad): el primero que llega pone el token a false y el otro
+		// ya no hace nada. Es el mismo tipo que Scheduler::CancelToken, así
+		// que ResetToInHand/OnLoadingScreenClosed lo cancelan igual que
+		// cualquier otro temporizador (Scheduler::Cancel).
+		auto pending = std::make_shared<std::atomic<bool>>(true);
+		attackInterruptToken = pending;
+		attackInterruptActive = true;
+
+		const auto start = std::chrono::steady_clock::now();
+		auto       fire = [this, pending, start, action = std::move(a_action)](const char* a_reason) {
+            if (!pending->exchange(false)) {
+                return;
+            }
+            Events::AttackInterruptWatcher::Disarm();
+            attackInterruptActive = false;
+            logs::info("WeaponManager::InterruptAttackThen: gesto disparado por {} a +{}ms del corte.",
+					  a_reason, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+            action();
+		};
+
+		// Llamado en el hilo principal (el vigilante lo reencola con
+		// AddTask) -- espera además kAttackInterruptPostEventDelay antes del
+		// gesto.
+		Events::AttackInterruptWatcher::Arm(*player, [fire]() {
+			(void)Scheduler::After(Constants::kAttackInterruptPostEventDelay, [fire]() { fire("evento de mezcla terminada"); });
+		});
+
+		const bool notifyOk = player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
+		logs::info("WeaponManager::InterruptAttackThen: ataque en curso (GetAttackState()={}), '{}' disparado para cortarlo, NotifyAnimationGraph()={}.",
+			static_cast<int>(attackState), Constants::kAttackStopAnimationEvent, notifyOk);
+
+		(void)Scheduler::After(Constants::kAttackInterruptFallbackDelay, [fire]() { fire("red de seguridad"); });
 	}
 
 	void WeaponManager::OnThrowReleaseAnimationEvent()

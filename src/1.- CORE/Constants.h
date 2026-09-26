@@ -798,6 +798,50 @@ namespace Constants
 	// o un "attackStop" real de Llamada/Atrape).
 	inline constexpr float kMinAttackStartInterval = 1.0f;
 
+	// -- Cortar un ataque en curso antes de Lanzar/Llamada (2026-09-26) --
+	// Bug reportado por un usuario con BFCO (y reproducido en el juego):
+	// soltar el botón a mitad de un golpe normal (GetAttackState() != kNone,
+	// visto 3 = kHit en el log) hace que nuestro "attackStart" no arranque
+	// un ataque nuevo -- el grafo lo trata como encadenado del combo o lo
+	// ignora, el golpe en curso sigue, Throw.hkx/Call.hkx nunca se
+	// reproducen y el arma sale por la red de seguridad desde la pose del
+	// ataque. WeaponManager::InterruptAttackThen dispara
+	// kAttackStopAnimationEvent para cortarlo y espera a que el grafo esté
+	// en reposo de verdad antes de disparar el gesto.
+	//
+	// Historial de medidas (todas en el juego, con BFCO):
+	// - GetAttackState() vuelve a kNone en 16ms -- no sirve de señal: es el
+	//   estado del actor en C++, no el del grafo de Havok, que sigue a
+	//   mitad de la mezcla de salida del ataque.
+	// - Margen fijo de 100ms tras el corte: falla (attackStart aceptado,
+	//   NotifyAnimationGraph()=true, pero no se reproduce nada; personaje
+	//   parado en la pose de apuntado hasta la red de seguridad). 1000ms y
+	//   700ms: funcionan.
+	// - Sonda de eventos del grafo (Events::AttackInterruptWatcher): tras
+	//   nuestro attackStop llega un primer lote a +12ms (incluye el propio
+	//   "attackStop" y "tailCombatState" -- enterNotifyEvents de
+	//   1HM_Ready_State, que Havok emite al EMPEZAR la mezcla, no sirve) y
+	//   un segundo "attackStop" suelto, siempre a +194/195ms en 4 de 4
+	//   casos -- coincide con la DefaultBlendTransition de 0,2s de
+	//   AttackState -> reposo (_reference/1hm_behavior.xml). Tomado como
+	//   señal de "mezcla terminada" (hipótesis, sin confirmar su origen
+	//   exacto).
+	//
+	// kAttackInterruptReadyEventOrdinal: qué "attackStop" recibido (contando
+	// desde el corte) dispara el gesto -- el 2.º, ver arriba.
+	// kAttackInterruptPostEventDelay: margen tras ese evento antes del
+	// attackStart -- placeholder.
+	// kAttackInterruptFallbackDelay: red de seguridad si el evento no llega
+	// (otro behavior sin ese segundo attackStop, p. ej. sin BFCO -- sin
+	// comprobar) -- valor fijo elegido por el usuario (2026-09-26).
+	// kAttackInterruptWatchWindow: el vigilante deja de escuchar pasado este
+	// tiempo desde el corte (el evento ya no llegará, manda la red de
+	// seguridad).
+	inline constexpr int                       kAttackInterruptReadyEventOrdinal = 2;
+	inline constexpr std::chrono::milliseconds kAttackInterruptPostEventDelay{ 50 };
+	inline constexpr std::chrono::milliseconds kAttackInterruptFallbackDelay{ 450 };
+	inline constexpr std::chrono::milliseconds kAttackInterruptWatchWindow{ 1500 };
+
 	// Cuánto sigue reproduciéndose Call.hkx/Catch.hkx, en tiempo real,
 	// después de su propia anotación de liberación hasta que el propio
 	// clip termina del todo -- mismos 0.5s de cola ya medidos y descritos

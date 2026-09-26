@@ -32,12 +32,29 @@ add_requires("simpleini")
 -- sin renombrar el target -- descartado: xmake solo invoca after_config de
 -- *reglas* (config_target en modules/private/utils/target.lua), no del
 -- target en sí, así que nunca llegaba a ejecutarse.
+--
+-- 2026-09-26: el mod publicado ("ThrowableMjolnir" en MO2) es ahora el que
+-- carga el DLL -- tiene prioridad sobre "ThorMjolnir_OAR" y tapaba cada
+-- build nuevo. Esta regla (sí se ejecuta, a diferencia del after_config de
+-- target) se añade después de commonlibsse-ng.plugin para sobrescribir
+-- solo la carpeta de instalación, sin renombrar el target: el nombre del
+-- DLL ("ThorMjolnir_OAR") es el que piden los config.json de OAR en
+-- "requiredPlugin".
+rule("thormjolnir.installdir")
+    on_config(function(target)
+        if os.getenv("XSE_TES5_MODS_PATH") then
+            target:set("installdir", path.join(os.getenv("XSE_TES5_MODS_PATH"), "ThrowableMjolnir"))
+        end
+    end)
+rule_end()
+
 target("ThorMjolnir_OAR")
     add_rules("commonlibsse-ng.plugin", {
         name = "ThorMjolnir_OAR",
         author = "Capitto91",
         description = "Arma arrojadiza y retornable (estilo Leviathan Axe) para Skyrim SE/AE -- variante OAR"
     })
+    add_rules("thormjolnir.installdir")
 
     -- add src files
     add_files("src/**.cpp")

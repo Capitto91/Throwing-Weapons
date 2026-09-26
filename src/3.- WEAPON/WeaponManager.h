@@ -250,6 +250,19 @@ namespace Weapon
 		// anotación nunca llega.
 		void BeginThrowAnimation();
 
+		// Si el jugador está a mitad de un ataque normal (GetAttackState() !=
+		// kNone), lo corta con Constants::kAttackStopAnimationEvent y ejecuta
+		// a_action cuando el grafo ha terminado de volver a reposo -- guiado
+		// por evento (Events::AttackInterruptWatcher, más
+		// Constants::kAttackInterruptPostEventDelay), con
+		// Constants::kAttackInterruptFallbackDelay como red de seguridad; si
+		// no hay ataque en curso, ejecuta a_action al instante. Pensado para
+		// BeginThrowAnimation/BeginCallAnimation: nuestro "attackStart" no
+		// arranca un ataque nuevo mientras otro sigue en marcha (bug con
+		// BFCO, 2026-09-26). a_action debe volver a comprobar el estado --
+		// puede haber cambiado durante la espera.
+		void InterruptAttackThen(std::function<void()> a_action);
+
 		// Desequipa el arma activa (queda oculta y el jugador pasa a
 		// combate desarmado), pasa a estado "lanzada" y arranca
 		// Throw::LaunchWeapon para que la réplica visual vuele de verdad.
@@ -437,6 +450,15 @@ namespace Weapon
 		// animación de desenvainar de un ciclo distinto (bug real,
 		// 2026-09-23: faltaba esa llamada a Cancel, ver CHANGELOG.md).
 		Scheduler::CancelToken skipEquipAnimationToken;
+
+		// True mientras InterruptAttackThen espera a que termine el ataque
+		// cortado -- OnAimButtonDown/Up ignoran pulsaciones nuevas mientras
+		// tanto, para no encadenar dos esperas. attackInterruptToken es el
+		// token compartido por los dos caminos de disparo de esa espera
+		// (evento del grafo o red de seguridad -- el primero que llega lo
+		// consume), cancelado en ResetToInHand/OnLoadingScreenClosed.
+		bool                   attackInterruptActive{ false };
+		Scheduler::CancelToken attackInterruptToken;
 
 		// Instante real (reloj monotónico, no tiempo de juego) del último
 		// evento que tocó el grafo de animación por nuestra cuenta -- el
