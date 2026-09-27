@@ -4,6 +4,7 @@
 #include "8.- ANIMATION/WeaponImpactVFX.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 
 namespace Animation
 {
@@ -34,6 +35,12 @@ namespace Animation
 
 	void SpawnImpactVFX(RE::TESObjectREFR& a_spawnAt, const RE::NiPoint3& a_position)
 	{
+		// Desactivable desde [Damage] ImpactExplosion (Settings / menú).
+		if (!Settings::GetImpactExplosion()) {
+			logs::info("Animation::SpawnImpactVFX: desactivada en la configuración (ImpactExplosion), no se coloca.");
+			return;
+		}
+
 		auto* form = GetImpactExplosionForm();
 		if (!form) {
 			return;

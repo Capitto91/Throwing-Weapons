@@ -538,10 +538,31 @@ namespace Constants
 	// comprobarlo aparte en vez de asumir que funcionó.
 	inline constexpr std::string_view kEmbeddedParalysisEffect{ "CAP_ThorMjolnir_ParalysisAbilityEffect" };
 
-	// Intervalo del daño eléctrico continuo (punto 6) mientras el arma
-	// siga clavada en un actor. Placeholder, pendiente de ajustar en el
-	// juego.
-	inline constexpr float kEmbeddedDamageInterval = 1.5f;
+	// Daño eléctrico continuo (punto 6) mientras el arma siga clavada en
+	// un actor: ya no es un bucle propio de daño cada N segundos, sino un
+	// BGSHazard propio de ThorMjolnirOAR.esp colocado al clavarse
+	// (Combat::BeginEmbeddedEffect) -- "CAP_ThorMjolnir_Spell_
+	// ShockBarrierHazardDrop" (hechizo vanilla 0x591A4 de Skyrim.esm,
+	// Lifetime 5 s = kEmbeddedMaxDuration, Target Interval 0.3 s, flags
+	// Align To Normal + Drop To Ground, leídos del .esp 2026-09-27). Se
+	// elige la variante "Drop" y no "CAP_ThorMjolnir_Spell_
+	// ShockBarrierHazard" (0x0C2, idéntica salvo por no llevar Drop To
+	// Ground) porque la réplica se clava a la altura del torso: así la
+	// descarga cae al suelo bajo el objetivo en vez de quedar flotando.
+	// El daño lo decide el hechizo del hazard en la Creation Kit, no el
+	// arma. FormID local del ESL compactado, usado tal cual (ver
+	// kImpactExplosionLocalFormID).
+	inline constexpr RE::FormID kEmbeddedHazardLocalFormID = 0x0C3;
+
+	// Variante sin Drop To Ground ("CAP_ThorMjolnir_Spell_ShockBarrierHazard",
+	// mismo hechizo/duración) para impactos contra superficie (a petición
+	// del usuario 2026-09-27: en una pared, la variante "Drop" caía al
+	// suelo y se veía raro). Se coloca en el punto de impacto y se orienta
+	// por código con su eje Z local sobre la normal de la superficie
+	// (Combat::SpawnSurfaceHazard) -- lo que haría Align To Normal en un
+	// hazard nativo de proyectil, que con PlaceObjectAtMe no recibe ninguna
+	// normal.
+	inline constexpr RE::FormID kSurfaceHazardLocalFormID = 0x0C2;
 
 	// Duración máxima clavada en un actor (nerfeo pedido tras las primeras
 	// pruebas: sin esto, dejar el arma clavada mucho tiempo era demasiado
@@ -1559,7 +1580,7 @@ namespace Constants
 	// explosión se cambió de plantilla el 2026-08-29.
 	//
 	// Pendiente de que el usuario confirme en el juego que Damage/Force no
-	// duplican el daño que Combat::ApplyDamage ya calcula por separado
+	// duplican el daño que Combat::ApplyWeaponHit ya calcula por separado
 	// (ver CLAUDE.md, "Arquitectura de física de proyectiles") -- si se
 	// nota daño/empuje de más, poner esos dos campos a 0 en la Creation
 	// Kit (Radius puede quedarse, solo controla el tamaño visual).

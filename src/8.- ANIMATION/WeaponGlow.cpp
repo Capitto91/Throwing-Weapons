@@ -5,6 +5,7 @@
 #include "8.- ANIMATION/WeaponGlow.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <cmath>
@@ -465,6 +466,14 @@ namespace Animation
 
 	void StartWeaponGlow(RE::Actor& a_actor)
 	{
+		// Desactivable desde [VFX] WeaponLight (Settings). Retarget*/Stop
+		// ya son no-op sin destello activo; uno que ya se esté apagando
+		// termina su fundido con normalidad.
+		if (!Settings::GetWeaponLight()) {
+			logs::info("Animation::StartWeaponGlow: destello desactivado en la configuración ([VFX] WeaponLight).");
+			return;
+		}
+
 		if (g_activeHandle) {
 			if (g_phase != GlowPhase::kFadingOut) {
 				logs::warn("Animation::StartWeaponGlow: ya hay un destello activo -- no-op.");

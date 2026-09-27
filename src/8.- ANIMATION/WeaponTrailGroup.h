@@ -81,6 +81,9 @@ namespace Animation
 		void Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds);
 
 	private:
+		// Desactivable desde [VFX] Trail (Settings), consultado en cada
+		// Start: con false, Start/SetRoll/Update no hacen nada en ese tramo.
+		bool                        enabled{ false };
 		std::vector<WeaponTrail>    trails;
 		std::mt19937                randomEngine{ std::random_device{}() };
 		std::optional<RE::NiPoint3> previousRawPosition;

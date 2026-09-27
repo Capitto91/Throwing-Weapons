@@ -18,6 +18,7 @@ namespace Collision
 		RE::TESObjectREFR* target{ nullptr };            // referencia golpeada, si se pudo resolver (nullptr si no).
 		RE::COL_LAYER      layer{ RE::COL_LAYER::kUnidentified };  // capa de colisión de lo golpeado, solo diagnóstico.
 		float              fraction{ 0.0f };              // 0-1 a lo largo de a_from->a_to; ver SweepRaycast.
+		RE::NiPoint3       normal{};                      // normal de la superficie golpeada (unitaria, espacio del mundo, hkpShapeRayCastCollectorOutput::normal).
 	};
 
 	// Lanza un rayo desde a_from hasta a_to (unidades de juego) y devuelve

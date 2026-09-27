@@ -1396,6 +1396,10 @@ namespace Weapon
 		}
 		weaponState.SetStuckActorHandle({});
 
+		// El hazard eléctrico del impacto desaparece al desclavar el arma
+		// (a petición del usuario 2026-09-27), no al acabar su Lifetime.
+		Combat::RemoveImpactHazard();
+
 		// El botón de recuperar llega desde fuera de cualquier tick en
 		// marcha (a diferencia de la transición ida->clavada, que ocurre
 		// dentro del propio tick y se autodetiene devolviendo false) —
@@ -1472,6 +1476,7 @@ namespace Weapon
 			Combat::EndEmbeddedEffect(actor.get());
 		}
 		weaponState.SetStuckActorHandle({});
+		Combat::RemoveImpactHazard();
 
 		// Recuperación instantánea (interrupción por pantalla de carga,
 		// etc.), sin ninguna animación de por medio -- fundido inmediato,

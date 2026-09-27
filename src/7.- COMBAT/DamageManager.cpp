@@ -5,63 +5,24 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/GameOffsets.h"
+#include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "3.- WEAPON/WeaponManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
-#include <SimpleIni.h>
+#include <cmath>
+#include <optional>
 
 namespace Combat
 {
 	namespace
 	{
-		enum class DamageMode
-		{
-			kDirect,  // Valores fijos, configurados directamente.
-			kLevel    // Escala con el nivel del atacante (siempre el jugador en este plugin).
-		};
-
-		struct DamageConfig
-		{
-			DamageMode mode{ DamageMode::kDirect };
-
-			// Modo Direct: daño fijo del golpe inicial y del goteo
-			// continuo mientras sigue clavada.
-			float directHit{ 25.0f };
-			float directDot{ 6.0f };
-
-			// Modo Level: daño = base + porNivel * nivel del atacante —
-			// a niveles bajos hace poco daño, más a medida que sube.
-			float levelHitBase{ 5.0f };
-			float levelHitPerLevel{ 1.5f };
-			float levelDotBase{ 1.0f };
-			float levelDotPerLevel{ 0.3f };
-
-			// Punto 9: fracción del daño de golpe normal aplicada en un
-			// golpe durante el regreso (0 = sin daño, solo stagger).
-			float returnHitMultiplier{ 0.5f };
-		};
-
-		DamageConfig g_config{};
-
-		float ComputeHitDamage(RE::Actor* a_attacker)
-		{
-			if (g_config.mode == DamageMode::kLevel) {
-				const float level = a_attacker ? static_cast<float>(a_attacker->GetLevel()) : 1.0f;
-				return g_config.levelHitBase + g_config.levelHitPerLevel * level;
-			}
-
-			return g_config.directHit;
-		}
-
-		float ComputeDotDamage(RE::Actor* a_attacker)
-		{
-			if (g_config.mode == DamageMode::kLevel) {
-				const float level = a_attacker ? static_cast<float>(a_attacker->GetLevel()) : 1.0f;
-				return g_config.levelDotBase + g_config.levelDotPerLevel * level;
-			}
-
-			return g_config.directDot;
-		}
+		// Función nativa del motor que procesa un golpe ya calculado (ver
+		// GameOffsets::ResolveProcessHit para de dónde sale y por qué no
+		// es un ID de Address Library). Se resuelve una vez en Init;
+		// nullptr en VR o si el sitio del call no tiene la forma esperada,
+		// y entonces se usa el camino anterior (ApplyDamage + NotifyHit).
+		GameOffsets::tProcessHit g_processHit = nullptr;
 
 		void ApplyDamage(RE::Actor* a_target, float a_amount)
 		{
@@ -82,19 +43,17 @@ namespace Combat
 			}
 		}
 
-		// Actor::HandleHealthDamage + Actor::SetBeenAttacked (probado en
-		// el juego, ver CHANGELOG) no bastan por sí solos para que la IA
-		// reaccione (perseguir, aggro) ni para que un aliado lo tome como
-		// agresión. GameOffsets::DealDamage sí (ver esa declaración para
-		// de dónde sale el ID y por qué solo es segura en SE/AE) — pero
-		// calcula su propio daño a partir del arma que el atacante tenga
-		// equipada en ese instante, y durante todo nuestro ciclo la mano
-		// va vacía (arma real oculta, punto 2), así que ese importe no es
-		// el que queremos (con toda probabilidad, daño de puñetazo). Se
-		// usa aquí solo por su efecto colateral real (el aviso a IA de
-		// combate/crimen), revirtiendo lo que le haya hecho a la vida y
-		// aplicando en su lugar el importe ya calculado por nuestra
-		// configuración de daño (INI, ver ApplyDamage).
+		// Camino de respaldo (solo sin g_processHit: VR, o sitio del call
+		// irreconocible). Actor::HandleHealthDamage + Actor::SetBeenAttacked
+		// (probado en el juego, ver CHANGELOG) no bastan por sí solos para
+		// que la IA reaccione (perseguir, aggro) ni para que un aliado lo
+		// tome como agresión. GameOffsets::DealDamage (Actor::CombatHit) sí
+		// -- pero calcula su propio daño a partir del arma que el atacante
+		// tenga equipada en ese instante, y durante todo nuestro ciclo la
+		// mano va vacía (arma real oculta, punto 2), así que ese importe es
+		// daño de puñetazo. Se usa aquí solo por su efecto colateral (el
+		// aviso a IA de combate/crimen), revirtiendo lo que le haya hecho a
+		// la vida; el importe real ya lo aplicó ApplyDamage.
 		void NotifyHit(RE::Actor* a_attacker, RE::Actor* a_target, float a_amount)
 		{
 			auto* avOwner = a_target->AsActorValueOwner();
@@ -115,16 +74,161 @@ namespace Combat
 			if (avOwner && vanillaDelta > 0.0f) {
 				avOwner->RestoreActorValue(RE::ActorValue::kHealth, vanillaDelta);
 			}
+		}
 
-			// Diagnóstico (pendiente de confirmar en el juego): si "tras
-			// compensar" no coincide con "antes", el arma equipada en ese
-			// instante sí influye de otra forma no prevista, o
-			// RestoreActorValue no deshace exactamente lo que hizo
-			// DealDamage.
-			const float afterCompensation = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+		// Entrada REAL del arma en el inventario del atacante (el arma
+		// nunca sale del inventario durante el ciclo, solo se desequipa):
+		// conserva sus extraLists (mejora de forja, encantamiento aplicado
+		// por el jugador), que HitData::Populate lee para el daño. nullptr
+		// si no se encuentra (el llamante usa entonces una entrada temporal
+		// sin extras).
+		RE::InventoryEntryData* FindInventoryEntry(RE::Actor* a_owner, RE::TESBoundObject* a_object)
+		{
+			auto* changes = a_owner ? a_owner->GetInventoryChanges() : nullptr;
+			if (!changes || !changes->entryList) {
+				return nullptr;
+			}
+
+			for (auto* entry : *changes->entryList) {
+				if (entry && entry->object == a_object) {
+					return entry;
+				}
+			}
+			return nullptr;
+		}
+
+		// Golpe con el daño real del arma lanzada, escalado por a_mult
+		// (Settings: 75% en el golpe inicial, 25% en cada golpe del
+		// regreso). HitData::Populate calcula el daño como un golpe
+		// cuerpo a cuerpo normal con esa arma (perks, armadura del
+		// objetivo, sigilo, críticos), y la función nativa de procesar
+		// golpe lo aplica con todo el pipeline del motor (reacción de
+		// golpe, aviso a IA, muerte con autoría). El stagger que calcule el
+		// motor se anula (hitData.stagger = 0): el del regreso lo garantiza
+		// el nuestro propio (ApplyReturnHit), y en el golpe inicial el
+		// objetivo queda paralizado -- sin esto podría tambalearse dos
+		// veces (decisión del usuario 2026-09-27).
+		void ApplyWeaponHit(RE::Actor* a_attacker, RE::Actor* a_target, float a_mult, const RE::NiPoint3& a_hitPosition)
+		{
+			auto* manager = Weapon::WeaponManager::GetSingleton();
+			auto* weapon = manager ? manager->GetActiveWeapon() : nullptr;
+			if (!weapon) {
+				logs::warn("Combat::ApplyWeaponHit: no hay arma activa en el ciclo, golpe sin daño.");
+				return;
+			}
+
+			std::optional<RE::InventoryEntryData> tempEntry;
+			auto*                                 entry = FindInventoryEntry(a_attacker, weapon);
+			if (!entry) {
+				tempEntry.emplace(weapon, 1);
+				entry = std::addressof(*tempEntry);
+			}
+
+			auto* hitData = RE::HitData::Create(a_attacker, a_target, entry, false);
+			if (!hitData) {
+				logs::warn("Combat::ApplyWeaponHit: HitData::Create devolvió nullptr.");
+				return;
+			}
+
+			const float fullDamage = hitData->totalDamage;
+			hitData->totalDamage = fullDamage * a_mult;
+			hitData->stagger = 0.0f;
+			hitData->hitPosition = a_hitPosition;
+			auto direction = a_target->GetPosition() - a_attacker->GetPosition();
+			if (direction.Length() > 0.0f) {
+				direction.Unitize();
+			}
+			hitData->hitDirection = direction;
+
+			auto*       avOwner = a_target->AsActorValueOwner();
+			const float before = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
+
+			if (g_processHit) {
+				g_processHit(a_target, *hitData);
+			} else {
+				ApplyDamage(a_target, hitData->totalDamage);
+				NotifyHit(a_attacker, a_target, hitData->totalDamage);
+			}
+
+			const float after = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
 			logs::info(
-				"Combat::NotifyHit: \"{}\" vida {:.1f} -> {:.1f} (DealDamage, sin usar) -> {:.1f} (compensado, debe = {:.1f})",
-				a_target->GetName(), before, afterDealDamage, afterCompensation, before);
+				"Combat::ApplyWeaponHit: \"{}\" daño arma {:.1f} x {:.2f} = {:.1f} ({}) -> vida {:.1f} -> {:.1f}.",
+				a_target->GetName(), fullDamage, a_mult, fullDamage * a_mult,
+				g_processHit ? "pipeline nativo" : "respaldo", before, after);
+
+			hitData->~HitData();
+			RE::free(hitData);
+		}
+
+		RE::BGSHazard* LookupHazardForm(RE::FormID a_localFormID)
+		{
+			RE::BGSHazard* form = nullptr;
+			if (auto* dataHandler = RE::TESDataHandler::GetSingleton()) {
+				form = dataHandler->LookupForm<RE::BGSHazard>(a_localFormID, Constants::kSoundPluginName);
+			}
+			if (!form) {
+				logs::warn("Combat::LookupHazardForm: no se encontró el BGSHazard (FormID local 0x{:03X}) en \"{}\".",
+					a_localFormID, Constants::kSoundPluginName);
+			}
+			return form;
+		}
+
+		// Hazards eléctricos propios resueltos una sola vez por sesión
+		// (static local, mismo patrón que GetImpactExplosionForm en
+		// WeaponImpactVFX.cpp).
+		RE::BGSHazard* GetActorHazardForm()
+		{
+			static RE::BGSHazard* cache = LookupHazardForm(Constants::kEmbeddedHazardLocalFormID);
+			return cache;
+		}
+
+		RE::BGSHazard* GetSurfaceHazardForm()
+		{
+			static RE::BGSHazard* cache = LookupHazardForm(Constants::kSurfaceHazardLocalFormID);
+			return cache;
+		}
+
+		// Hazard del impacto actual, para quitarlo al desclavar el arma
+		// (RemoveImpactHazard). Solo hay un ciclo de lanzamiento a la vez,
+		// así que basta uno. g_hazardGeneration cubre la carrera con la
+		// colocación diferida un tick (Throw::LaunchWeapon): si se desclava
+		// antes de que llegue a colocarse, la generación ya no coincide y
+		// no se coloca. Todo en el hilo principal.
+		RE::ObjectRefHandle g_activeHazard;
+		std::uint32_t       g_hazardGeneration = 0;
+
+		// Coloca a_form sobre a_anchor y lo registra como hazard activo.
+		// ownerActor = atacante para atribuirle el daño (campo de
+		// commonlibsse-ng, accessor versionado GetHazardRuntimeData; sin
+		// confirmar en el juego que el motor lo use para la autoría).
+		RE::TESObjectREFR* PlaceHazard(RE::BGSHazard* a_form, RE::Actor* a_attacker, RE::TESObjectREFR& a_anchor, std::uint32_t a_generation)
+		{
+			if (!a_form) {
+				return nullptr;
+			}
+			if (a_generation != g_hazardGeneration) {
+				logs::info("Combat::PlaceHazard: el arma ya se desclavó antes de colocarlo, se omite.");
+				return nullptr;
+			}
+
+			auto ref = a_anchor.PlaceObjectAtMe(a_form, false);
+			if (!ref) {
+				logs::warn("Combat::PlaceHazard: PlaceObjectAtMe devolvió nullptr.");
+				return nullptr;
+			}
+
+			if (auto* hazard = ref->As<RE::Hazard>()) {
+				hazard->GetHazardRuntimeData().ownerActor = RE::ActorHandle(a_attacker);
+			} else {
+				logs::warn("Combat::PlaceHazard: la referencia colocada no es un RE::Hazard, sin dueño asignado.");
+			}
+
+			if (auto previous = g_activeHazard.get()) {
+				previous->Disable();
+				previous->SetDelete(true);
+			}
+			g_activeHazard = ref->CreateRefHandle();
+			return ref.get();
 		}
 
 		// Formularios resueltos por EditorID una sola vez, no en cada golpe/
@@ -159,32 +263,12 @@ namespace Combat
 
 	void Init()
 	{
-		CSimpleIniA ini;
-		ini.SetUnicode();
-
-		if (ini.LoadFile(Constants::kInputConfigPath) < 0) {
-			logs::warn("Combat::Init: no se encontró {}, se usa daño directo por defecto.", Constants::kInputConfigPath);
-			return;
+		g_processHit = GameOffsets::ResolveProcessHit();
+		if (g_processHit) {
+			logs::info("Combat::Init: función nativa de procesar golpe resuelta, se usa el pipeline de combate real.");
+		} else {
+			logs::warn("Combat::Init: no se pudo resolver la función nativa de procesar golpe (VR, o sitio del call inesperado), se usa el camino de respaldo.");
 		}
-
-		const std::string_view mode = ini.GetValue("Damage", "Mode", "Direct");
-		g_config.mode = mode == "Level" ? DamageMode::kLevel : DamageMode::kDirect;
-
-		g_config.directHit = static_cast<float>(ini.GetDoubleValue("Damage", "HitDamage", g_config.directHit));
-		g_config.directDot = static_cast<float>(ini.GetDoubleValue("Damage", "DotDamage", g_config.directDot));
-		g_config.levelHitBase = static_cast<float>(ini.GetDoubleValue("Damage", "LevelHitBase", g_config.levelHitBase));
-		g_config.levelHitPerLevel = static_cast<float>(ini.GetDoubleValue("Damage", "LevelHitPerLevel", g_config.levelHitPerLevel));
-		g_config.levelDotBase = static_cast<float>(ini.GetDoubleValue("Damage", "LevelDotBase", g_config.levelDotBase));
-		g_config.levelDotPerLevel = static_cast<float>(ini.GetDoubleValue("Damage", "LevelDotPerLevel", g_config.levelDotPerLevel));
-		g_config.returnHitMultiplier = static_cast<float>(ini.GetDoubleValue("Damage", "ReturnHitMultiplier", g_config.returnHitMultiplier));
-
-		logs::info(
-			"Combat::Init: modo de daño = {} (golpe: {:.1f}, dot: {:.1f} / nivel: base {:.1f}+{:.1f}, dot base {:.1f}+{:.1f}), multiplicador golpe en regreso = {:.2f}",
-			g_config.mode == DamageMode::kLevel ? "Level" : "Direct",
-			g_config.directHit, g_config.directDot,
-			g_config.levelHitBase, g_config.levelHitPerLevel,
-			g_config.levelDotBase, g_config.levelDotPerLevel,
-			g_config.returnHitMultiplier);
 	}
 
 	void BeginEmbeddedEffect(
@@ -199,9 +283,11 @@ namespace Combat
 			return;
 		}
 
-		const float hitDamage = ComputeHitDamage(a_attacker);
-		ApplyDamage(a_target, hitDamage);
-		NotifyHit(a_attacker, a_target, hitDamage);
+		// Posición de la réplica en el instante del impacto (punto de
+		// golpe para el motor); respaldo, la del objetivo.
+		auto               impactReplica = a_replicaHandle.get();
+		const RE::NiPoint3 hitPosition = impactReplica ? impactReplica->GetPosition() : a_target->GetPosition();
+		ApplyWeaponHit(a_attacker, a_target, Settings::GetThrowHitMult(), hitPosition);
 
 		// Quién es inmune (dragones, criaturas concretas...) lo decide
 		// solo la condición del propio efecto en la Creation Kit — no se
@@ -254,7 +340,7 @@ namespace Combat
 		// Constants::kSpinStraightenLeadTime para el porqué) -- el arma se
 		// queda congelada en el ángulo de vuelo arbitrario que tuviera al
 		// golpear, sin ningún ajuste posterior.
-		auto token = Physics::StartTickLoop(a_replicaHandle, [a_attacker, targetHandle, localOffset, boneName, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, dotElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		auto token = Physics::StartTickLoop(a_replicaHandle, [targetHandle, localOffset, boneName, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
 				// El actor ya no existe (p. ej. la celda se ha
@@ -304,18 +390,80 @@ namespace Combat
 				return false;
 			}
 
-			dotElapsed += a_deltaSeconds;
-			if (dotElapsed >= Constants::kEmbeddedDamageInterval) {
-				dotElapsed = 0.0f;
-				const float dotDamage = ComputeDotDamage(a_attacker);
-				ApplyDamage(target.get(), dotDamage);
-				NotifyHit(a_attacker, target.get(), dotDamage);
-			}
-
 			return true;
 		});
 
 		a_onTickStarted(token);
+	}
+
+	std::uint32_t GetHazardGeneration()
+	{
+		return g_hazardGeneration;
+	}
+
+	void SpawnActorHazard(RE::Actor* a_attacker, RE::Actor& a_target, std::uint32_t a_generation)
+	{
+		// Desactivable desde [Damage] HazardOnActor (Settings). Sin hazard
+		// no hay daño continuo mientras el arma sigue clavada: solo el
+		// golpe inicial.
+		if (!Settings::GetHazardOnActor()) {
+			logs::info("Combat::SpawnActorHazard: desactivado en la configuración (HazardOnActor), no se coloca.");
+			return;
+		}
+
+		if (auto* ref = PlaceHazard(GetActorHazardForm(), a_attacker, a_target, a_generation)) {
+			const auto pos = ref->GetPosition();
+			logs::info("Combat::SpawnActorHazard: hazard colocado sobre \"{}\" en ({:.1f},{:.1f},{:.1f}).",
+				a_target.GetName(), pos.x, pos.y, pos.z);
+		}
+	}
+
+	void SpawnSurfaceHazard(RE::Actor* a_attacker, RE::TESObjectREFR& a_anchor, const RE::NiPoint3& a_point, const RE::NiPoint3& a_normal, std::uint32_t a_generation)
+	{
+		// Desactivable desde [Damage] HazardOnSurface (Settings).
+		if (!Settings::GetHazardOnSurface()) {
+			logs::info("Combat::SpawnSurfaceHazard: desactivado en la configuración (HazardOnSurface), no se coloca.");
+			return;
+		}
+
+		auto* ref = PlaceHazard(GetSurfaceHazardForm(), a_attacker, a_anchor, a_generation);
+		if (!ref) {
+			return;
+		}
+
+		// Eje Z local del hazard sobre la normal. Convención de ángulos de
+		// una referencia: angle.z = rumbo (0 = +Y, creciente hacia +X),
+		// angle.x = cabeceo positivo hacia abajo del eje "adelante" --
+		// que, para el eje "arriba", es inclinarlo hacia delante: arriba =
+		// (sin z·sin x, cos z·sin x, cos x). Despejando para arriba = n:
+		// x = acos(n.z), z = atan2(n.x, n.y). Suelo (n = +Z) -> sin giro.
+		// Suposición sin verificar: que la malla del hazard
+		// (ShockWallFX01.nif) está pensada con Z como "arriba".
+		RE::NiPoint3 n = a_normal;
+		if (n.Length() < 0.001f) {
+			n = { 0.0f, 0.0f, 1.0f };
+		} else {
+			n.Unitize();
+		}
+		const float nz = n.z > 1.0f ? 1.0f : (n.z < -1.0f ? -1.0f : n.z);
+		const RE::NiPoint3 angle{ std::acos(nz), 0.0f, std::atan2(n.x, n.y) };
+
+		ref->SetPosition(a_point);
+		ref->SetAngle(angle);
+
+		logs::info("Combat::SpawnSurfaceHazard: hazard en ({:.1f},{:.1f},{:.1f}), normal ({:.2f},{:.2f},{:.2f}), ángulo x={:.2f} z={:.2f} rad.",
+			a_point.x, a_point.y, a_point.z, n.x, n.y, n.z, angle.x, angle.z);
+	}
+
+	void RemoveImpactHazard()
+	{
+		++g_hazardGeneration;
+		if (auto hazard = g_activeHazard.get()) {
+			hazard->Disable();
+			hazard->SetDelete(true);
+			logs::info("Combat::RemoveImpactHazard: hazard retirado al desclavar el arma.");
+		}
+		g_activeHazard = {};
 	}
 
 	void EndEmbeddedEffect(RE::Actor* a_target)
@@ -329,7 +477,7 @@ namespace Combat
 		}
 	}
 
-	void ApplyReturnHit(RE::Actor* a_attacker, RE::Actor* a_target)
+	void ApplyReturnHit(RE::Actor* a_attacker, RE::Actor* a_target, const RE::NiPoint3& a_hitPosition)
 	{
 		if (!a_attacker || !a_target) {
 			return;
@@ -337,16 +485,18 @@ namespace Combat
 
 		logs::info("Combat::ApplyReturnHit: golpe durante el regreso contra \"{}\".", a_target->GetName());
 
-		// El aviso de golpe (NotifyHit) se dispara siempre, aunque el
-		// daño esté desactivado por INI (returnHitMultiplier == 0): la
-		// reacción del objetivo (perseguir, o que un aliado se lo tome
-		// como agresión) no debe depender de esa opción, solo de que
-		// hubo un golpe de verdad.
-		const float amount = g_config.returnHitMultiplier > 0.0f ? ComputeHitDamage(a_attacker) * g_config.returnHitMultiplier : 0.0f;
-		if (amount > 0.0f) {
-			ApplyDamage(a_target, amount);
+		// El golpe se aplica siempre, aunque el multiplicador sea 0 (INI
+		// [Damage] ReturnHitMultiplier): la reacción del objetivo
+		// (perseguir, o que un aliado se lo tome como agresión) no debe
+		// depender de esa opción, solo de que hubo un golpe de verdad.
+		ApplyWeaponHit(a_attacker, a_target, Settings::GetReturnHitMult(), a_hitPosition);
+
+		// Desactivable desde [Damage] ReturnStagger (Settings): el golpe
+		// sigue aplicándose, solo se omite el tambaleo.
+		if (!Settings::GetReturnStagger()) {
+			logs::info("Combat::ApplyReturnHit: stagger desactivado en la configuración (ReturnStagger).");
+			return;
 		}
-		NotifyHit(a_attacker, a_target, amount);
 
 		// Mejora Kratos #2 (PLAN-mejoras-kratos.md): stagger escrito
 		// directamente en el animation graph del actor golpeado, en vez de

@@ -328,11 +328,16 @@ namespace Return
 				// regreso (hitActors), para no repetirlo tick a tick mientras
 				// la réplica pasa cerca de él.
 				const auto hit = Collision::SweepRaycast(previousPos, nextPos, Constants::kThrowCollisionRadius, a_player, &a_refr);
-				if (auto* actor = hit.hit && hit.target ? hit.target->As<RE::Actor>() : nullptr) {
+				// Los cadáveres se ignoran: sin esto, un objetivo ya
+				// muerto (p. ej. por el hazard mientras estaba clavada)
+				// recibía igualmente golpe y stagger (visto en el log,
+				// 2026-09-27).
+				auto* actor = hit.hit && hit.target ? hit.target->As<RE::Actor>() : nullptr;
+				if (actor && !actor->IsDead()) {
 					RE::ActorHandle actorHandle(actor);
 					if (std::ranges::find(hitActors, actorHandle) == hitActors.end()) {
 						hitActors.push_back(actorHandle);
-						Combat::ApplyReturnHit(a_player, actor);
+						Combat::ApplyReturnHit(a_player, actor, hit.point);
 					}
 				}
 

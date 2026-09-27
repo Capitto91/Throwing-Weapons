@@ -14,6 +14,8 @@ namespace Settings
 	{
 		constexpr const char* kControlsSection = "Controls";
 		constexpr const char* kThrowSection = "Throw";
+		constexpr const char* kDamageSection = "Damage";
+		constexpr const char* kVfxSection = "VFX";
 
 		// Nombres de clave de [Controls] sin cambiar (AimDevice/AimKeyCode)
 		// aunque ya no haya fase de apuntado: renombrarlas rompería los INI
@@ -22,12 +24,32 @@ namespace Settings
 		constexpr const char* kKeyCodeKey = "AimKeyCode";
 		constexpr const char* kSpeedKey = "Speed";
 		constexpr const char* kGravityMultKey = "GravityMultiplier";
+		constexpr const char* kThrowHitMultKey = "ThrowHitMultiplier";
+		constexpr const char* kReturnHitMultKey = "ReturnHitMultiplier";
+		constexpr const char* kReturnStaggerKey = "ReturnStagger";
+		constexpr const char* kHazardOnActorKey = "HazardOnActor";
+		constexpr const char* kHazardOnSurfaceKey = "HazardOnSurface";
+		constexpr const char* kImpactExplosionKey = "ImpactExplosion";
+		constexpr const char* kTrailKey = "Trail";
+		constexpr const char* kParticlesKey = "Particles";
+		constexpr const char* kWeaponLightKey = "WeaponLight";
+		constexpr const char* kHandEffectKey = "HandEffect";
 
 		struct Values
 		{
 			ActionBinding binding{ kDefaultActionBinding };
 			float         throwSpeed{ kDefaultThrowSpeed };
 			float         throwGravityMult{ kDefaultThrowGravityMult };
+			float         throwHitMult{ kDefaultThrowHitMult };
+			float         returnHitMult{ kDefaultReturnHitMult };
+			bool          returnStagger{ kDefaultReturnStagger };
+			bool          hazardOnActor{ kDefaultHazardOnActor };
+			bool          hazardOnSurface{ kDefaultHazardOnSurface };
+			bool          impactExplosion{ kDefaultImpactExplosion };
+			bool          trail{ kDefaultTrail };
+			bool          particles{ kDefaultParticles };
+			bool          weaponLight{ kDefaultWeaponLight };
+			bool          handEffect{ kDefaultHandEffect };
 		};
 
 		std::mutex g_mutex;
@@ -79,6 +101,16 @@ namespace Settings
 			loaded.binding.keyCode = static_cast<std::uint32_t>(ini.GetLongValue(kControlsSection, kKeyCodeKey, static_cast<long>(kDefaultActionBinding.keyCode)));
 			loaded.throwSpeed = Clamp(static_cast<float>(ini.GetDoubleValue(kThrowSection, kSpeedKey, kDefaultThrowSpeed)), kThrowSpeedMin, kThrowSpeedMax);
 			loaded.throwGravityMult = Clamp(static_cast<float>(ini.GetDoubleValue(kThrowSection, kGravityMultKey, kDefaultThrowGravityMult)), kThrowGravityMultMin, kThrowGravityMultMax);
+			loaded.throwHitMult = Clamp(static_cast<float>(ini.GetDoubleValue(kDamageSection, kThrowHitMultKey, kDefaultThrowHitMult)), kHitMultMin, kHitMultMax);
+			loaded.returnHitMult = Clamp(static_cast<float>(ini.GetDoubleValue(kDamageSection, kReturnHitMultKey, kDefaultReturnHitMult)), kHitMultMin, kHitMultMax);
+			loaded.returnStagger = ini.GetBoolValue(kDamageSection, kReturnStaggerKey, kDefaultReturnStagger);
+			loaded.hazardOnActor = ini.GetBoolValue(kDamageSection, kHazardOnActorKey, kDefaultHazardOnActor);
+			loaded.hazardOnSurface = ini.GetBoolValue(kDamageSection, kHazardOnSurfaceKey, kDefaultHazardOnSurface);
+			loaded.impactExplosion = ini.GetBoolValue(kDamageSection, kImpactExplosionKey, kDefaultImpactExplosion);
+			loaded.trail = ini.GetBoolValue(kVfxSection, kTrailKey, kDefaultTrail);
+			loaded.particles = ini.GetBoolValue(kVfxSection, kParticlesKey, kDefaultParticles);
+			loaded.weaponLight = ini.GetBoolValue(kVfxSection, kWeaponLightKey, kDefaultWeaponLight);
+			loaded.handEffect = ini.GetBoolValue(kVfxSection, kHandEffectKey, kDefaultHandEffect);
 		}
 
 		{
@@ -86,8 +118,10 @@ namespace Settings
 			g_values = loaded;
 		}
 
-		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f}.",
-			DeviceToString(loaded.binding.device), loaded.binding.keyCode, loaded.throwSpeed, loaded.throwGravityMult);
+		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f} | daño ida {:.2f} / regreso {:.2f} | stagger regreso {} | hazard actor {} / superficie {} | explosión {} | VFX trail {} / partículas {} / luz {} / manos {}.",
+			DeviceToString(loaded.binding.device), loaded.binding.keyCode, loaded.throwSpeed, loaded.throwGravityMult, loaded.throwHitMult, loaded.returnHitMult,
+			loaded.returnStagger, loaded.hazardOnActor, loaded.hazardOnSurface, loaded.impactExplosion,
+			loaded.trail, loaded.particles, loaded.weaponLight, loaded.handEffect);
 	}
 
 	bool Save()
@@ -108,6 +142,16 @@ namespace Settings
 		ini.SetLongValue(kControlsSection, kKeyCodeKey, static_cast<long>(current.binding.keyCode));
 		ini.SetDoubleValue(kThrowSection, kSpeedKey, current.throwSpeed);
 		ini.SetDoubleValue(kThrowSection, kGravityMultKey, current.throwGravityMult);
+		ini.SetDoubleValue(kDamageSection, kThrowHitMultKey, current.throwHitMult);
+		ini.SetDoubleValue(kDamageSection, kReturnHitMultKey, current.returnHitMult);
+		ini.SetBoolValue(kDamageSection, kReturnStaggerKey, current.returnStagger);
+		ini.SetBoolValue(kDamageSection, kHazardOnActorKey, current.hazardOnActor);
+		ini.SetBoolValue(kDamageSection, kHazardOnSurfaceKey, current.hazardOnSurface);
+		ini.SetBoolValue(kDamageSection, kImpactExplosionKey, current.impactExplosion);
+		ini.SetBoolValue(kVfxSection, kTrailKey, current.trail);
+		ini.SetBoolValue(kVfxSection, kParticlesKey, current.particles);
+		ini.SetBoolValue(kVfxSection, kWeaponLightKey, current.weaponLight);
+		ini.SetBoolValue(kVfxSection, kHandEffectKey, current.handEffect);
 
 		// Sin firma BOM: el INI distribuido no la lleva.
 		if (ini.SaveFile(Constants::kInputConfigPath, false) < 0) {
@@ -159,5 +203,125 @@ namespace Settings
 	{
 		std::scoped_lock lock(g_mutex);
 		g_values.throwGravityMult = Clamp(a_mult, kThrowGravityMultMin, kThrowGravityMultMax);
+	}
+
+	float GetThrowHitMult()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.throwHitMult;
+	}
+
+	void SetThrowHitMult(float a_mult)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.throwHitMult = Clamp(a_mult, kHitMultMin, kHitMultMax);
+	}
+
+	float GetReturnHitMult()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.returnHitMult;
+	}
+
+	void SetReturnHitMult(float a_mult)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.returnHitMult = Clamp(a_mult, kHitMultMin, kHitMultMax);
+	}
+
+	bool GetReturnStagger()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.returnStagger;
+	}
+
+	void SetReturnStagger(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.returnStagger = a_enabled;
+	}
+
+	bool GetHazardOnActor()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.hazardOnActor;
+	}
+
+	void SetHazardOnActor(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.hazardOnActor = a_enabled;
+	}
+
+	bool GetHazardOnSurface()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.hazardOnSurface;
+	}
+
+	void SetHazardOnSurface(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.hazardOnSurface = a_enabled;
+	}
+
+	bool GetImpactExplosion()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.impactExplosion;
+	}
+
+	void SetImpactExplosion(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.impactExplosion = a_enabled;
+	}
+
+	bool GetTrail()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.trail;
+	}
+
+	void SetTrail(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.trail = a_enabled;
+	}
+
+	bool GetParticles()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.particles;
+	}
+
+	void SetParticles(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.particles = a_enabled;
+	}
+
+	bool GetWeaponLight()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.weaponLight;
+	}
+
+	void SetWeaponLight(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.weaponLight = a_enabled;
+	}
+
+	bool GetHandEffect()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.handEffect;
+	}
+
+	void SetHandEffect(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.handEffect = a_enabled;
 	}
 }

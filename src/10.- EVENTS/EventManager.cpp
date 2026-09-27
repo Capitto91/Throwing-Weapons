@@ -7,6 +7,7 @@
 #include "10.- EVENTS/OARFunctions.h"
 #include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
+#include "14.- UI/ConfigMenu.h"
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
@@ -294,6 +295,10 @@ namespace Events
 				// Mismo criterio que OAR: solo necesita que la DLL de True
 				// Directional Movement ya esté cargada (ver TDMBridge.h).
 				TDMBridge::Init();
+
+				// Menú de configuración en el juego (opcional, SKSE Menu
+				// Framework): aquí y no antes -- ver ConfigMenu.h.
+				UI::ConfigMenu::Register();
 				break;
 			case SKSE::MessagingInterface::kInputLoaded:
 				// Los dispositivos de entrada ya están listos para

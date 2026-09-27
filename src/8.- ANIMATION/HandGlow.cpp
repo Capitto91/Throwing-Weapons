@@ -4,6 +4,7 @@
 #include "8.- ANIMATION/HandGlow.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 
 namespace Animation
 {
@@ -43,6 +44,11 @@ namespace Animation
 
 	void TriggerHandGlow(RE::Actor& a_actor)
 	{
+		// Desactivable desde [VFX] HandEffect (Settings).
+		if (!Settings::GetHandEffect()) {
+			return;
+		}
+
 		auto* artObject = GetHandGlowArtObject();
 		if (!artObject) {
 			return;

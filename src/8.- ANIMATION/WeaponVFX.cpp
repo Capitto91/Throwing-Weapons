@@ -7,6 +7,7 @@
 #include "8.- ANIMATION/WeaponVFX.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <atomic>
@@ -437,6 +438,12 @@ namespace Animation
 
 	void StartMovementVFXOnActor(RE::Actor& a_actor)
 	{
+		// Desactivable desde [VFX] Particles (Settings). Retarget/Stop/
+		// FadeOut ya son no-op sin VFX activo.
+		if (!Settings::GetParticles()) {
+			return;
+		}
+
 		auto* handNode = a_actor.GetNodeByName("WEAPON");
 		if (!handNode) {
 			logs::warn("Animation::StartMovementVFXOnActor: hueso \"WEAPON\" no encontrado.");
@@ -474,6 +481,12 @@ namespace Animation
 
 	void StartMovementVFXOnReplica(RE::ObjectRefHandle a_handle)
 	{
+		// Desactivable desde [VFX] Particles (Settings), ver
+		// StartMovementVFXOnActor.
+		if (!Settings::GetParticles()) {
+			return;
+		}
+
 		auto  replica = a_handle.get();
 		auto* root = replica ? replica->Get3D() : nullptr;
 		if (!replica || !root) {

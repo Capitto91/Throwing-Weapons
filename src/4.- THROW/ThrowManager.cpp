@@ -399,6 +399,31 @@ namespace Throw
 						}
 					});
 
+					// Hazard eléctrico en cualquier impacto de la ida
+					// (actor o superficie, a petición del usuario
+					// 2026-09-27), diferido un tick por el mismo motivo que
+					// el VFX de arriba. Contra un actor, sobre él (cae a
+					// sus pies); contra una superficie, en el punto de
+					// impacto real (hit.point, no stickPoint, que está
+					// retrocedido) orientado sobre su normal. El actor va
+					// por handle, sin punteros crudos que puedan morir
+					// antes de que despierte el hilo. La generación evita
+					// colocarlo si el arma se desclava en ese tick.
+					const auto hazardGeneration = Combat::GetHazardGeneration();
+					if (actor) {
+						(void)Scheduler::After(Constants::kTickInterval, [a_shooter, targetHandle = RE::ActorHandle(actor), hazardGeneration]() {
+							if (auto target = targetHandle.get(); target && a_shooter) {
+								Combat::SpawnActorHazard(a_shooter, *target, hazardGeneration);
+							}
+						});
+					} else {
+						(void)Scheduler::After(Constants::kTickInterval, [a_shooter, point = hit.point, normal = hit.normal, hazardGeneration]() {
+							if (a_shooter) {
+								Combat::SpawnSurfaceHazard(a_shooter, *a_shooter, point, normal, hazardGeneration);
+							}
+						});
+					}
+
 					// Punto 10 (segunda mitad, caso impacto): eliminado el
 					// enderezado al clavarse (decisión del usuario,
 					// 2026-08-08, ver Constants::kSpinStraightenLeadTime

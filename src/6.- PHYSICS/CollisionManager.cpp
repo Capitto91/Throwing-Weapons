@@ -99,7 +99,12 @@ namespace Collision
 			return {};
 		}
 
-		return HitResult{ true, point, target, layer, pickData.rayOutput.hitFraction };
+		// La normal de Havok es un vector unitario, sin escala de mundo que
+		// deshacer (a diferencia de from/to).
+		alignas(16) float normal[4]{};
+		_mm_store_ps(normal, pickData.rayOutput.normal.quad);
+
+		return HitResult{ true, point, target, layer, pickData.rayOutput.hitFraction, RE::NiPoint3{ normal[0], normal[1], normal[2] } };
 	}
 
 	HitResult RaycastSolid(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to, RE::TESObjectREFR* a_ignore1, RE::TESObjectREFR* a_ignore2)

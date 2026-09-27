@@ -3,6 +3,7 @@
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 
 #include <algorithm>
 #include <numbers>
@@ -32,6 +33,12 @@ namespace Animation
 
 	void WeaponTrailGroup::Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset)
 	{
+		enabled = Settings::GetTrail();
+		if (!enabled) {
+			logs::info("Animation::WeaponTrailGroup::Start: estela desactivada en la configuración ([VFX] Trail).");
+			return;
+		}
+
 		for (std::size_t i = 0; i < trails.size(); ++i) {
 			trails[i].Start(a_cell, a_initialPosition, a_upReference, ComputeCopyRoll(a_roll, i), a_anchorWorldOffset);
 		}
@@ -47,6 +54,10 @@ namespace Animation
 
 	void WeaponTrailGroup::SetRoll(float a_roll)
 	{
+		if (!enabled) {
+			return;
+		}
+
 		for (std::size_t i = 0; i < trails.size(); ++i) {
 			trails[i].SetRoll(ComputeCopyRoll(a_roll, i));
 		}
@@ -54,6 +65,10 @@ namespace Animation
 
 	void WeaponTrailGroup::Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds)
 	{
+		if (!enabled) {
+			return;
+		}
+
 		// Efecto rayo (ver cabecera de WeaponTrailGroup.h) -- base
 		// perpendicular a la dirección de avance REAL (sin desviar),
 		// calculada una única vez por tick; el sorteo del desvío en sí
