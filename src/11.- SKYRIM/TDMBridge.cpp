@@ -1,4 +1,20 @@
 // Implementación del puente opcional hacia True Directional Movement.
+//
+// Atribución:
+//   Parte de este archivo es código copiado de True Directional Movement,
+//   de ersh1 -- https://github.com/ersh1/TrueDirectionalMovement
+//   Licencia GPL-3.0 (misma licencia que este proyecto).
+//   Copiado de ese repositorio:
+//   - PredictAimProjectile y ApproximatelyEqual (src/Utils.cpp, src/Utils.h),
+//     sin cambios de lógica. La función original de TDM está adaptada a su
+//     vez de http://ringofblades.com/Blades/Code/PredictiveAim.cs (fuente
+//     citada en el propio código de TDM).
+//   - La elección del punto del cuerpo al que apuntar, reproducida en
+//     GetTargetPoint a partir de DirectionalMovementHandler::GetTargetPoints
+//     y DirectionalMovementHandler::GetTargetPosition
+//     (src/DirectionalMovementHandler.cpp).
+//   El header de su API (src/13.- EXTERNAL/TrueDirectionalMovement/
+//   TrueDirectionalMovementAPI.h) es una copia literal, sin modificar.
 
 #include "11.- SKYRIM/TDMBridge.h"
 

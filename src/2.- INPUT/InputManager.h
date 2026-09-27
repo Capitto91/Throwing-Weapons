@@ -6,14 +6,6 @@
 
 namespace Input
 {
-	// Dispositivo y código de botón configurados por el usuario para la
-	// acción de lanzar / recuperar el arma (un toque: pulsar y soltar).
-	struct AimBinding
-	{
-		RE::INPUT_DEVICE device{ RE::INPUT_DEVICE::kKeyboard };
-		std::uint32_t    keyCode{ 0 };
-	};
-
 	class InputManager final : public RE::BSTEventSink<RE::InputEvent*>
 	{
 	public:
@@ -24,8 +16,10 @@ namespace Input
 		InputManager& operator=(const InputManager&) = delete;
 		InputManager& operator=(InputManager&&) = delete;
 
-		// Carga la configuración de controles y se registra para recibir
-		// eventos de entrada. Debe llamarse una única vez, tras kInputLoaded.
+		// Se registra para recibir eventos de entrada. Debe llamarse una
+		// única vez, tras kInputLoaded. La tecla no se guarda aquí: se
+		// consulta en Settings en cada evento, así que un cambio desde el
+		// menú del juego se aplica al instante.
 		void Init();
 
 	protected:
@@ -35,10 +29,7 @@ namespace Input
 		InputManager() = default;
 		~InputManager() override = default;
 
-		void LoadConfig();
-		bool IsAimBinding(const RE::ButtonEvent* a_event) const;
-
-		AimBinding aimBinding{};
+		static bool IsActionBinding(const RE::ButtonEvent* a_event);
 	};
 
 	// Bloquea/desbloquea el movimiento del jugador (RE::ControlMap, no una

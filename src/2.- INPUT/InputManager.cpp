@@ -3,28 +3,12 @@
 
 #include "2.- INPUT/InputManager.h"
 
-#include "1.- CORE/Constants.h"
+#include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "3.- WEAPON/WeaponManager.h"
 
-#include <SimpleIni.h>
-
 namespace Input
 {
-	namespace
-	{
-		RE::INPUT_DEVICE ParseDevice(std::string_view a_value)
-		{
-			if (a_value == "Mouse") {
-				return RE::INPUT_DEVICE::kMouse;
-			}
-			if (a_value == "Gamepad") {
-				return RE::INPUT_DEVICE::kGamepad;
-			}
-			return RE::INPUT_DEVICE::kKeyboard;
-		}
-	}
-
 	InputManager* InputManager::GetSingleton()
 	{
 		static InputManager singleton;
@@ -33,37 +17,16 @@ namespace Input
 
 	void InputManager::Init()
 	{
-		LoadConfig();
 		RE::BSInputDeviceManager::GetSingleton()->AddEventSink(this);
 
-		logs::info(
-			"InputManager listo (dispositivo: {}, código: {})",
-			static_cast<std::uint32_t>(aimBinding.device),
-			aimBinding.keyCode);
+		const auto binding = Settings::GetActionBinding();
+		logs::info("InputManager listo (dispositivo: {}, código: {})", Settings::DeviceToString(binding.device), binding.keyCode);
 	}
 
-	void InputManager::LoadConfig()
+	bool InputManager::IsActionBinding(const RE::ButtonEvent* a_event)
 	{
-		// Valores por defecto: tecla R del teclado (DIK_R = 0x13).
-		aimBinding.device = RE::INPUT_DEVICE::kKeyboard;
-		aimBinding.keyCode = 0x13;
-
-		CSimpleIniA ini;
-		ini.SetUnicode();
-
-		if (ini.LoadFile(Constants::kInputConfigPath) < 0) {
-			logs::warn("No se encontró {}, se usan los controles por defecto.", Constants::kInputConfigPath);
-			return;
-		}
-
-		aimBinding.device = ParseDevice(ini.GetValue("Controls", "AimDevice", "Keyboard"));
-		aimBinding.keyCode = static_cast<std::uint32_t>(
-			ini.GetLongValue("Controls", "AimKeyCode", static_cast<long>(aimBinding.keyCode)));
-	}
-
-	bool InputManager::IsAimBinding(const RE::ButtonEvent* a_event) const
-	{
-		return a_event->GetDevice() == aimBinding.device && a_event->GetIDCode() == aimBinding.keyCode;
+		const auto binding = Settings::GetActionBinding();
+		return a_event->GetDevice() == binding.device && a_event->GetIDCode() == binding.keyCode;
 	}
 
 	RE::BSEventNotifyControl InputManager::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*)
@@ -96,7 +59,7 @@ namespace Input
 
 		for (auto* event = *a_event; event; event = event->next) {
 			const auto* button = event->AsButtonEvent();
-			if (!button || !IsAimBinding(button)) {
+			if (!button || !IsActionBinding(button)) {
 				continue;
 			}
 
