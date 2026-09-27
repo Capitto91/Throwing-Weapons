@@ -210,9 +210,7 @@ namespace Constants
 	// Placeholder: antes se leían de BGSProjectile::data.speed/gravity de
 	// un formulario Projectile de la Creation Kit; al no depender ya de
 	// ningún Projectile, la parábola es una simulación propia y necesita
-	// sus propias constantes. kThrowGravity usa el valor de gravedad
-	// estándar de Havok en Skyrim (documentado en la comunidad de
-	// modding, no medido por nosotros); kThrowInitialSpeed es un punto de
+	// sus propias constantes. kThrowInitialSpeed es un punto de
 	// partida redondo pendiente de ajustar en el juego. Subido de 3000 a
 	// 3600 a petición del usuario (2026-08-07, junto con
 	// kReturnTargetArrivalSpeed más abajo y la bajada de kReturnMaxDuration):
@@ -221,9 +219,23 @@ namespace Constants
 	// que ida y vuelta podían subirse de ritmo para transmitir más la
 	// sensación de un arma pesada y poderosa, en vez de lenta en distancias
 	// medias/cortas. Subido otra vez, de 3600 a 4500, a petición del
-	// usuario (2026-08-07).
-	inline constexpr float kThrowInitialSpeed = 4500.0f;  // u/s, placeholder
-	inline constexpr float kThrowGravity = -1071.816f;    // u/s^2, gravedad estándar de Havok en Skyrim
+	// usuario (2026-08-07). Subido de 4500 a 5000 a petición del usuario
+	// (2026-09-27), tras bajar la gravedad al nivel de una flecha vanilla.
+	inline constexpr float kThrowInitialSpeed = 5000.0f;  // u/s, placeholder
+
+	// Gravedad de la ida, estilo flecha vanilla (2026-09-27, a petición del
+	// usuario: con 1.0 × la gravedad del mundo "caía con mucha fuerza"):
+	// multiplicador sobre la gravedad real del mundo de Havok, igual que
+	// BGSProjectileData::gravity. 0.35 es el valor de todas las flechas
+	// vanilla (ArrowIronProjectile 0003BE11 y el resto de Arrow*Projectile,
+	// leído directamente del DATA de los PROJ de Skyrim.esm). La gravedad
+	// del mundo se lee en el juego al lanzar (hkpWorld::gravity de la celda
+	// del lanzador, ver Throw::GetWorldGravity); kThrowFallbackWorldGravity
+	// solo se usa si no se puede leer -- valor documentado en la comunidad
+	// de modding, no medido por nosotros (el log de Throw::GetWorldGravity
+	// dice cuál es el real).
+	inline constexpr float kThrowGravityMult = 0.35f;
+	inline constexpr float kThrowFallbackWorldGravity = -1071.816f;  // u/s^2
 
 	// Radio del barrido en cruz de la colisión en vuelo
 	// (Collision::SweepRaycast): varias muestras cercanas entre sí, en vez
