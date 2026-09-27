@@ -41,7 +41,7 @@ namespace Weapon
 			case State::kReturning:
 				return VfxTarget::kReplica;
 			default:
-				return VfxTarget::kNone;  // kInHand, kAiming, kStuck
+				return VfxTarget::kNone;  // kInHand, kStuck
 			}
 		}
 	}
@@ -102,81 +102,51 @@ namespace Weapon
 		}
 	}
 
-	void WeaponManager::OnAimButtonDown()
+	void WeaponManager::OnActionButtonDown()
 	{
-		switch (weaponState.GetState()) {
-		case State::kInHand:
-			{
-				// El ciclo anterior puede haber vuelto a "en mano" (ver
-				// ReequipAndReset) antes de que termine de verdad su propio
-				// cierre asíncrono diferido (desequipado real de Lanzar,
-				// desatascado del grafo de Llamada/Atrape -- ver
-				// throwTailActive/callAnimationActive/catchAnimationActive).
-				// Empezar un ciclo nuevo mientras eso sigue pendiente es
-				// justo la condición de carrera que dejaba el personaje
-				// congelado a media animación al pulsar el botón demasiado
-				// rápido (2026-08-28) -- se ignora la pulsación hasta que el
-				// cierre anterior se complete de verdad, en vez de dejar que
-				// interfiera con el ciclo nuevo.
-				if (throwTailActive || callAnimationActive || catchAnimationActive) {
-					break;
-				}
+		// Pulsar solo prepara el gesto: Lanzar se dispara al SOLTAR (ver
+		// OnActionButtonUp). Ya no hay fase de apuntado (kAiming ni zoom,
+		// eliminados el 2026-09-27 a petición del usuario) -- un toque del
+		// botón lanza directamente. Cualquier pulsación desarma primero la
+		// anterior, por si se perdió su suelte (p. ej. una pantalla de
+		// carga a mitad de la pulsación).
+		throwPressArmed = false;
 
-				// Bug real (2026-08-28, ver CHANGELOG.md): este chequeo vivía
-				// antes en OnAimButtonUp, en el momento de soltar -- pero
-				// apuntar puede durar lo que el jugador quiera (no hay
-				// mecánica de carga, Mecanica del arma.txt punto 3), así que
-				// bloquear el suelte dejaba al personaje atascado en la pose
-				// de apuntado, sin soltar el arma, hasta que pasara el margen
-				// completo por pura casualidad (varios intentos de botón
-				// hasta que "cuadraba"). El margen debe impedir EMPEZAR a
-				// apuntar demasiado pronto, no impedir TERMINAR un apuntado
-				// ya en marcha -- comprobado aquí, en la pulsación que inicia
-				// el gesto, para que una vez dentro de kAiming el suelte
-				// siempre complete el lanzamiento sin más esperas.
-				const auto elapsedSinceLastAttackEvent = std::chrono::duration<float>(std::chrono::steady_clock::now() - lastAttackAnimationEventTime).count();
-				logs::info("WeaponManager::OnAimButtonDown/kInHand: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
-					elapsedSinceLastAttackEvent, Constants::kMinAttackStartInterval);
-				if (elapsedSinceLastAttackEvent < Constants::kMinAttackStartInterval) {
-					break;
-				}
-
-				// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el
-				// arma envainada: la primera pulsación solo desenvaina, no
-				// empieza a apuntar -- hace falta una segunda pulsación ya con
-				// el arma desenvainada. Sin esto, el arma salía disparada sin
-				// llegar a reproducir Throw.hkx: el propio desenvainado (que
-				// tiene su propia animación, con tiempo real) todavía no había
-				// terminado en el instante en que se disparaba attackStart.
-				auto* player = RE::PlayerCharacter::GetSingleton();
-				if (player && !player->AsActorState()->IsWeaponDrawn()) {
-					player->DrawWeaponMagicHands(true);
-					break;
-				}
-				BeginAiming();
-				break;
-			}
-		case State::kAiming:
-			// Ya soltado y esperando el corte de un ataque (ver
-			// InterruptAttackThen): el lanzamiento sigue en marcha, no hay
-			// nada que reiniciar.
-			if (attackInterruptActive) {
-				break;
-			}
-			// Solo se puede recibir una pulsación nueva estando ya
-			// "apuntando" si nos perdimos el botón de soltar anterior (p.ej.
-			// una pantalla de carga a mitad de la pulsación): no hay nada
-			// que deshacer todavía, así que reiniciamos el ciclo con la
-			// pulsación actual en vez de quedarnos atascados.
-			TransitionState(State::kInHand);
-			BeginAiming();
-			break;
-		default:
-			break;
+		if (weaponState.GetState() != State::kInHand) {
+			return;
 		}
+
+		// El ciclo anterior puede haber vuelto a "en mano" (ver
+		// ReequipAndReset) antes de que termine de verdad su propio
+		// cierre asíncrono diferido (desequipado real de Lanzar,
+		// desatascado del grafo de Llamada/Atrape -- ver
+		// throwTailActive/callAnimationActive/catchAnimationActive).
+		// Empezar un ciclo nuevo mientras eso sigue pendiente es justo la
+		// condición de carrera que dejaba el personaje congelado a media
+		// animación al pulsar el botón demasiado rápido (2026-08-28) -- se
+		// ignora la pulsación hasta que el cierre anterior se complete de
+		// verdad, en vez de dejar que interfiera con el ciclo nuevo.
+		if (throwTailActive || callAnimationActive || catchAnimationActive) {
+			return;
+		}
+
+		// Mismo patrón que el ataque cuerpo a cuerpo vanilla con el arma
+		// envainada: la primera pulsación solo desenvaina, no arma el
+		// lanzamiento -- hace falta una segunda pulsación ya con el arma
+		// desenvainada. Sin esto, el arma salía disparada sin llegar a
+		// reproducir Throw.hkx: el propio desenvainado (que tiene su propia
+		// animación, con tiempo real) todavía no había terminado en el
+		// instante en que se disparaba attackStart.
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (player && !player->AsActorState()->IsWeaponDrawn()) {
+			player->DrawWeaponMagicHands(true);
+			return;
+		}
+
+		throwPressArmed = true;
 	}
 
-	void WeaponManager::OnAimButtonUp()
+	void WeaponManager::OnActionButtonUp()
 	{
 		// Compartido por los dos casos de abajo -- ver el comentario de
 		// Constants::kMinAttackStartInterval/lastAttackAnimationEventTime:
@@ -188,32 +158,44 @@ namespace Weapon
 		const auto elapsedSinceLastAttackEvent = std::chrono::duration<float>(std::chrono::steady_clock::now() - lastAttackAnimationEventTime).count();
 
 		switch (weaponState.GetState()) {
-		case State::kAiming:
-			// El margen mínimo (ver Constants::kMinAttackStartInterval) ya
-			// se comprueba en OnAimButtonDown/kInHand, al EMPEZAR a apuntar
-			// -- no aquí. Bug real (2026-08-28, ver CHANGELOG.md): este
-			// chequeo vivía antes en este punto (al soltar) y dejaba al
-			// personaje atascado en la pose de apuntado, sin soltar el
-			// arma, hasta que el margen se cumpliera por pura casualidad --
-			// apuntar puede durar lo que el jugador quiera (sin mecánica de
-			// carga, Mecanica del arma.txt punto 3), así que una vez dentro
-			// de kAiming el suelte debe completar el lanzamiento siempre,
-			// sin ninguna espera adicional.
-			//
-			// Excepción (2026-09-26): si el jugador está a mitad de un
-			// golpe normal, primero se corta (ver InterruptAttackThen) --
-			// sin eso Throw.hkx nunca se reproducía y el arma salía desde
-			// la pose del ataque. Mientras dura ese corte se ignoran
-			// pulsaciones nuevas.
-			if (attackInterruptActive) {
+		case State::kInHand:
+			{
+				// Solo si esta misma pulsación armó el lanzamiento (ver
+				// OnActionButtonDown): una pulsación que solo desenvainó, o
+				// que empezó con el arma todavía fuera de la mano (p. ej.
+				// soltar justo después de un Atrape), no lanza nada.
+				if (!throwPressArmed) {
+					break;
+				}
+				throwPressArmed = false;
+
+				// Ver Constants::kMinAttackStartInterval -- comprobado al
+				// soltar desde que no hay fase de apuntado: el suelte es el
+				// instante real en que se dispara el "attackStart" de
+				// Lanzar. Sin pose de apuntado ya no hay riesgo de dejar al
+				// personaje atascado (bug de 2026-08-28 que obligó a
+				// moverlo a la pulsación): simplemente se ignora el toque.
+				logs::info("WeaponManager::OnActionButtonUp/kInHand: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
+					elapsedSinceLastAttackEvent, Constants::kMinAttackStartInterval);
+				if (elapsedSinceLastAttackEvent < Constants::kMinAttackStartInterval) {
+					break;
+				}
+
+				// Si el jugador está a mitad de un golpe normal, primero se
+				// corta (ver InterruptAttackThen, 2026-09-26) -- sin eso
+				// Throw.hkx nunca se reproducía y el arma salía desde la
+				// pose del ataque. Mientras dura ese corte se ignoran
+				// pulsaciones nuevas.
+				if (attackInterruptActive || !PrepareThrow()) {
+					break;
+				}
+				InterruptAttackThen([this]() {
+					if (weaponState.GetState() == State::kInHand && weaponState.GetActiveWeapon()) {
+						BeginThrowAnimation();
+					}
+				});
 				break;
 			}
-			InterruptAttackThen([this]() {
-				if (weaponState.GetState() == State::kAiming) {
-					BeginThrowAnimation();
-				}
-			});
-			break;
 		case State::kThrown:
 		case State::kStuck:
 			{
@@ -232,7 +214,7 @@ namespace Weapon
 				// todos los casos que fallaban; 'era 0' -- ya desequipada -- en
 				// todos los que funcionaban). Se ignora la pulsación mientras
 				// throwTailActive siga pendiente, igual que ya hace
-				// OnAimButtonDown en kInHand para el mismo tipo de carrera.
+				// OnActionButtonDown en kInHand para el mismo tipo de carrera.
 				if (throwTailActive) {
 					break;
 				}
@@ -243,7 +225,7 @@ namespace Weapon
 				// recuperar demasiado pronto tras soltar seguía fallando --
 				// mismo mecanismo general de Constants::kMinAttackStartInterval
 				// (ver arriba).
-				logs::info("WeaponManager::OnAimButtonUp/kThrown-kStuck: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
+				logs::info("WeaponManager::OnActionButtonUp/kThrown-kStuck: elapsedSinceLastAttackEvent={:.3f}s (mínimo {:.3f}s).",
 					elapsedSinceLastAttackEvent, Constants::kMinAttackStartInterval);
 				if (elapsedSinceLastAttackEvent < Constants::kMinAttackStartInterval) {
 					break;
@@ -311,12 +293,7 @@ namespace Weapon
 		catchReequipPending = false;
 		catchEndSoundPlayed = false;
 		callAnimationActive = false;
-
-		// Por si el estado anterior era kAiming (sin esto, el offset de zoom
-		// se quedaría aplicado para siempre) -- desactivar un zoom que ya
-		// estaba desactivado es un no-op inofensivo, mismo criterio que
-		// Input::SetMovementLocked(false) más abajo.
-		Animation::SetAimZoom(false);
+		throwPressArmed = false;
 
 		// Por si el estado anterior era kThrowing (partida guardada/cargada
 		// a mitad de esa ventana, dentro de la misma sesión del proceso):
@@ -449,7 +426,7 @@ namespace Weapon
 	void WeaponManager::OnThrowableWeaponEquipChanged(bool a_equipped)
 	{
 		// "Tener el arma" = en la mano, o fuera de ella por el propio ciclo
-		// (apuntando, lanzada, clavada, llamando, regresando): en esos
+		// (lanzando, lanzada, clavada, llamando, regresando): en esos
 		// estados el desequipado lo hace este mismo plugin, no el jugador, y
 		// el poder no debe irse con él -- ver el comentario del header.
 		SetLightningDashPower(a_equipped || weaponState.GetState() != State::kInHand);
@@ -482,17 +459,10 @@ namespace Weapon
 			// una réplica que puede haber quedado en una celda distinta.
 			RecallWeapon();
 			break;
-		case State::kAiming:
-			// El arma sigue en la mano (el desequipar solo pasa al soltar);
-			// solo reordenamos el estado por si la pulsación de soltar se
-			// perdió durante la carga.
-			TransitionState(State::kInHand);
-			Animation::SetAimZoom(false);
-			break;
 		case State::kThrowing:
-			// El arma tampoco ha llegado a desequiparse todavía en este
-			// estado (eso solo pasa en ThrowWeapon, al recibir la anotación
-			// de liberación) -- mismo caso que kAiming, pero además hay que
+			// El arma todavía no ha llegado a desequiparse en este estado
+			// (eso solo pasa en ThrowWeapon, al recibir la anotación de
+			// liberación) -- basta con volver a "en mano", pero además hay que
 			// apagar la graph variable, o el submod de OAR se quedaría
 			// sustituyendo el ataque ligero indefinidamente, y desbloquear
 			// el movimiento (ver BeginThrowAnimation) o se quedaría
@@ -586,47 +556,32 @@ namespace Weapon
 		}
 	}
 
-	void WeaponManager::BeginAiming()
+	bool WeaponManager::PrepareThrow()
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
-			return;
+			return false;
 		}
 
 		// Decisión no cubierta por Mecanica del arma.txt (no menciona el
-		// sigilo): no se puede empezar a apuntar/lanzar estando agachado --
-		// a petición del usuario. Comprobado aquí (no en OnAimButtonDown)
-		// para que aplique igual desde la primera pulsación que desde la
-		// resincronización de kAiming.
+		// sigilo): no se puede lanzar estando agachado -- a petición del
+		// usuario.
 		if (player->AsActorState()->IsSneaking()) {
-			return;
+			return false;
 		}
 
 		auto* weapon = player->GetEquippedObject(false);
 		auto* boundWeapon = weapon ? weapon->As<RE::TESBoundObject>() : nullptr;
 
 		if (!boundWeapon) {
-			return;
+			return false;
 		}
 
+		// Fijada ya aquí, al soltar, y no en BeginThrowAnimation: si hay que
+		// cortar antes un ataque en curso (InterruptAttackThen), el arma
+		// comprometida es la que había en la mano en el instante del gesto.
 		weaponState.SetActiveWeapon(boundWeapon);
-		TransitionState(State::kAiming);
-
-		// Zoom de cámara mientras dura el apuntado -- puro polish, no cubierto
-		// por Mecanica del arma.txt (ver Constants::kAimZoomThirdPersonOffset).
-		// Revertido en BeginThrowAnimation (salida normal) y en
-		// OnLoadingScreenClosed/ResetToInHand (salida por pantalla de carga o
-		// reinicio).
-		Animation::SetAimZoom(true);
-
-		// El arma ya se desenvainó antes de llegar aquí -- ver
-		// OnAimButtonDown, que ahora exige una pulsación previa dedicada
-		// solo a desenvainar (igual que el ataque cuerpo a cuerpo vanilla
-		// con el arma envainada) antes de empezar a apuntar de verdad. No
-		// se llama a DrawWeaponMagicHands aquí para no arriesgar el blip
-		// visual de llamarla con el arma ya desenvainada (no hay garantía
-		// de que sea idempotente, sin cuerpo documentado en
-		// commonlibsse-ng).
+		return true;
 	}
 
 	void WeaponManager::BeginThrowAnimation()
@@ -649,10 +604,6 @@ namespace Weapon
 		// manos --"): destello de un solo uso en el mismo instante,
 		// independiente del destello del arma de arriba.
 		Animation::TriggerHandGlow(*player);
-
-		// Fin del zoom de apuntado (ver BeginAiming) -- el gesto de Lanzar ya
-		// no es "apuntando".
-		Animation::SetAimZoom(false);
 
 		// Bloquea el movimiento mientras dura la animación de Lanzar:
 		// atacar mientras te mueves (incluso si empiezas a moverte a mitad
@@ -905,7 +856,7 @@ namespace Weapon
 		callAnimationActive = false;
 
 		// Bug real (2026-08-28, ver CHANGELOG.md): esta actualización vivía
-		// más abajo, al final del bloque -- pero OnAimButtonDown/kInHand
+		// más abajo, al final del bloque -- pero OnActionButtonDown/kInHand
 		// solo comprueba callAnimationActive antes de leer
 		// lastAttackAnimationEventTime, así que había una rendija real
 		// entre "la bandera ya está a false" y "el timestamp ya está
@@ -1184,7 +1135,7 @@ namespace Weapon
 		// Ver Constants::kMinAttackStartInterval/lastAttackAnimationEventTime
 		// -- bug real (2026-08-28, ver CHANGELOG.md), confirmado con logs:
 		// esta actualización vivía más abajo, al final del bloque de
-		// player -- pero OnAimButtonDown/kInHand solo comprueba
+		// player -- pero OnActionButtonDown/kInHand solo comprueba
 		// catchAnimationActive antes de leer lastAttackAnimationEventTime,
 		// así que había una rendija real entre "la bandera ya está a false"
 		// y "el timestamp ya está actualizado" en la que una pulsación
@@ -1318,7 +1269,7 @@ namespace Weapon
 			// arriba en vez de hacerlo aquí mismo, por el motivo ya
 			// explicado. throwTailActive (bandera, no el token de abajo)
 			// sigue marcando "el cierre de Lanzar sigue pendiente" para
-			// quien pregunte desde fuera (OnAimButtonDown/Up) -- bug real
+			// quien pregunte desde fuera (OnActionButtonDown/Up) -- bug real
 			// (2026-08-28): antes se comprobaba una lista de estados
 			// esperados, y recuperar casi al instante tras lanzar
 			// (kThrown -> kCalling) hacía que el estado ya no estuviera en

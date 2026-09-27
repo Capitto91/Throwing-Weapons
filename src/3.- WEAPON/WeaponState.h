@@ -9,15 +9,13 @@
 namespace Weapon
 {
 	// Ciclo de vida del arma arrojadiza única (Mecanica del arma.txt,
-	// punto 1). kStuck/kReturning se declaran ya como parte del modelo
-	// completo, pero hasta que 5.- RETURN exista (Fase 6) el ciclo real
-	// solo transita entre kInHand/kAiming/kThrown, con recuperación
-	// instantánea al pulsar el botón (aunque la ida en sí ya vuela de
-	// verdad desde la Fase 3, ver WeaponManager).
+	// punto 1). Sin estado de apuntado desde el 2026-09-27 (a petición del
+	// usuario): un toque del botón pasa directamente de kInHand a
+	// kThrowing. No se persiste en el cosave (ver SaveCycleData), así que
+	// añadir o quitar valores no afecta a partidas guardadas.
 	enum class State
 	{
 		kInHand,    // Equipada normalmente en la mano derecha.
-		kAiming,    // Botón pulsado, apuntando antes de soltar.
 		kThrowing,  // Botón soltado: reproduciendo Throw.hkx (vía OAR), arma
 		            // todavía físicamente en la mano hasta que llega la
 		            // anotación de liberación (Fase 3, _reference/PLAN-OAR.md).
@@ -46,9 +44,9 @@ namespace Weapon
 		[[nodiscard]] State GetState() const noexcept { return state; }
 		void                SetState(State a_state);
 
-		// Arma comprometida con el ciclo actual: se fija al empezar a
-		// apuntar (para no depender de lo que haya en la mano en el
-		// momento de soltar el botón) y se usa para reequiparla tal cual al
+		// Arma comprometida con el ciclo actual: se fija al soltar el botón
+		// de Lanzar (WeaponManager::PrepareThrow, antes de cortar un
+		// posible ataque en curso) y se usa para reequiparla tal cual al
 		// recuperarla.
 		[[nodiscard]] RE::TESBoundObject* GetActiveWeapon() const noexcept { return activeWeapon; }
 		void                              SetActiveWeapon(RE::TESBoundObject* a_weapon) noexcept { activeWeapon = a_weapon; }

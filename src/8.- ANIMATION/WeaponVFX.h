@@ -1,5 +1,5 @@
 // Enciende/apaga el VFX de chispas mientras el arma se mueve de verdad
-// (apuntando, lanzando, en vuelo, llamando o volviendo -- nunca en reposo en
+// (lanzando, en vuelo, llamando o volviendo -- nunca en reposo en
 // la mano ni clavada, ver Weapon::WeaponManager::TransitionState). Puro
 // polish, sin punto numerado en Mecanica del arma.txt.
 //
@@ -30,7 +30,7 @@ namespace Animation
 {
 	// Coloca el VFX en a_actor y lo sigue cada tick, pegado al hueso
 	// "WEAPON" de su esqueleto (existe siempre, ver
-	// GetHandBoneWorldRotation) -- pensado para State::kAiming/kThrowing,
+	// GetHandBoneWorldRotation) -- pensado para State::kThrowing,
 	// donde el arma todavía está físicamente en la mano y la réplica
 	// todavía no existe. Si ya había un VFX activo, no lo corta primero --
 	// lo solapa (coloca este antes de destruir el anterior,

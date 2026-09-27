@@ -783,7 +783,7 @@ namespace Constants
 	//   nunca); recuperar pasado ese margen funcionó siempre. Fallos vistos
 	//   hasta 0,622s, único éxito medido a 0,923s.
 	// - Atrape->Lanzar del ciclo siguiente (segundo caso, mismo día): el
-	//   gate original de OnAimButtonDown/kInHand (comprobar solo que
+	//   gate original de OnActionButtonDown/kInHand (comprobar solo que
 	//   catchAnimationActive ya estuviera a false) no bastaba -- machacando
 	//   el botón, un lanzamiento nuevo podía dispararse apenas 83ms después
 	//   del "attackStop" real de FinishCatchAnimation, con el mismo
@@ -791,8 +791,8 @@ namespace Constants
 	//   1.5s después) pero sin que Throw.hkx llegara a reproducirse nunca.
 	// Valor de partida generoso sobre el peor caso medido (0,622s) --
 	// placeholder, pendiente de ajustar a la baja en el juego si se nota
-	// como una espera perceptible. WeaponManager::OnAimButtonUp (casos
-	// kAiming y kThrown/kStuck) ignora la pulsación mientras no se cumpla,
+	// como una espera perceptible. WeaponManager::OnActionButtonUp (casos
+	// kInHand y kThrown/kStuck) ignora la pulsación mientras no se cumpla,
 	// medido desde WeaponManager::lastAttackAnimationEventTime (el último
 	// evento que tocó el grafo por nuestra cuenta: el arma dejando la mano,
 	// o un "attackStop" real de Llamada/Atrape).
@@ -957,55 +957,6 @@ namespace Constants
 	inline constexpr float kCatchShakeStrength = 20.0f;
 	inline constexpr float kCatchShakeDuration = 0.3f;
 
-	// -- Zoom de cámara al apuntar --
-	// Tampoco es un punto numerado de "Mecanica del arma.txt" (no cubre
-	// cámara en ningún punto, igual que kCatchShakeStrength/kCatchShakeDuration
-	// arriba) -- mecánica nueva pedida aparte.
-	//
-	// Historial de dos intentos descartados antes de llegar a esto
-	// (2026-08-07, ver CHANGELOG.md para el detalle completo):
-	// 1) Escribir RE::ThirdPersonState::targetZoomOffset una sola vez al
-	//    activar, bajo la hipótesis (nunca confirmada contra código fuente,
-	//    solo inferida del nombre de los campos) de que el motor interpola
-	//    currentZoomOffset hacia ahí por su cuenta -- la cámara no paraba de
-	//    acercarse mientras se mantenía pulsado el botón.
-	// 2) Rampa manual propia escribiendo targetZoomOffset Y
-	//    currentZoomOffset a la vez cada tick -- ya no avanzaba infinito,
-	//    pero por pequeña que se hiciera la magnitud del offset (-40 a -12,
-	//    sin diferencia visible), la cámara en tercera persona atravesaba al
-	//    personaje varios METROS por delante suyo, frenada solo por
-	//    colisión real contra geometría (muros/vallas). Confirmado con una
-	//    prueba A/B (función completamente inerte vs. activa) que el
-	//    problema lo causaba justo este código, pese a que un log de
-	//    diagnóstico mostraba posOffsetExpected/posOffsetActual (mismo
-	//    struct) sin cambios entre zoom activo/inactivo -- esos dos campos
-	//    están ligados al sistema de colisión/posicionamiento real de la
-	//    cámara en tercera persona de un modo que no se llegó a entender
-	//    del todo, y no merece la pena seguir investigándolo.
-	//
-	// Solución actual: RE::PlayerCamera::RUNTIME_DATA2::worldFOV (ver
-	// Animation::SetAimZoom/StartAimZoomRamp, mismo patrón de rampa manual
-	// que el intento 2, pero sobre este campo) -- un parámetro de
-	// renderizado puro (ángulo de visión), sin relación con la posición ni
-	// la colisión de la cámara, así que no hereda ninguno de los dos
-	// problemas de arriba. Mismo campo en primera y tercera persona, ya no
-	// hace falta distinguir la perspectiva.
-	//
-	// Offset (no valor absoluto) sobre el FOV que ya hubiera en cada momento
-	// (Animation::SetAimZoom guarda el valor previo antes de sumar este
-	// offset, y lo restaura tal cual al desactivar). Negativo estrecha el
-	// campo de visión (efecto zoom). Placeholder sin calibrar en el juego
-	// todavía -- primer valor a ajustar si el efecto resulta de más o de
-	// menos.
-	inline constexpr float kAimZoomFOVOffset = -15.0f;
-
-	// Duración de la rampa manual de entrada Y de salida (Animation::
-	// StartAimZoomRamp) -- a petición del usuario, más corta que lo que
-	// tardaba el intento anterior (delegado en el motor, sin control sobre
-	// la velocidad real). Placeholder, primer valor a subir/bajar si se ve
-	// demasiado brusca o demasiado lenta en el juego.
-	inline constexpr float kAimZoomTransitionDuration = 0.2f;  // s, placeholder
-
 	// Flags de RE::BSAudioManager::GetSoundHandle -- sin significado
 	// documentado en commonlibsse-ng (ver BSAudioManager.h), 0 sin más
 	// justificación que ser el valor neutro (probado también el 0x1A por
@@ -1042,7 +993,7 @@ namespace Constants
 
 	// -- VFX de movimiento (chispas), puro polish sin punto numerado en
 	// Mecanica del arma.txt -- activo mientras el arma se mueve de verdad
-	// (State::kAiming/kThrowing/kThrown/kCalling/kReturning, a petición del
+	// (State::kThrowing/kThrown/kCalling/kReturning, a petición del
 	// usuario), apagado en reposo (kInHand) o clavada (kStuck). Ver
 	// 8.- ANIMATION/WeaponVFX.h/.cpp.
 	//

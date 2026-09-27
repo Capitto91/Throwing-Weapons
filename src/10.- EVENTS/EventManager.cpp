@@ -104,7 +104,7 @@ namespace Events
 			g_pendingRecovery.reset();
 		}
 		// Impide equipar cualquier otra arma mientras la arrojadiza está
-		// fuera de la mano (apuntando o lanzada), tal como exige el punto 4
+		// fuera de la mano (lanzando o lanzada), tal como exige el punto 4
 		// de Mecanica del arma.txt. RE::TESEquipEvent se notifica después
 		// de que el motor ya ha equipado el objeto (no es cancelable), así
 		// que la única forma de bloquearlo es desequiparlo de inmediato al

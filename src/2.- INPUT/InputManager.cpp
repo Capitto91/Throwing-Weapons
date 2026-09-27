@@ -82,7 +82,7 @@ namespace Input
 		auto* weaponManager = Weapon::WeaponManager::GetSingleton();
 
 		// El botón participa en el ciclo si el arma arrojadiza está en la
-		// mano derecha (para empezar a apuntar) o si el ciclo ya está en
+		// mano derecha (para lanzarla) o si el ciclo ya está en
 		// marcha y el arma está fuera de la mano (para recuperarla). Con
 		// el arma fuera, la mano queda vacía (ver WeaponManager::ThrowWeapon),
 		// así que la comprobación de equipada por sí sola no basta.
@@ -101,9 +101,9 @@ namespace Input
 			}
 
 			if (button->IsDown()) {
-				weaponManager->OnAimButtonDown();
+				weaponManager->OnActionButtonDown();
 			} else if (button->IsUp()) {
-				weaponManager->OnAimButtonUp();
+				weaponManager->OnActionButtonUp();
 			}
 		}
 

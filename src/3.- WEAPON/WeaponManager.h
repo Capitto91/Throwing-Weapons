@@ -34,10 +34,11 @@ namespace Weapon
 		WeaponManager& operator=(WeaponManager&&) = delete;
 
 		// Llamados desde Input::InputManager cuando se pulsa/suelta el botón
-		// de apuntar. Deciden, según el estado actual, si hay que empezar a
-		// apuntar, lanzar el arma o recuperarla.
-		void OnAimButtonDown();
-		void OnAimButtonUp();
+		// de acción. Deciden, según el estado actual, si hay que desenvainar,
+		// lanzar el arma (un toque: pulsar y soltar, sin fase de apuntado) o
+		// recuperarla.
+		void OnActionButtonDown();
+		void OnActionButtonUp();
 
 		[[nodiscard]] State GetState() const noexcept { return weaponState.GetState(); }
 
@@ -71,7 +72,7 @@ namespace Weapon
 		// que ResetToInHand().
 		void RecoverOrReset(const SaveCycleData& a_data);
 
-		// Si el ciclo está en marcha (apuntando o lanzada), recupera el
+		// Si el ciclo está en marcha (lanzando o lanzada), recupera el
 		// arma de inmediato (incluye destruir la réplica en vuelo si la
 		// hay). Pensado para cuando se cierra una pantalla de carga
 		// (puerta, viaje rápido...).
@@ -211,8 +212,7 @@ namespace Weapon
 		// 8.- ANIMATION/WeaponVFX.h) comparando a qué debe engancharse el
 		// VFX antes y después (arma real en mano durante kThrowing, réplica
 		// en vuelo durante kThrown/kCalling/kReturning, nada en
-		// kInHand/kAiming/kStuck -- a petición del usuario, 2026-08-10: sin
-		// VFX mientras solo se está apuntando, todavía sin soltar) -- solo
+		// kInHand/kStuck) -- solo
 		// reenganchar si ese objetivo cambia de verdad, para no cortar y
 		// volver a arrancar el efecto en transiciones entre dos estados que
 		// comparten el mismo objetivo. Excepción: la transición
@@ -237,9 +237,11 @@ namespace Weapon
 		// para el fundido diferido o ya disparado.
 		void TransitionState(State a_newState, bool a_manageVfx = true);
 
-		// Fija como arma activa la que hay en la mano derecha y pasa a
-		// "apuntando".
-		void BeginAiming();
+		// Comprobaciones previas a Lanzar (no agachado, arma en la mano
+		// derecha) y fija esa arma como la activa del ciclo. Devuelve false
+		// (sin tocar nada) si no se puede lanzar. No cambia de estado: eso
+		// lo hace BeginThrowAnimation.
+		[[nodiscard]] bool PrepareThrow();
 
 		// Pasa a "lanzando": activa la graph variable que gatea el submod de
 		// OAR (Animation::SetThrowTrigger) y dispara el evento vanilla que
@@ -272,7 +274,7 @@ namespace Weapon
 		// combate desarmado), pasa a estado "lanzada" y arranca
 		// Throw::LaunchWeapon para que la réplica visual vuele de verdad.
 		// Llamado desde OnThrowReleaseAnimationEvent, nunca directamente
-		// desde OnAimButtonUp -- ver BeginThrowAnimation.
+		// desde OnActionButtonUp -- ver BeginThrowAnimation.
 		void ThrowWeapon();
 
 		// Pasa a "llamando": escribe directamente
@@ -421,7 +423,7 @@ namespace Weapon
 		// venciera el margen, y el chequeo antiguo por lista de estados no
 		// incluía kCalling; el desequipado/desbloqueo real de Lanzar nunca
 		// llegaba a ejecutarse, dejando el personaje bloqueado a media
-		// animación) y también gatea OnAimButtonDown (ver esa función,
+		// animación) y también gatea OnActionButtonDown (ver esa función,
 		// caso kInHand) para no dejar empezar un ciclo nuevo mientras el
 		// cierre del anterior sigue pendiente -- ambos arreglos son la
 		// misma causa de fondo, un cierre diferido que podía quedar
@@ -457,13 +459,20 @@ namespace Weapon
 		Scheduler::CancelToken skipEquipAnimationToken;
 
 		// True mientras InterruptAttackThen espera a que termine el ataque
-		// cortado -- OnAimButtonDown/Up ignoran pulsaciones nuevas mientras
+		// cortado -- OnActionButtonDown/Up ignoran pulsaciones nuevas mientras
 		// tanto, para no encadenar dos esperas. attackInterruptToken es el
 		// token compartido por los dos caminos de disparo de esa espera
 		// (evento del grafo o red de seguridad -- el primero que llega lo
 		// consume), cancelado en ResetToInHand/OnLoadingScreenClosed.
 		bool                   attackInterruptActive{ false };
 		Scheduler::CancelToken attackInterruptToken;
+
+		// True si la pulsación en curso del botón de acción empezó en
+		// kInHand con el arma ya desenvainada (ver OnActionButtonDown) --
+		// solo entonces el suelte lanza. Evita que una pulsación que solo
+		// desenvainó, o que empezó con el arma todavía fuera de la mano,
+		// dispare un lanzamiento al soltarla.
+		bool throwPressArmed{ false };
 
 		// Instante real (reloj monotónico, no tiempo de juego) del último
 		// evento que tocó el grafo de animación por nuestra cuenta -- el
@@ -474,14 +483,14 @@ namespace Weapon
 		// al grafo de forma no determinista, ver Constants::
 		// kMinCatchAnimationDelay para el primer caso ya conocido)
 		// reapareció también entre Atrape y el Lanzar del ciclo siguiente
-		// -- mi gate original en OnAimButtonDown/kInHand solo comprobaba
+		// -- mi gate original en OnActionButtonDown/kInHand solo comprobaba
 		// que catchAnimationActive ya estuviera a false, sin exigir ningún
 		// margen aparte, y con el jugador machacando el botón esa
 		// comprobación podía pasar apenas unas decenas de ms después del
 		// attackStop real de Atrape (confirmado con logs: 83ms de margen
 		// real en un caso que falló). Ver Constants::kMinAttackStartInterval,
 		// comprobado ahora en los dos sitios que disparan un "attackStart"
-		// nuevo por pulsación de botón (OnAimButtonUp, casos kAiming y
+		// nuevo por pulsación de botón (OnActionButtonUp, casos kInHand y
 		// kThrown/kStuck). std::chrono::steady_clock en vez de acumular
 		// segundos dentro de un bucle de tick (como hace Return) porque
 		// aquí no hay ningún tick en marcha entre un cierre y la siguiente

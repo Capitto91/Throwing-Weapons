@@ -12,8 +12,6 @@ namespace Weapon
 			switch (a_state) {
 			case State::kInHand:
 				return "EnMano";
-			case State::kAiming:
-				return "Apuntando";
 			case State::kThrowing:
 				return "Lanzando";
 			case State::kThrown:

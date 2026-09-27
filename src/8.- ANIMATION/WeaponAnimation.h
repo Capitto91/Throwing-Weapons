@@ -186,34 +186,4 @@ namespace Animation
 	// WeaponManager::PollGestureWeaponReady), no solo "arma sin 3D cargado"
 	// en general.
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
-
-	// Zoom de cámara mientras dura State::kAiming -- arranca una rampa
-	// manual propia (Constants::kAimZoomTransitionDuration) sobre
-	// RE::PlayerCamera::RUNTIME_DATA2::worldFOV (estrecha el campo de
-	// visión, mismo campo en primera y tercera persona) hacia el valor
-	// objetivo (activar) o hacia el valor previo a activar (desactivar).
-	// Ver Constants::kAimZoomFOVOffset para el porqué de FOV y no la
-	// posición/zoom de la cámara en tercera persona (ThirdPersonState::
-	// targetZoomOffset/currentZoomOffset, primer intento, descartado tras
-	// confirmar en el juego que causaba que la cámara atravesara al
-	// personaje varios metros, frenada solo por colisión real contra
-	// geometría).
-	//
-	// Sin efecto (salvo actualizar el flag interno) si a_active coincide
-	// con el estado ya activo -- evita sumar el offset dos veces si
-	// BeginAiming se llama sin haber revertido antes (ver
-	// WeaponManager::OnAimButtonDown, caso kAiming: reinicia el ciclo
-	// llamando a BeginAiming de nuevo sin pasar por un SetAimZoom(false)
-	// intermedio). Si ya hay una rampa en marcha (p. ej. se suelta el botón
-	// antes de que termine la de entrada), la cancela y arranca la nueva
-	// partiendo del valor real en ese instante, no del objetivo todavía sin
-	// alcanzar -- sin salto visual.
-	//
-	// Función global sin parámetro RE::Actor& (a diferencia de
-	// SetThrowTrigger/SetCallTrigger/SetCatchTrigger, que sí lo llevan por
-	// coherencia con el resto del archivo pese a no usarlo, ver esas
-	// funciones): RE::PlayerCamera es un singleton inherentemente ligado al
-	// jugador, no un concepto por actor como una graph variable, así que no
-	// aplica el mismo criterio aquí.
-	void SetAimZoom(bool a_active);
 }

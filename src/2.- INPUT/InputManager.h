@@ -7,7 +7,7 @@
 namespace Input
 {
 	// Dispositivo y código de botón configurados por el usuario para la
-	// acción de apuntar / soltar (que dispara o recupera el arma).
+	// acción de lanzar / recuperar el arma (un toque: pulsar y soltar).
 	struct AimBinding
 	{
 		RE::INPUT_DEVICE device{ RE::INPUT_DEVICE::kKeyboard };
