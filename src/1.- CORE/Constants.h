@@ -231,11 +231,13 @@ namespace Constants
 	// leído directamente del DATA de los PROJ de Skyrim.esm). La gravedad
 	// del mundo se lee en el juego al lanzar (hkpWorld::gravity de la celda
 	// del lanzador, ver Throw::GetWorldGravity); kThrowFallbackWorldGravity
-	// solo se usa si no se puede leer -- valor documentado en la comunidad
-	// de modding, no medido por nosotros (el log de Throw::GetWorldGravity
-	// dice cuál es el real).
+	// solo se usa si no se puede leer -- valor medido en el juego
+	// (2026-09-27, log de Throw::GetWorldGravity: -9.81 en unidades de
+	// Havok, escala 0.014287, la gravedad terrestre). Sustituye al
+	// -1071.816 que se usaba antes, sacado de la comunidad de modding y
+	// nunca medido: era un 56% más fuerte que la gravedad real.
 	inline constexpr float kThrowGravityMult = 0.35f;
-	inline constexpr float kThrowFallbackWorldGravity = -1071.816f;  // u/s^2
+	inline constexpr float kThrowFallbackWorldGravity = -686.614f;  // u/s^2
 
 	// Radio del barrido en cruz de la colisión en vuelo
 	// (Collision::SweepRaycast): varias muestras cercanas entre sí, en vez

@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
+#include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
@@ -134,10 +135,39 @@ namespace Throw
 			return;
 		}
 
-		const auto         origin = GetLaunchOrigin(a_shooter);
-		const auto         direction = ComputeAimedDirection(a_shooter, origin);
-		const RE::NiPoint3 velocity0 = direction * Constants::kThrowInitialSpeed;
-		const float        gravity = GetWorldGravity(a_shooter) * Constants::kThrowGravityMult;
+		const auto  origin = GetLaunchOrigin(a_shooter);
+		const float gravity = GetWorldGravity(a_shooter) * Constants::kThrowGravityMult;
+
+		// Puente opcional con True Directional Movement (ver TDMBridge.h):
+		// con target lock activo, el jugador no tiene mirilla con la que
+		// apuntar -- se apunta como TDM apunta sus propias flechas (punto
+		// del torso del objetivo, predicción de movimiento y compensación
+		// de gravedad, con su misma función). Sin TDM o sin lock, línea
+		// recta hacia la mirilla estilo flecha vanilla (ComputeAimedDirection).
+		// Decisión del usuario (2026-09-27), no cubierta por Mecanica del
+		// arma.txt.
+		RE::NiPoint3 velocity0;
+		const auto   lockedTarget = a_shooter == RE::PlayerCharacter::GetSingleton() ? TDMBridge::GetLockedTarget() : nullptr;
+		const auto   targetPoint = lockedTarget ? TDMBridge::GetTargetPoint(*lockedTarget) : RE::NiPoint3{};
+		// TDM parte de la velocidad que ya llevaba su flecha (solo usa su
+		// módulo); aquí no hay ninguna todavía, así que se parte de la
+		// línea recta hacia el objetivo a kThrowInitialSpeed. Objetivo
+		// encima del origen (distancia ~0): sin dirección posible, se cae al
+		// apuntado normal.
+		if (lockedTarget && (targetPoint - origin).Length() > 1.0f) {
+			RE::NiPoint3 targetVelocity;
+			lockedTarget->GetLinearVelocity(targetVelocity);
+
+			velocity0 = targetPoint - origin;
+			velocity0.Unitize();
+			velocity0 *= Constants::kThrowInitialSpeed;
+			const bool exact = TDMBridge::PredictAimProjectile(origin, targetPoint, targetVelocity, -gravity, velocity0);
+
+			logs::info("Throw::LaunchWeapon: target lock de TDM sobre \"{}\" -- punto ({:.1f},{:.1f},{:.1f}), velocidad objetivo ({:.1f},{:.1f},{:.1f}), solución exacta={}, velocidad inicial ({:.1f},{:.1f},{:.1f}).",
+				lockedTarget->GetName(), targetPoint.x, targetPoint.y, targetPoint.z, targetVelocity.x, targetVelocity.y, targetVelocity.z, exact, velocity0.x, velocity0.y, velocity0.z);
+		} else {
+			velocity0 = ComputeAimedDirection(a_shooter, origin) * Constants::kThrowInitialSpeed;
+		}
 
 		// Sonido del silbido de lanzamiento: disparado aquí mismo, síncrono,
 		// en vez de dentro del callback de Physics::SpawnReplica más abajo

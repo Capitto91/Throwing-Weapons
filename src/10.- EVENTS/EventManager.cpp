@@ -5,6 +5,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "10.- EVENTS/OARFunctions.h"
+#include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
@@ -289,6 +290,10 @@ namespace Events
 				// solo de que la DLL de Open Animation Replacer ya esté
 				// cargada en el proceso.
 				OARFunctions::RegisterAll();
+
+				// Mismo criterio que OAR: solo necesita que la DLL de True
+				// Directional Movement ya esté cargada (ver TDMBridge.h).
+				TDMBridge::Init();
 				break;
 			case SKSE::MessagingInterface::kInputLoaded:
 				// Los dispositivos de entrada ya están listos para
