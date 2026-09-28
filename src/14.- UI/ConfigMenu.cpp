@@ -275,14 +275,84 @@ namespace UI::ConfigMenu
 		}
 		HelpMarker("Brief glow on your hands when you throw.");
 
-		ImGui::SeparatorText("Power attacks");
-
 		bool powerAttack = Settings::GetPowerAttackEffects();
-		if (ImGui::Checkbox("Power attack effects", &powerAttack)) {
+		if (ImGui::Checkbox("Power attack VFX", &powerAttack)) {
 			Settings::SetPowerAttackEffects(powerAttack);
 			MarkChanged();
 		}
 		HelpMarker("Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above. Applies from the next power attack.");
+
+		// Glow de la textura del martillo (Animation::GlowMapControl): se
+		// aplica en vivo, cada tick.
+		ImGui::SeparatorText("Weapon glow");
+
+		static constexpr const char* kGlowModeItems[] = { "Off", "Constant", "Pulse" };
+		int glowMode = static_cast<int>(Settings::GetGlowMode());
+		if (ImGui::Combo("Glow", &glowMode, kGlowModeItems, 3)) {
+			Settings::SetGlowMode(static_cast<Settings::GlowMode>(glowMode));
+			MarkChanged();
+		}
+		HelpMarker("Glow of the hammer's own texture, in hand and while thrown. Constant = always lit (default). Pulse = slowly brightens and dims.");
+
+		const bool glowOn = Settings::GetGlowMode() != Settings::GlowMode::kOff;
+		ImGui::BeginDisabled(!glowOn);
+
+		static constexpr const char* kGlowConditionItems[] = { "Always", "Near creatures" };
+		int glowCondition = static_cast<int>(Settings::GetGlowCondition());
+		if (ImGui::Combo("When", &glowCondition, kGlowConditionItems, 2)) {
+			Settings::SetGlowCondition(static_cast<Settings::GlowCondition>(glowCondition));
+			MarkChanged();
+		}
+		HelpMarker("Always, or only while a living creature of the checked types is within the radius. The glow fades in and out.");
+
+		if (Settings::GetGlowCondition() == Settings::GlowCondition::kNearCreatures) {
+			ImGui::Indent();
+
+			bool dragons = Settings::GetGlowNearDragons();
+			if (ImGui::Checkbox("Dragons", &dragons)) {
+				Settings::SetGlowNearDragons(dragons);
+				MarkChanged();
+			}
+
+			bool undead = Settings::GetGlowNearUndead();
+			if (ImGui::Checkbox("Undead", &undead)) {
+				Settings::SetGlowNearUndead(undead);
+				MarkChanged();
+			}
+
+			bool daedra = Settings::GetGlowNearDaedra();
+			if (ImGui::Checkbox("Daedra", &daedra)) {
+				Settings::SetGlowNearDaedra(daedra);
+				MarkChanged();
+			}
+
+			float radius = Settings::GetGlowRadius();
+			if (ImGui::SliderFloat("Radius", &radius, Settings::kGlowRadiusMin, Settings::kGlowRadiusMax, "%.0f units", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
+				Settings::SetGlowRadius(radius);
+				MarkChanged();
+			}
+			HelpMarker("Detection distance. Default: 2000 (about 28 meters).");
+
+			ImGui::Unindent();
+		}
+
+		float intensity = Settings::GetGlowIntensity() * 100.0f;
+		if (ImGui::SliderFloat("Intensity", &intensity, Settings::kGlowIntensityMin * 100.0f, Settings::kGlowIntensityMax * 100.0f, "%.0f%%", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
+			Settings::SetGlowIntensity(intensity / 100.0f);
+			MarkChanged();
+		}
+		HelpMarker("Brightness relative to the original mesh. Default: 100%. In Pulse mode, this is the peak.");
+
+		if (Settings::GetGlowMode() == Settings::GlowMode::kPulse) {
+			float pulseSpeed = Settings::GetGlowPulseSpeed();
+			if (ImGui::SliderFloat("Pulse speed", &pulseSpeed, Settings::kGlowPulseSpeedMin, Settings::kGlowPulseSpeedMax, "%.1f per second", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
+				Settings::SetGlowPulseSpeed(pulseSpeed);
+				MarkChanged();
+			}
+			HelpMarker("Pulses per second. Default: 1.");
+		}
+
+		ImGui::EndDisabled();
 
 		RenderFooter();
 	}

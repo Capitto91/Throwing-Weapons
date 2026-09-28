@@ -12,6 +12,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/AttackAnimType.h"
+#include "8.- ANIMATION/GlowMapControl.h"
 #include "8.- ANIMATION/PowerAttackVFX.h"
 
 #include <optional>
@@ -198,6 +199,7 @@ namespace Events
 						if (a_event->equipped) {
 							Animation::AttackAnimType::EnsureRegistered(*player);
 							Animation::PowerAttackVFX::EnsureRegistered(*player);
+							Animation::GlowMapControl::EnsureRunning();
 						} else {
 							Animation::AttackAnimType::Restore(equipWeapon);
 						}
@@ -272,6 +274,9 @@ namespace Events
 						Animation::AttackAnimType::EnsureRegistered(*player);
 						Animation::PowerAttackVFX::EnsureRegistered(*player);
 					}
+					// También aquí (y al equipar): con coc desde el menú
+					// principal no llega ni kNewGame ni kPostLoadGame.
+					Animation::GlowMapControl::EnsureRunning();
 				}
 
 				return RE::BSEventNotifyControl::kContinue;
@@ -355,6 +360,7 @@ namespace Events
 				logs::info("Events::OnSKSEMessage: kNewGame");
 				// Partida nueva: nunca hay un ciclo guardado que recuperar.
 				Weapon::WeaponManager::GetSingleton()->ResetToInHand();
+				Animation::GlowMapControl::EnsureRunning();
 				break;
 			case SKSE::MessagingInterface::kPostLoadGame:
 				logs::info("Events::OnSKSEMessage: kPostLoadGame");
@@ -374,6 +380,7 @@ namespace Events
 					Animation::AttackAnimType::EnsureRegistered(*player);
 					Animation::PowerAttackVFX::EnsureRegistered(*player);
 				}
+				Animation::GlowMapControl::EnsureRunning();
 				g_pendingRecovery.reset();
 				break;
 			default:

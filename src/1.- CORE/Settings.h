@@ -73,6 +73,37 @@ namespace Settings
 	//   que solo afectan al lanzamiento. Se consulta al empezar cada golpe.
 	inline constexpr bool kDefaultPowerAttackEffects = true;
 
+	// Glow de la textura del propio martillo (glow map del .nif del arma,
+	// Animation::GlowMapControl), 2026-09-28 a petición del usuario. Por
+	// defecto Constant + Always al 100%: el aspecto de siempre.
+	// - GlowMode: apagado, constante o en pulso.
+	// - GlowCondition: siempre, o solo con criaturas de los tipos marcados
+	//   (keywords de raza ActorTypeDragon/Undead/Daedra) vivas dentro de
+	//   GlowRadius.
+	// - GlowIntensity: multiplicador sobre el valor del .nif (constante, y
+	//   máximo del pulso). GlowPulseSpeed: pulsos por segundo.
+	enum class GlowMode : std::int32_t
+	{
+		kOff = 0,
+		kConstant = 1,
+		kPulse = 2
+	};
+
+	enum class GlowCondition : std::int32_t
+	{
+		kAlways = 0,
+		kNearCreatures = 1
+	};
+
+	inline constexpr GlowMode      kDefaultGlowMode = GlowMode::kConstant;
+	inline constexpr GlowCondition kDefaultGlowCondition = GlowCondition::kAlways;
+	inline constexpr bool          kDefaultGlowNearDragons = true;
+	inline constexpr bool          kDefaultGlowNearUndead = true;
+	inline constexpr bool          kDefaultGlowNearDaedra = true;
+	inline constexpr float         kDefaultGlowRadius = 2000.0f;  // unidades
+	inline constexpr float         kDefaultGlowIntensity = 1.0f;
+	inline constexpr float         kDefaultGlowPulseSpeed = 1.0f;  // Hz
+
 	// Rangos válidos: Load recorta a ellos lo que venga del INI, y el menú
 	// los usa como límites de sus controles. Placeholders razonables, sin
 	// ninguna referencia del motor detrás.
@@ -82,6 +113,12 @@ namespace Settings
 	inline constexpr float kThrowGravityMultMax = 2.0f;
 	inline constexpr float kHitMultMin = 0.0f;
 	inline constexpr float kHitMultMax = 2.0f;
+	inline constexpr float kGlowRadiusMin = 500.0f;
+	inline constexpr float kGlowRadiusMax = 8000.0f;
+	inline constexpr float kGlowIntensityMin = 0.0f;
+	inline constexpr float kGlowIntensityMax = 3.0f;
+	inline constexpr float kGlowPulseSpeedMin = 0.1f;
+	inline constexpr float kGlowPulseSpeedMax = 5.0f;
 
 	// Lee [Controls], [Throw], [Damage] y [VFX] del INI. Claves ausentes (o archivo
 	// inexistente) -> valor por defecto. Llamar una vez al cargar el plugin,
@@ -139,6 +176,30 @@ namespace Settings
 
 	[[nodiscard]] bool GetPowerAttackEffects();
 	void               SetPowerAttackEffects(bool a_enabled);
+
+	[[nodiscard]] GlowMode GetGlowMode();
+	void                   SetGlowMode(GlowMode a_mode);
+
+	[[nodiscard]] GlowCondition GetGlowCondition();
+	void                        SetGlowCondition(GlowCondition a_condition);
+
+	[[nodiscard]] bool GetGlowNearDragons();
+	void               SetGlowNearDragons(bool a_enabled);
+
+	[[nodiscard]] bool GetGlowNearUndead();
+	void               SetGlowNearUndead(bool a_enabled);
+
+	[[nodiscard]] bool GetGlowNearDaedra();
+	void               SetGlowNearDaedra(bool a_enabled);
+
+	[[nodiscard]] float GetGlowRadius();
+	void                SetGlowRadius(float a_radius);
+
+	[[nodiscard]] float GetGlowIntensity();
+	void                SetGlowIntensity(float a_intensity);
+
+	[[nodiscard]] float GetGlowPulseSpeed();
+	void                SetGlowPulseSpeed(float a_speed);
 
 	// Nombre del dispositivo tal como se escribe en el INI
 	// ("Keyboard"/"Mouse"/"Gamepad").

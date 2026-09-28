@@ -35,6 +35,14 @@ namespace Settings
 		constexpr const char* kWeaponLightKey = "WeaponLight";
 		constexpr const char* kHandEffectKey = "HandEffect";
 		constexpr const char* kPowerAttackEffectsKey = "PowerAttackEffects";
+		constexpr const char* kGlowModeKey = "GlowMode";
+		constexpr const char* kGlowConditionKey = "GlowCondition";
+		constexpr const char* kGlowNearDragonsKey = "GlowNearDragons";
+		constexpr const char* kGlowNearUndeadKey = "GlowNearUndead";
+		constexpr const char* kGlowNearDaedraKey = "GlowNearDaedra";
+		constexpr const char* kGlowRadiusKey = "GlowRadius";
+		constexpr const char* kGlowIntensityKey = "GlowIntensity";
+		constexpr const char* kGlowPulseSpeedKey = "GlowPulseSpeed";
 
 		struct Values
 		{
@@ -52,6 +60,14 @@ namespace Settings
 			bool          weaponLight{ kDefaultWeaponLight };
 			bool          handEffect{ kDefaultHandEffect };
 			bool          powerAttackEffects{ kDefaultPowerAttackEffects };
+			GlowMode      glowMode{ kDefaultGlowMode };
+			GlowCondition glowCondition{ kDefaultGlowCondition };
+			bool          glowNearDragons{ kDefaultGlowNearDragons };
+			bool          glowNearUndead{ kDefaultGlowNearUndead };
+			bool          glowNearDaedra{ kDefaultGlowNearDaedra };
+			float         glowRadius{ kDefaultGlowRadius };
+			float         glowIntensity{ kDefaultGlowIntensity };
+			float         glowPulseSpeed{ kDefaultGlowPulseSpeed };
 		};
 
 		std::mutex g_mutex;
@@ -66,6 +82,44 @@ namespace Settings
 				return RE::INPUT_DEVICE::kGamepad;
 			}
 			return RE::INPUT_DEVICE::kKeyboard;
+		}
+
+		// Valores del INI en texto ("Off"/"Constant"/"Pulse",
+		// "Always"/"NearCreatures"), igual que AimDevice.
+		const char* GlowModeToString(GlowMode a_mode)
+		{
+			switch (a_mode) {
+			case GlowMode::kOff:
+				return "Off";
+			case GlowMode::kPulse:
+				return "Pulse";
+			default:
+				return "Constant";
+			}
+		}
+
+		GlowMode ParseGlowMode(std::string_view a_value)
+		{
+			if (a_value == "Off") {
+				return GlowMode::kOff;
+			}
+			if (a_value == "Pulse") {
+				return GlowMode::kPulse;
+			}
+			if (a_value == "Constant") {
+				return GlowMode::kConstant;
+			}
+			return kDefaultGlowMode;
+		}
+
+		const char* GlowConditionToString(GlowCondition a_condition)
+		{
+			return a_condition == GlowCondition::kNearCreatures ? "NearCreatures" : "Always";
+		}
+
+		GlowCondition ParseGlowCondition(std::string_view a_value)
+		{
+			return a_value == "NearCreatures" ? GlowCondition::kNearCreatures : GlowCondition::kAlways;
 		}
 
 		// std::clamp evitado a propósito: Windows.h define min/max como
@@ -114,6 +168,14 @@ namespace Settings
 			loaded.weaponLight = ini.GetBoolValue(kVfxSection, kWeaponLightKey, kDefaultWeaponLight);
 			loaded.handEffect = ini.GetBoolValue(kVfxSection, kHandEffectKey, kDefaultHandEffect);
 			loaded.powerAttackEffects = ini.GetBoolValue(kVfxSection, kPowerAttackEffectsKey, kDefaultPowerAttackEffects);
+			loaded.glowMode = ParseGlowMode(ini.GetValue(kVfxSection, kGlowModeKey, GlowModeToString(kDefaultGlowMode)));
+			loaded.glowCondition = ParseGlowCondition(ini.GetValue(kVfxSection, kGlowConditionKey, GlowConditionToString(kDefaultGlowCondition)));
+			loaded.glowNearDragons = ini.GetBoolValue(kVfxSection, kGlowNearDragonsKey, kDefaultGlowNearDragons);
+			loaded.glowNearUndead = ini.GetBoolValue(kVfxSection, kGlowNearUndeadKey, kDefaultGlowNearUndead);
+			loaded.glowNearDaedra = ini.GetBoolValue(kVfxSection, kGlowNearDaedraKey, kDefaultGlowNearDaedra);
+			loaded.glowRadius = Clamp(static_cast<float>(ini.GetDoubleValue(kVfxSection, kGlowRadiusKey, kDefaultGlowRadius)), kGlowRadiusMin, kGlowRadiusMax);
+			loaded.glowIntensity = Clamp(static_cast<float>(ini.GetDoubleValue(kVfxSection, kGlowIntensityKey, kDefaultGlowIntensity)), kGlowIntensityMin, kGlowIntensityMax);
+			loaded.glowPulseSpeed = Clamp(static_cast<float>(ini.GetDoubleValue(kVfxSection, kGlowPulseSpeedKey, kDefaultGlowPulseSpeed)), kGlowPulseSpeedMin, kGlowPulseSpeedMax);
 		}
 
 		{
@@ -125,6 +187,10 @@ namespace Settings
 			DeviceToString(loaded.binding.device), loaded.binding.keyCode, loaded.throwSpeed, loaded.throwGravityMult, loaded.throwHitMult, loaded.returnHitMult,
 			loaded.returnStagger, loaded.hazardOnActor, loaded.hazardOnSurface, loaded.impactExplosion,
 			loaded.trail, loaded.particles, loaded.weaponLight, loaded.handEffect, loaded.powerAttackEffects);
+		logs::info("Settings::Load: glow del arma {} / {} | dragones {} / no muertos {} / daedra {} | radio {:.0f} | intensidad {:.2f} | pulso {:.2f} Hz.",
+			GlowModeToString(loaded.glowMode), GlowConditionToString(loaded.glowCondition),
+			loaded.glowNearDragons, loaded.glowNearUndead, loaded.glowNearDaedra,
+			loaded.glowRadius, loaded.glowIntensity, loaded.glowPulseSpeed);
 	}
 
 	bool Save()
@@ -156,6 +222,14 @@ namespace Settings
 		ini.SetBoolValue(kVfxSection, kWeaponLightKey, current.weaponLight);
 		ini.SetBoolValue(kVfxSection, kHandEffectKey, current.handEffect);
 		ini.SetBoolValue(kVfxSection, kPowerAttackEffectsKey, current.powerAttackEffects);
+		ini.SetValue(kVfxSection, kGlowModeKey, GlowModeToString(current.glowMode));
+		ini.SetValue(kVfxSection, kGlowConditionKey, GlowConditionToString(current.glowCondition));
+		ini.SetBoolValue(kVfxSection, kGlowNearDragonsKey, current.glowNearDragons);
+		ini.SetBoolValue(kVfxSection, kGlowNearUndeadKey, current.glowNearUndead);
+		ini.SetBoolValue(kVfxSection, kGlowNearDaedraKey, current.glowNearDaedra);
+		ini.SetDoubleValue(kVfxSection, kGlowRadiusKey, current.glowRadius);
+		ini.SetDoubleValue(kVfxSection, kGlowIntensityKey, current.glowIntensity);
+		ini.SetDoubleValue(kVfxSection, kGlowPulseSpeedKey, current.glowPulseSpeed);
 
 		// Sin firma BOM: el INI distribuido no la lleva.
 		if (ini.SaveFile(Constants::kInputConfigPath, false) < 0) {
@@ -339,5 +413,101 @@ namespace Settings
 	{
 		std::scoped_lock lock(g_mutex);
 		g_values.powerAttackEffects = a_enabled;
+	}
+
+	GlowMode GetGlowMode()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowMode;
+	}
+
+	void SetGlowMode(GlowMode a_mode)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowMode = a_mode;
+	}
+
+	GlowCondition GetGlowCondition()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowCondition;
+	}
+
+	void SetGlowCondition(GlowCondition a_condition)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowCondition = a_condition;
+	}
+
+	bool GetGlowNearDragons()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowNearDragons;
+	}
+
+	void SetGlowNearDragons(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowNearDragons = a_enabled;
+	}
+
+	bool GetGlowNearUndead()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowNearUndead;
+	}
+
+	void SetGlowNearUndead(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowNearUndead = a_enabled;
+	}
+
+	bool GetGlowNearDaedra()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowNearDaedra;
+	}
+
+	void SetGlowNearDaedra(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowNearDaedra = a_enabled;
+	}
+
+	float GetGlowRadius()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowRadius;
+	}
+
+	void SetGlowRadius(float a_radius)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowRadius = Clamp(a_radius, kGlowRadiusMin, kGlowRadiusMax);
+	}
+
+	float GetGlowIntensity()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowIntensity;
+	}
+
+	void SetGlowIntensity(float a_intensity)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowIntensity = Clamp(a_intensity, kGlowIntensityMin, kGlowIntensityMax);
+	}
+
+	float GetGlowPulseSpeed()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.glowPulseSpeed;
+	}
+
+	void SetGlowPulseSpeed(float a_speed)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.glowPulseSpeed = Clamp(a_speed, kGlowPulseSpeedMin, kGlowPulseSpeedMax);
 	}
 }

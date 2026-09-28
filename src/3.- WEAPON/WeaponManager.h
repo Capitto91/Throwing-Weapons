@@ -48,6 +48,11 @@ namespace Weapon
 		// réplica.
 		[[nodiscard]] RE::TESBoundObject* GetActiveWeapon() const noexcept { return weaponState.GetActiveWeapon(); }
 
+		// Réplica del ciclo actual (vacío si no hay ninguna). La usa
+		// Animation::GlowMapControl para aplicar el glow también a la
+		// réplica lanzada/clavada.
+		[[nodiscard]] RE::ObjectRefHandle GetActiveReplicaHandle() const noexcept { return weaponState.GetActiveReplicaHandle(); }
+
 		// Fuerza la vuelta a "en mano" sin tocar el arma física, olvidando
 		// cualquier arma activa. Se usa al cargar/empezar partida: tras
 		// reiniciar el proceso no hay forma fiable de saber si el arma no

@@ -166,6 +166,28 @@ namespace Constants
 	// attack vanilla (~1-1.5s); placeholder sin ajustar en el juego.
 	inline constexpr std::chrono::milliseconds kPowerAttackVfxSafetyTimeout{ 3000 };
 
+	// Glow de la textura del martillo (8.- ANIMATION/GlowMapControl.h).
+	// Se busca por tipo de material (BSShaderMaterial::Feature::kGlowMap),
+	// no por nombre de malla: en Mjolnir.nif solo un conjunto de texturas
+	// lleva glow map (mjlnir_g.dds, inspeccionado 2026-09-28).
+	//
+	// Duración del fundido al cumplirse / dejar de cumplirse la condición
+	// o al cambiar de modo. Placeholder sin ajustar en el juego.
+	inline constexpr float kGlowMapFadeSeconds = 0.5f;
+
+	// Cada cuánto se buscan criaturas cerca (GlowCondition::kNearCreatures)
+	// -- no cada tick, recorre todos los actores cargados.
+	inline constexpr float kGlowMapCreatureScanIntervalSeconds = 0.5f;
+
+	// Mínimo del pulso como fracción de la intensidad (0 = se apaga del
+	// todo en el valle de la onda).
+	inline constexpr float kGlowMapPulseMinFactor = 0.15f;
+
+	// Keywords vanilla de raza (Skyrim.esm) de cada tipo de criatura.
+	inline constexpr const char* kGlowMapDragonKeyword = "ActorTypeDragon";
+	inline constexpr const char* kGlowMapUndeadKeyword = "ActorTypeUndead";
+	inline constexpr const char* kGlowMapDaedraKeyword = "ActorTypeDaedra";
+
 	// Mismo mecanismo que Lanzar (ver el bloque de comentarios sobre
 	// kThrowReleaseFallbackWindow: API de Functions de Open Animation
 	// Replacer). Antes de esto, un primer intento con un evento SoundPlay
