@@ -464,20 +464,21 @@ namespace Animation
 		return a_root->world.translate;
 	}
 
-	void StartWeaponGlow(RE::Actor& a_actor)
+	bool StartWeaponGlow(RE::Actor& a_actor, bool a_checkSetting)
 	{
 		// Desactivable desde [VFX] WeaponLight (Settings). Retarget*/Stop
 		// ya son no-op sin destello activo; uno que ya se esté apagando
-		// termina su fundido con normalidad.
-		if (!Settings::GetWeaponLight()) {
+		// termina su fundido con normalidad. Los power attacks tienen su
+		// propio ajuste (a_checkSetting=false, ver PowerAttackVFX.h).
+		if (a_checkSetting && !Settings::GetWeaponLight()) {
 			logs::info("Animation::StartWeaponGlow: destello desactivado en la configuración ([VFX] WeaponLight).");
-			return;
+			return false;
 		}
 
 		if (g_activeHandle) {
 			if (g_phase != GlowPhase::kFadingOut) {
 				logs::warn("Animation::StartWeaponGlow: ya hay un destello activo -- no-op.");
-				return;
+				return false;
 			}
 
 			// El anterior todavía está en su margen de fundido de salida
@@ -499,13 +500,13 @@ namespace Animation
 
 		auto* form = GetGlowActivatorForm();
 		if (!form) {
-			return;
+			return false;
 		}
 
 		auto ref = a_actor.PlaceObjectAtMe(form, false);
 		if (!ref) {
 			logs::warn("Animation::StartWeaponGlow: PlaceObjectAtMe devolvió nullptr.");
-			return;
+			return false;
 		}
 
 		// Igual que Physics::SpawnReplica/Animation::WeaponVFX: sin esto,
@@ -516,6 +517,7 @@ namespace Animation
 
 		const auto generation = ++g_generation;
 		WaitFor3DThenStartTicking(g_activeHandle, GetPlayerHandGlowPosition, kMax3DWaitAttempts, generation);
+		return true;
 	}
 
 	void RetargetWeaponGlowToReplica(RE::ObjectRefHandle a_handle)

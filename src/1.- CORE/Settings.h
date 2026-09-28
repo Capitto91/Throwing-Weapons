@@ -67,6 +67,12 @@ namespace Settings
 	inline constexpr bool kDefaultWeaponLight = true;
 	inline constexpr bool kDefaultHandEffect = true;
 
+	// - PowerAttackEffects: chispas + destello con luz durante cada power
+	//   attack cuerpo a cuerpo con el arma en la mano
+	//   (Animation::PowerAttackVFX). Independiente de Particles/WeaponLight,
+	//   que solo afectan al lanzamiento. Se consulta al empezar cada golpe.
+	inline constexpr bool kDefaultPowerAttackEffects = true;
+
 	// Rangos válidos: Load recorta a ellos lo que venga del INI, y el menú
 	// los usa como límites de sus controles. Placeholders razonables, sin
 	// ninguna referencia del motor detrás.
@@ -130,6 +136,9 @@ namespace Settings
 
 	[[nodiscard]] bool GetHandEffect();
 	void               SetHandEffect(bool a_enabled);
+
+	[[nodiscard]] bool GetPowerAttackEffects();
+	void               SetPowerAttackEffects(bool a_enabled);
 
 	// Nombre del dispositivo tal como se escribe en el INI
 	// ("Keyboard"/"Mouse"/"Gamepad").

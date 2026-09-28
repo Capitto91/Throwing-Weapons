@@ -154,6 +154,18 @@ namespace Constants
 	inline constexpr std::chrono::milliseconds kDrawnTypePromoteRetryInterval{ 50 };
 	inline constexpr int                       kDrawnTypePromoteMaxAttempts = 20;
 
+	// Efectos de power attack (8.- ANIMATION/PowerAttackVFX.h): eventos
+	// del grafo de animación vanilla que marcan el inicio del golpe (se
+	// comprueba ahí Actor::IsPowerAttacking) y su final.
+	inline constexpr std::string_view kPowerAttackVfxStartEvent = "weaponSwing";
+	inline constexpr std::string_view kPowerAttackVfxStopEvent = "attackStop";
+
+	// Red de seguridad: apaga los efectos si attackStop no llega (golpe
+	// interrumpido por un tambaleo, etc. -- sin verificar en el juego si
+	// en esos casos llega o no). Holgado frente a lo que dura un power
+	// attack vanilla (~1-1.5s); placeholder sin ajustar en el juego.
+	inline constexpr std::chrono::milliseconds kPowerAttackVfxSafetyTimeout{ 3000 };
+
 	// Mismo mecanismo que Lanzar (ver el bloque de comentarios sobre
 	// kThrowReleaseFallbackWindow: API de Functions de Open Animation
 	// Replacer). Antes de esto, un primer intento con un evento SoundPlay

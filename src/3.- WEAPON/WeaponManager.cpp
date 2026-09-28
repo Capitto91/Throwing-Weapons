@@ -15,6 +15,7 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/HandGlow.h"
+#include "8.- ANIMATION/PowerAttackVFX.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
@@ -590,6 +591,12 @@ namespace Weapon
 		if (!player) {
 			return;
 		}
+
+		// Efectos de un power attack que todavía estén encendidos
+		// (2026-09-28): comparten instancia única con los del lanzamiento
+		// (ver PowerAttackVFX.h), así que se dan por terminados antes de
+		// arrancar los de este ciclo.
+		Animation::PowerAttackVFX::Cancel();
 
 		TransitionState(State::kThrowing);
 

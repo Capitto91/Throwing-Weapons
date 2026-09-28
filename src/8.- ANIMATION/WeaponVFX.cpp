@@ -436,11 +436,12 @@ namespace Animation
 		}
 	}
 
-	void StartMovementVFXOnActor(RE::Actor& a_actor)
+	void StartMovementVFXOnActor(RE::Actor& a_actor, bool a_checkSetting)
 	{
 		// Desactivable desde [VFX] Particles (Settings). Retarget/Stop/
-		// FadeOut ya son no-op sin VFX activo.
-		if (!Settings::GetParticles()) {
+		// FadeOut ya son no-op sin VFX activo. Los power attacks tienen su
+		// propio ajuste (a_checkSetting=false, ver PowerAttackVFX.h).
+		if (a_checkSetting && !Settings::GetParticles()) {
 			return;
 		}
 

@@ -275,6 +275,15 @@ namespace UI::ConfigMenu
 		}
 		HelpMarker("Brief glow on your hands when you throw.");
 
+		ImGui::SeparatorText("Power attacks");
+
+		bool powerAttack = Settings::GetPowerAttackEffects();
+		if (ImGui::Checkbox("Power attack effects", &powerAttack)) {
+			Settings::SetPowerAttackEffects(powerAttack);
+			MarkChanged();
+		}
+		HelpMarker("Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above. Applies from the next power attack.");
+
 		RenderFooter();
 	}
 

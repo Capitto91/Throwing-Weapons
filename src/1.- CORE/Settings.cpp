@@ -34,6 +34,7 @@ namespace Settings
 		constexpr const char* kParticlesKey = "Particles";
 		constexpr const char* kWeaponLightKey = "WeaponLight";
 		constexpr const char* kHandEffectKey = "HandEffect";
+		constexpr const char* kPowerAttackEffectsKey = "PowerAttackEffects";
 
 		struct Values
 		{
@@ -50,6 +51,7 @@ namespace Settings
 			bool          particles{ kDefaultParticles };
 			bool          weaponLight{ kDefaultWeaponLight };
 			bool          handEffect{ kDefaultHandEffect };
+			bool          powerAttackEffects{ kDefaultPowerAttackEffects };
 		};
 
 		std::mutex g_mutex;
@@ -111,6 +113,7 @@ namespace Settings
 			loaded.particles = ini.GetBoolValue(kVfxSection, kParticlesKey, kDefaultParticles);
 			loaded.weaponLight = ini.GetBoolValue(kVfxSection, kWeaponLightKey, kDefaultWeaponLight);
 			loaded.handEffect = ini.GetBoolValue(kVfxSection, kHandEffectKey, kDefaultHandEffect);
+			loaded.powerAttackEffects = ini.GetBoolValue(kVfxSection, kPowerAttackEffectsKey, kDefaultPowerAttackEffects);
 		}
 
 		{
@@ -118,10 +121,10 @@ namespace Settings
 			g_values = loaded;
 		}
 
-		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f} | daño ida {:.2f} / regreso {:.2f} | stagger regreso {} | hazard actor {} / superficie {} | explosión {} | VFX trail {} / partículas {} / luz {} / manos {}.",
+		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f} | daño ida {:.2f} / regreso {:.2f} | stagger regreso {} | hazard actor {} / superficie {} | explosión {} | VFX trail {} / partículas {} / luz {} / manos {} / power attack {}.",
 			DeviceToString(loaded.binding.device), loaded.binding.keyCode, loaded.throwSpeed, loaded.throwGravityMult, loaded.throwHitMult, loaded.returnHitMult,
 			loaded.returnStagger, loaded.hazardOnActor, loaded.hazardOnSurface, loaded.impactExplosion,
-			loaded.trail, loaded.particles, loaded.weaponLight, loaded.handEffect);
+			loaded.trail, loaded.particles, loaded.weaponLight, loaded.handEffect, loaded.powerAttackEffects);
 	}
 
 	bool Save()
@@ -152,6 +155,7 @@ namespace Settings
 		ini.SetBoolValue(kVfxSection, kParticlesKey, current.particles);
 		ini.SetBoolValue(kVfxSection, kWeaponLightKey, current.weaponLight);
 		ini.SetBoolValue(kVfxSection, kHandEffectKey, current.handEffect);
+		ini.SetBoolValue(kVfxSection, kPowerAttackEffectsKey, current.powerAttackEffects);
 
 		// Sin firma BOM: el INI distribuido no la lleva.
 		if (ini.SaveFile(Constants::kInputConfigPath, false) < 0) {
@@ -323,5 +327,17 @@ namespace Settings
 	{
 		std::scoped_lock lock(g_mutex);
 		g_values.handEffect = a_enabled;
+	}
+
+	bool GetPowerAttackEffects()
+	{
+		std::scoped_lock lock(g_mutex);
+		return g_values.powerAttackEffects;
+	}
+
+	void SetPowerAttackEffects(bool a_enabled)
+	{
+		std::scoped_lock lock(g_mutex);
+		g_values.powerAttackEffects = a_enabled;
 	}
 }

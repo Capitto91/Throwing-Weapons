@@ -12,6 +12,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/AttackAnimType.h"
+#include "8.- ANIMATION/PowerAttackVFX.h"
 
 #include <optional>
 
@@ -196,6 +197,7 @@ namespace Events
 					if (equipWeapon && equipWeapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
 						if (a_event->equipped) {
 							Animation::AttackAnimType::EnsureRegistered(*player);
+							Animation::PowerAttackVFX::EnsureRegistered(*player);
 						} else {
 							Animation::AttackAnimType::Restore(equipWeapon);
 						}
@@ -268,6 +270,7 @@ namespace Events
 					Weapon::WeaponManager::GetSingleton()->OnLoadingScreenClosed();
 					if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 						Animation::AttackAnimType::EnsureRegistered(*player);
+						Animation::PowerAttackVFX::EnsureRegistered(*player);
 					}
 				}
 
@@ -369,6 +372,7 @@ namespace Events
 				Weapon::WeaponManager::GetSingleton()->RestoreLightningDashPower();
 				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 					Animation::AttackAnimType::EnsureRegistered(*player);
+					Animation::PowerAttackVFX::EnsureRegistered(*player);
 				}
 				g_pendingRecovery.reset();
 				break;

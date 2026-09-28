@@ -39,7 +39,10 @@ namespace Animation
 	// note como un reinicio. Usado así para la transición kThrowing-
 	// >kThrown (ver StartMovementVFXOnReplica) desde 2026-08-10, a
 	// petición del usuario.
-	void StartMovementVFXOnActor(RE::Actor& a_actor);
+	//
+	// a_checkSetting=false ignora [VFX] Particles: lo usa
+	// Animation::PowerAttackVFX, que tiene su propio ajuste.
+	void StartMovementVFXOnActor(RE::Actor& a_actor, bool a_checkSetting = true);
 
 	// Coloca el VFX sobre la réplica visual en vuelo (a_handle, ver
 	// Weapon::WeaponState::GetActiveReplicaHandle) y lo sigue cada tick,

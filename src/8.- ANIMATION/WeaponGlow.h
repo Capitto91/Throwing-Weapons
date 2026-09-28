@@ -67,8 +67,11 @@ namespace Animation
 	// debería poder pasar -- solo hay un ciclo de arma a la vez en todo el
 	// plugin) o si Constants::kWeaponGlowActivatorLocalFormID no resuelve
 	// a un Activator real (placeholder sin rellenar todavía, o FormID
-	// equivocado).
-	void StartWeaponGlow(RE::Actor& a_actor);
+	// equivocado). Devuelve true si ha colocado un destello nuevo.
+	//
+	// a_checkSetting=false ignora [VFX] WeaponLight: lo usa
+	// Animation::PowerAttackVFX, que tiene su propio ajuste.
+	bool StartWeaponGlow(RE::Actor& a_actor, bool a_checkSetting = true);
 
 	// Cambia en caliente qué posición sigue el destello ya colocado (ver
 	// StartWeaponGlow) -- de la mano del jugador a la réplica en vuelo,
