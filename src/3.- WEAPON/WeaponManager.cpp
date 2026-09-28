@@ -1413,6 +1413,10 @@ namespace Weapon
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto  replicaHandle = weaponState.GetActiveReplicaHandle();
 
+		// Ya cancelado el seguimiento del clavado: el regreso vuela con la
+		// colisión de siempre (ver Combat::BeginEmbeddedEffect).
+		Combat::RestoreReplicaCollision(replicaHandle.get().get());
+
 		if (!player || !replicaHandle.get()) {
 			logs::warn("WeaponManager::BeginReturn: sin jugador o réplica válida, recuperación instantánea de reserva.");
 			// Sin animación de por medio (nunca se llegó a arrancar el
@@ -1477,6 +1481,9 @@ namespace Weapon
 		}
 		weaponState.SetStuckActorHandle({});
 		Combat::RemoveImpactHazard();
+		// La réplica se destruye enseguida (ReequipAndReset): solo se olvida
+		// la capa guardada, para no aplicarla a la réplica del ciclo siguiente.
+		Combat::RestoreReplicaCollision(nullptr);
 
 		// Recuperación instantánea (interrupción por pantalla de carga,
 		// etc.), sin ninguna animación de por medio -- fundido inmediato,

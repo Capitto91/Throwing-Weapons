@@ -75,6 +75,12 @@ namespace Combat
 	// WeaponManager::RecallWeapon).
 	void EndEmbeddedEffect(RE::Actor* a_target);
 
+	// Devuelve a la réplica la capa de colisión que tenía antes de
+	// clavarse (BeginEmbeddedEffect se la quita para no empujar el ragdoll
+	// del objetivo paralizado). Sin efecto si no se quitó. Llamar al
+	// desclavar, antes de arrancar el regreso.
+	void RestoreReplicaCollision(RE::TESObjectREFR* a_replica);
+
 	// Punto 9 de Mecanica del arma.txt: la réplica ha golpeado a
 	// a_target durante el regreso (no durante la ida), sin quedarse
 	// clavada. Aplica el daño real del arma x Settings::GetReturnHitMult()

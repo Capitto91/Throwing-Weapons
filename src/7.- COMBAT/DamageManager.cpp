@@ -197,6 +197,13 @@ namespace Combat
 		RE::ObjectRefHandle g_activeHazard;
 		std::uint32_t       g_hazardGeneration = 0;
 
+		// Capa de colisión que tenía la réplica antes de clavarse
+		// (BeginEmbeddedEffect la pasa a kNonCollidable), para devolvérsela
+		// al desclavar (RestoreReplicaCollision). kUnidentified = nada que
+		// restaurar. Mismo razonamiento que g_activeHazard: un solo ciclo
+		// a la vez, todo en el hilo principal.
+		RE::COL_LAYER g_embeddedReplicaLayer = RE::COL_LAYER::kUnidentified;
+
 		// Coloca a_form sobre a_anchor y lo registra como hazard activo.
 		// ownerActor = atacante para atribuirle el daño (campo de
 		// commonlibsse-ng, accessor versionado GetHazardRuntimeData; sin
@@ -335,6 +342,23 @@ namespace Combat
 		}
 		RE::ActorHandle targetHandle(a_target);
 
+		// Sin colisión mientras siga clavada: la réplica se avanza DENTRO
+		// del cuerpo (Constants::kActorStickForwardOffset) y es kKeyframed
+		// (masa infinita para Havok), así que con la parálisis (ragdoll)
+		// empujaba el hueso que sigue, lo seguía, volvía a solaparse y lo
+		// empujaba otra vez cada tick -- el NPC acababa flotando/subiendo
+		// (reportado por el usuario, 2026-09-28). Aquí no necesita colisión
+		// para nada: solo copia la transformación de un hueso, y los
+		// impactos del regreso son raycasts que ya ignoran la réplica. No
+		// contradice el "mejor mantener la colisión" de CLAUDE.md, que es
+		// sobre los tirones en vuelo. Se restaura al desclavar
+		// (RestoreReplicaCollision, desde WeaponManager::BeginReturn).
+		if (auto* replica3D = replica ? replica->Get3D() : nullptr) {
+			g_embeddedReplicaLayer = replica3D->GetCollisionLayer();
+			replica3D->SetCollisionLayer(RE::COL_LAYER::kNonCollidable);
+			logs::info("Combat::BeginEmbeddedEffect: colisión de la réplica desactivada mientras siga clavada (capa original {}).", static_cast<int>(g_embeddedReplicaLayer));
+		}
+
 		// Punto 10 (segunda mitad, caso impacto): eliminado el enderezado
 		// al clavarse (decisión del usuario, 2026-08-08, ver
 		// Constants::kSpinStraightenLeadTime para el porqué) -- el arma se
@@ -464,6 +488,20 @@ namespace Combat
 			logs::info("Combat::RemoveImpactHazard: hazard retirado al desclavar el arma.");
 		}
 		g_activeHazard = {};
+	}
+
+	void RestoreReplicaCollision(RE::TESObjectREFR* a_replica)
+	{
+		const auto layer = g_embeddedReplicaLayer;
+		g_embeddedReplicaLayer = RE::COL_LAYER::kUnidentified;
+		if (layer == RE::COL_LAYER::kUnidentified) {
+			return;
+		}
+
+		if (auto* replica3D = a_replica ? a_replica->Get3D() : nullptr) {
+			replica3D->SetCollisionLayer(layer);
+			logs::info("Combat::RestoreReplicaCollision: colisión de la réplica restaurada (capa {}).", static_cast<int>(layer));
+		}
 	}
 
 	void EndEmbeddedEffect(RE::Actor* a_target)
