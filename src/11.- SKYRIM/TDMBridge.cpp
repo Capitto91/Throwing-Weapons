@@ -1,20 +1,5 @@
-// Implementación del puente opcional hacia True Directional Movement.
-//
-// Atribución:
-//   Parte de este archivo es código copiado de True Directional Movement,
-//   de ersh1 -- https://github.com/ersh1/TrueDirectionalMovement
-//   Licencia GPL-3.0 (misma licencia que este proyecto).
-//   Copiado de ese repositorio:
-//   - PredictAimProjectile y ApproximatelyEqual (src/Utils.cpp, src/Utils.h),
-//     sin cambios de lógica. La función original de TDM está adaptada a su
-//     vez de http://ringofblades.com/Blades/Code/PredictiveAim.cs (fuente
-//     citada en el propio código de TDM).
-//   - La elección del punto del cuerpo al que apuntar, reproducida en
-//     GetTargetPoint a partir de DirectionalMovementHandler::GetTargetPoints
-//     y DirectionalMovementHandler::GetTargetPosition
-//     (src/DirectionalMovementHandler.cpp).
-//   El header de su API (src/13.- EXTERNAL/TrueDirectionalMovement/
-//   TrueDirectionalMovementAPI.h) es una copia literal, sin modificar.
+// Contiene código de True Directional Movement (ersh1, GPL-3.0, github.com/ersh1/TrueDirectionalMovement):
+// PredictAimProjectile, ApproximatelyEqual y la elección de punto de GetTargetPoint.
 
 #include "11.- SKYRIM/TDMBridge.h"
 
@@ -27,9 +12,7 @@ namespace TDMBridge
 {
 	namespace
 	{
-		// V1 basta: solo se usan GetTargetLockState/GetCurrentTarget, que ya
-		// existen desde la primera versión de la interfaz -- pedir la
-		// mínima deja funcionar el puente con cualquier TDM que tenga API.
+		// V1: solo se usan GetTargetLockState/GetCurrentTarget.
 		TDM_API::IVTDM1* g_api = nullptr;
 
 		// Mismo helper que TDM (src/Utils.h).
@@ -104,8 +87,7 @@ namespace TDMBridge
 		float t;
 
 		if (ApproximatelyEqual(projectileSpeedSquared, targetSpeedSquared)) {
-			// Evita la división por cero cuando objetivo y proyectil van a la
-			// misma velocidad: cos(theta) <= 0 no tiene solución.
+			// cos(theta) <= 0 no tiene solución.
 			if (cosTheta > 0) {
 				t = 0.5f * distance / (targetSpeed * cosTheta);
 			} else {
@@ -133,8 +115,7 @@ namespace TDMBridge
 				}
 
 				if (t < FLT_EPSILON) {
-					// Sin solución real: tiro a ciegas hacia la posición
-					// futura del objetivo.
+					// Sin solución: tiro hacia la posición futura del objetivo.
 					validSolutionFound = false;
 					t = 1;
 				}

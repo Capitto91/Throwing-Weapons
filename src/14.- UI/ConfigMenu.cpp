@@ -1,21 +1,10 @@
-// Implementación del menú de configuración en el juego.
-//
-// Las funciones de ImGui son las del propio header del framework
-// (namespace ImGuiMCP, src/13.- EXTERNAL/SKSEMenuFramework/, copia literal
-// de github.com/QTR-Modding/SKSE-Menu-Framework-3-API, LGPL-2.1): llaman a la
-// DLL del framework, así que este plugin no compila ni enlaza ImGui. Todas
-// las funciones del header son inertes si la DLL no está cargada.
-//
-// Textos del menú en inglés (decisión del usuario, igual que el INI
-// distribuido).
+// Menú de configuración -- ver ConfigMenu.h. ImGui vía ImGuiMCP (DLL del framework); textos en inglés.
 
 #include "14.- UI/ConfigMenu.h"
 
 #include "1.- CORE/Settings.h"
 
-// Avisos del propio header del framework (código de terceros, no se edita):
-// <codecvt> obsoleto (C4996), struct/class mezclados (C4099), "|" entre
-// enums distintos (C5054).
+// Avisos del header del framework (código de terceros).
 #pragma warning(push)
 #pragma warning(disable: 4996 4099 5054)
 #include "13.- EXTERNAL/SKSEMenuFramework/SKSEMenuFramework.h"
@@ -32,24 +21,16 @@ namespace UI::ConfigMenu
 
 		constexpr const char* kSectionName = "Throwable Mjolnir";
 
-		// Hay cambios hechos desde el menú que todavía no se han guardado en
-		// el INI (solo para avisar al usuario: los cambios ya están
-		// aplicados en el juego igualmente).
+		// Cambios aplicados pero sin guardar en el INI.
 		std::atomic<bool> g_unsaved{ false };
 
 		// Resultado del último guardado, mostrado bajo los botones.
 		std::string g_statusMessage;
 
-		// Captura de tecla ("Set key..."): mientras está activa, la siguiente
-		// pulsación de cualquier dispositivo pasa a ser la tecla de la
-		// acción, y se consume para que no llegue al juego ni al menú.
-		// El callback de entrada del framework se ejecuta en el hilo de
-		// entrada del juego y el render en el suyo: atómico.
+		// Captura de tecla activa: la siguiente pulsación pasa a ser la tecla (se consume).
 		std::atomic<bool> g_capturingKey{ false };
 
-		// Nombre legible de la tecla (p. ej. "G"), vía
-		// BSInputDeviceManager::GetButtonNameFromID; si el motor no lo
-		// resuelve, el código numérico.
+		// Nombre de la tecla según el motor, o el código numérico.
 		std::string GetButtonName(const Settings::ActionBinding& a_binding)
 		{
 			RE::BSFixedString name;
@@ -74,8 +55,7 @@ namespace UI::ConfigMenu
 
 			const auto* button = a_event->AsButtonEvent();
 			if (!button || !button->IsDown()) {
-				// Mientras se captura se consume todo lo que sea un botón
-				// (también sus sueltas), para que no llegue a nada más.
+				// Mientras se captura se consumen todos los botones.
 				return button != nullptr;
 			}
 
@@ -214,14 +194,14 @@ namespace UI::ConfigMenu
 				Settings::SetReturnStagger(stagger);
 				MarkChanged();
 			}
-			HelpMarker("Enemies hit by the weapon on its way back are staggered. The initial hit never staggers: the target is paralyzed instead.");
+			HelpMarker("Enemies hit by the weapon on its way back are staggered.");
 
 			bool hazardActor = Settings::GetHazardOnActor();
 			if (ImGui::Checkbox("Electric discharge on enemies", &hazardActor)) {
 				Settings::SetHazardOnActor(hazardActor);
 				MarkChanged();
 			}
-			HelpMarker("Leaves an electric discharge when the weapon sticks into an enemy. This discharge is the continuous damage while the weapon stays stuck: turning it off leaves only the initial hit.");
+			HelpMarker("Leaves an electric discharge when the weapon sticks into an enemy.");
 
 			bool hazardSurface = Settings::GetHazardOnSurface();
 			if (ImGui::Checkbox("Electric discharge on surfaces", &hazardSurface)) {
@@ -244,7 +224,7 @@ namespace UI::ConfigMenu
 	void __stdcall RenderVfx()
 	{
 		ImGui::SeparatorText("Visual effects");
-		ImGui::TextWrapped("Purely visual. Changes apply to the next throw or recall, not to one already in flight.");
+		ImGui::TextWrapped("Purely visual.");
 		ImGui::Spacing();
 
 		bool trail = Settings::GetTrail();
@@ -266,7 +246,7 @@ namespace UI::ConfigMenu
 			Settings::SetWeaponLight(weaponLight);
 			MarkChanged();
 		}
-		HelpMarker("Glow around the hammer head from the throw until it is caught (ThorMjolnirLight.nif).");
+		HelpMarker("Glow around the hammer head");
 
 		bool handEffect = Settings::GetHandEffect();
 		if (ImGui::Checkbox("Hand effect", &handEffect)) {
@@ -280,10 +260,9 @@ namespace UI::ConfigMenu
 			Settings::SetPowerAttackEffects(powerAttack);
 			MarkChanged();
 		}
-		HelpMarker("Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above. Applies from the next power attack.");
+		HelpMarker("Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above.");
 
-		// Glow de la textura del martillo (Animation::GlowMapControl): se
-		// aplica en vivo, cada tick.
+		// Glow de la textura del martillo (GlowMapControl), aplicado en vivo.
 		ImGui::SeparatorText("Weapon glow");
 
 		static constexpr const char* kGlowModeItems[] = { "Off", "Constant", "Pulse" };
@@ -292,7 +271,7 @@ namespace UI::ConfigMenu
 			Settings::SetGlowMode(static_cast<Settings::GlowMode>(glowMode));
 			MarkChanged();
 		}
-		HelpMarker("Glow of the hammer's own texture, in hand and while thrown. Constant = always lit (default). Pulse = slowly brightens and dims.");
+		HelpMarker("Glow of the hammer's own texture.");
 
 		const bool glowOn = Settings::GetGlowMode() != Settings::GlowMode::kOff;
 		ImGui::BeginDisabled(!glowOn);
@@ -370,8 +349,7 @@ namespace UI::ConfigMenu
 		SKSEMenuFramework::AddSectionItem("Damage", RenderDamage);
 		SKSEMenuFramework::AddSectionItem("VFX", RenderVfx);
 
-		// Vive toda la sesión (el framework no ofrece otro momento para
-		// darlo de baja): se reserva y no se libera a propósito.
+		// Vive toda la sesión: no se libera.
 		(void)SKSEMenuFramework::AddInputEvent(OnInputEvent);
 
 		logs::info("UI::ConfigMenu: sección \"{}\" registrada en SKSE Menu Framework {:.2f}.", kSectionName, SKSEMenuFramework::GetMenuFrameworkVersion());

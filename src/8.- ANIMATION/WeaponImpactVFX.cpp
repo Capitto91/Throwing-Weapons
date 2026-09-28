@@ -1,5 +1,4 @@
-// Implementación del VFX de impacto. Ver el header para el porqué del
-// pivote a una explosión vanilla real en vez de un .nif propio.
+// Explosión de impacto -- ver WeaponImpactVFX.h.
 
 #include "8.- ANIMATION/WeaponImpactVFX.h"
 
@@ -10,11 +9,7 @@ namespace Animation
 {
 	namespace
 	{
-		// Formulario resuelto una sola vez por sesión -- mismo patrón que
-		// GetOnActivatorForm (WeaponVFX.cpp)/GetGlowActivatorForm
-		// (WeaponGlow.cpp), aplicado aquí a nuestro propio BGSExplosion
-		// (duplicado del vanilla en la Creation Kit, ver Constants.h) en
-		// vez de un Activator.
+		// Formulario resuelto una vez por sesión.
 		RE::BGSExplosion* GetImpactExplosionForm()
 		{
 			static RE::BGSExplosion* cache = nullptr;
@@ -37,7 +32,6 @@ namespace Animation
 	{
 		// Desactivable desde [Damage] ImpactExplosion (Settings / menú).
 		if (!Settings::GetImpactExplosion()) {
-			logs::info("Animation::SpawnImpactVFX: desactivada en la configuración (ImpactExplosion), no se coloca.");
 			return;
 		}
 

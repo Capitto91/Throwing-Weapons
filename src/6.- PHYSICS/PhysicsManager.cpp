@@ -1,5 +1,4 @@
-// Implementación del sistema físico.
-// Actualiza la posición del arma aplicando las reglas de movimiento.
+// Réplica y bucle de tick -- ver PhysicsManager.h.
 
 #include "6.- PHYSICS/PhysicsManager.h"
 
@@ -13,10 +12,7 @@ namespace Physics
 {
 	namespace
 	{
-		// Margen de espera (en pasos de Constants::kTickInterval) para que
-		// el 3D de una réplica recién creada termine de cargar en segundo
-		// plano antes de darla por perdida. ~800ms de sobra para lo que en
-		// la iteración anterior ha tardado en el juego (unos pocos frames).
+		// Intentos de espera a que cargue el 3D (~800 ms).
 		constexpr int kMax3DWaitAttempts = 50;
 
 		void WaitFor3DThenReady(RE::ObjectRefHandle a_handle, int a_attemptsLeft, ReadyCallback a_onReady)
@@ -28,10 +24,7 @@ namespace Physics
 			}
 
 			if (auto* node3D = refr->Get3D()) {
-				// Modo Havok "movido por código": deja de recibir fuerzas/
-				// gravedad de la simulación pero conserva colisión — sin
-				// esto, forzar la posición de un cuerpo simulado activamente
-				// produce tirones/clipping (ver CLAUDE.md).
+				// Movida por código: sin fuerzas ni gravedad, con colisión.
 				node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true);
 				SyncHavok(*refr, refr->GetPosition(), refr->GetAngle());
 				a_onReady(a_handle);
@@ -68,11 +61,7 @@ namespace Physics
 
 		ref->SetPosition(a_position);
 
-		// La réplica es un TESObjectWEAP real y activable: sin esto, el
-		// jugador puede recogerla del suelo con la tecla de activar como
-		// si fuera un arma suelta cualquiera, duplicando el arma (la
-		// "real" sigue en su inventario, sin equipar, mientras el ciclo
-		// dure) — comprobado en el juego.
+		// Sin activación: el jugador no puede recogerla del suelo.
 		ref->SetActivationBlocked(true);
 
 		WaitFor3DThenReady(RE::ObjectRefHandle(ref.get()), kMax3DWaitAttempts, std::move(a_onReady));
@@ -80,11 +69,7 @@ namespace Physics
 
 	void SyncHavok(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position, const RE::NiPoint3& a_angle)
 	{
-		// TESObjectREFR::SetPosition/SetAngle solo actualizan la posición/
-		// rotación "lógica" del objeto; el bhkRigidBody de Havok, que sigue
-		// existiendo aunque esté en modo kKeyframed, no se entera por sí
-		// solo. bhkRigidBody trabaja en unidades de Havok (metros), de ahí
-		// bhkWorld::GetWorldScale() para convertir desde unidades de juego.
+		// SetPosition/SetAngle no mueven el bhkRigidBody: se escribe aparte, en unidades de Havok.
 		auto* node = a_refr.Get3D();
 		auto* collisionObj = node ? node->GetCollisionObject() : nullptr;
 		auto* rigidBody = collisionObj ? collisionObj->GetRigidBody() : nullptr;
@@ -107,10 +92,7 @@ namespace Physics
 
 	TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback)
 	{
-		// El callback se guarda en el heap y se comparte por puntero (no se
-		// copia en cada iteración): así, si el propio callback captura
-		// estado mutable entre ticks (p. ej. distancia acumulada), ese
-		// estado persiste correctamente de un tick al siguiente.
+		// El callback se comparte por puntero para conservar su estado entre ticks.
 		auto callback = std::make_shared<TickCallback>(std::move(a_callback));
 		auto active = std::make_shared<std::atomic<bool>>(true);
 
@@ -121,12 +103,7 @@ namespace Physics
 					return;
 				}
 
-				// Nunca se reencola llamando a AddTask desde dentro de la
-				// propia tarea que se ejecuta: si esa cola no está separada
-				// por fotogramas, encadenar así congela el juego por
-				// completo (comprobado en la iteración anterior). El
-				// reencolado real lo hace este hilo aparte, que solo
-				// duerme y vuelve a pedir turno.
+				// Este hilo aparte es quien reencola; nunca una tarea a sí misma.
 				SKSE::GetTaskInterface()->AddTask([a_handle, callback, active]() {
 					if (!active->load()) {
 						return;

@@ -1,6 +1,4 @@
-// Gestiona todo el proceso de lanzamiento.
-// Crea el proyectil réplica del arma, calcula posición inicial y aplica la fuerza
-// inicial del lanzamiento.
+// Lanzamiento: crea la réplica y la mueve en parábola hasta que impacta o cae al agua.
 
 #pragma once
 
@@ -12,42 +10,22 @@ namespace Throw
 {
 	struct LaunchCallbacks
 	{
-		// Réplica creada y lista para volar (handle inválido si nunca
-		// llegó a crearse o a cargar su 3D). Pensado para que el llamante
-		// guarde el handle y pueda recuperarla más tarde.
+		// Réplica lista para volar (handle inválido si no llegó a cargar).
 		std::function<void(RE::ObjectRefHandle)> onSpawned;
 
-		// Token del bucle de tick que controla la réplica en cada momento
-		// (vuelo parabólico, o el seguimiento de un actor clavado que lo
-		// sustituye — ver Combat::BeginEmbeddedEffect). El llamante debe
-		// guardar siempre el último token recibido: es lo único que
-		// permite cancelar ese bucle desde fuera (p. ej. al pulsar el
-		// botón de recuperar) sin destruir la réplica, ver
-		// Physics::TickToken.
+		// Token del bucle que mueve la réplica (vuelo o seguimiento del actor clavado).
+		// El llamante guarda el último para poder cancelarlo.
 		std::function<void(Physics::TickToken)> onTickStarted;
 
-		// Impacto detectado (superficie o actor, punto 6 de Mecanica del
-		// arma.txt): la réplica ya ha dejado de moverse en el punto del
-		// golpe. a_actor es un handle válido si el impacto fue contra un
-		// actor (LaunchWeapon ya se ha encargado de aplicar
-		// Combat::BeginEmbeddedEffect en ese caso), inválido si fue contra
-		// una superficie.
+		// Impacto: la réplica se ha detenido. a_actor es válido si se clavó en un actor
+		// (ya con Combat::BeginEmbeddedEffect aplicado).
 		std::function<void(RE::ActorHandle a_actor)> onStuck;
 
-		// Caída al agua (punto 5, agua no es superficie donde clavarse): la
-		// réplica sigue existiendo pero ha dejado de moverse, pendiente de
-		// que el llamante decida qué hacer (recuperación automática). El
-		// lanzamiento ya no tiene distancia máxima -- vuela sin límite hasta
-		// impactar o caer al agua.
+		// Caída al agua: la réplica se ha detenido sin clavarse.
 		std::function<void()> onAutoRecall;
 	};
 
-	// Lanza la réplica visual del arma desde el nodo WEAPON de la mano
-	// derecha de a_shooter, con trayectoria parabólica propia (velocidad y
-	// gravedad constantes en Constants.h, sin depender de Havok ni de
-	// ningún formulario Projectile) hacia el punto real al que apunta la
-	// mirilla (corrección de paralaje cámara/mano, ver el plan de
-	// integración) y colisión por raycast cada tick
-	// (6.- PHYSICS/CollisionManager).
+	// Lanza la réplica desde la mano derecha de a_shooter hacia donde apunta la mirilla.
+	// La llama WeaponManager::ThrowWeapon; avisa por los callbacks de arriba.
 	void LaunchWeapon(RE::Actor* a_shooter, RE::TESObjectWEAP* a_weapon, LaunchCallbacks a_callbacks);
 }

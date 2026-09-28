@@ -1,5 +1,4 @@
-// Implementación de cálculos de curvas.
-// Proporciona posiciones interpoladas para movimientos complejos.
+// Curvas e interpolación -- ver CurveMath.h.
 
 #include "9.- MATH/CurveMath.h"
 

@@ -1,5 +1,4 @@
-// Implementación del sistema de entrada.
-// Traduce las acciones del jugador en órdenes para el controlador del arma.
+// Entrada del jugador -- ver InputManager.h.
 
 #include "2.- INPUT/InputManager.h"
 
@@ -35,8 +34,7 @@ namespace Input
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
-		// No procesar entrada mientras haya un menú abierto (inventario,
-		// diálogo, etc.), igual que hace el propio juego.
+		// Nada con el juego en pausa (menús abiertos).
 		if (auto* ui = RE::UI::GetSingleton(); !ui || ui->GameIsPaused()) {
 			return RE::BSEventNotifyControl::kContinue;
 		}
@@ -44,11 +42,7 @@ namespace Input
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto* weaponManager = Weapon::WeaponManager::GetSingleton();
 
-		// El botón participa en el ciclo si el arma arrojadiza está en la
-		// mano derecha (para lanzarla) o si el ciclo ya está en
-		// marcha y el arma está fuera de la mano (para recuperarla). Con
-		// el arma fuera, la mano queda vacía (ver WeaponManager::ThrowWeapon),
-		// así que la comprobación de equipada por sí sola no basta.
+		// Participa con el martillo en la mano (lanzar) o con el ciclo en marcha (recuperar).
 		const bool participa = player &&
 		                        (weaponManager->GetState() != Weapon::State::kInHand ||
 									ActorUtils::IsThrowableWeaponEquipped(player));

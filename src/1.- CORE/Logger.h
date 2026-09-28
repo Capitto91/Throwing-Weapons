@@ -1,12 +1,9 @@
-// Declara el sistema de registro del plugin.
-// Permite escribir mensajes de depuración para comprobar el funcionamiento
-// interno del DLL durante el desarrollo.
+// Log del plugin (ThorMjolnir_OAR.log), usado vía el alias logs::.
 
 #pragma once
 
 namespace Logger
 {
-	// Inicializa el logger de SKSE (spdlog) para que el alias logs:: pueda
-	// usarse en el resto del plugin. Debe llamarse una única vez al arrancar.
+	// Lo llama SKSEPluginLoad una sola vez, antes que nada.
 	void Init();
 }

@@ -1,9 +1,9 @@
-// Implementación del sistema de eventos.
-// Registra callbacks y procesa eventos recibidos desde Skyrim.
+// Mensajes de SKSE, sinks del motor y cosave -- ver EventManager.h.
 
 #include "10.- EVENTS/EventManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Requirements.h"
 #include "10.- EVENTS/OARFunctions.h"
 #include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
@@ -21,15 +21,7 @@ namespace Events
 {
 	namespace
 	{
-		// FNV-1a de 32 bits, en tiempo de compilación. No existe ningún
-		// registro central de IDs de cosave contra el que verificar
-		// unicidad de verdad (no hay forma de "verificarlo" en sentido
-		// estricto) — pero derivarlo de una cadena larga y específica de
-		// este proyecto (el nombre+autor ya declarados en xmake.lua, no
-		// inventados aquí) reduce muchísimo más la probabilidad de
-		// colisión por azar con otro plugin que elegir 4 letras cortas a
-		// mano, que es justo lo contrario de lo que conviene: cuantas
-		// menos combinaciones posibles, más fácil coincidir sin querer.
+		// FNV-1a de 32 bits en compilación, para el ID del cosave.
 		constexpr std::uint32_t Fnv1aHash32(std::string_view a_str)
 		{
 			std::uint32_t hash = 2166136261u;
@@ -40,18 +32,12 @@ namespace Events
 			return hash;
 		}
 
-		// Identificador del bloque de este plugin dentro del cosave (para
-		// SetUniqueID) y del registro concreto del ciclo dentro de ese
-		// bloque (para OpenRecord) — dos cosas distintas.
+		// ID del plugin en el cosave y del registro del ciclo.
 		constexpr std::uint32_t kPluginUniqueID = Fnv1aHash32("Capitto91::ThorMjolnir::cosave");
 		constexpr std::uint32_t kCycleRecordType = static_cast<std::uint32_t>('CYCL');
 		constexpr std::uint32_t kCycleRecordVersion = 1;
 
-		// Datos leídos por SerializationLoadCallback, pendientes de aplicar
-		// en kPostLoadGame -- no se toca ningún actor/referencia dentro del
-		// propio callback de carga, no hay garantía de que el mundo esté
-		// listo ahí todavía (mismo motivo por el que EquipGuard/
-		// LoadingScreenWatcher esperan a kDataLoaded, ver CLAUDE.md).
+		// Datos del cosave pendientes de aplicar en kPostLoadGame.
 		std::optional<Weapon::WeaponManager::SaveCycleData> g_pendingRecovery;
 
 		void SerializationSaveCallback(SKSE::SerializationInterface* a_intfc)
@@ -89,10 +75,7 @@ namespace Events
 					continue;
 				}
 
-				// Los FormID guardados corresponden a la partida guardada,
-				// no necesariamente a esta sesión (el load order pudo
-				// cambiar) -- hay que remapearlos, incluso los de
-				// referencias dinámicas como la réplica.
+				// Remapea los FormID guardados al orden de carga actual.
 				RE::FormID resolved = 0;
 				data.weaponFormID = (data.weaponFormID && a_intfc->ResolveFormID(data.weaponFormID, resolved)) ? resolved : 0;
 				data.replicaFormID = (data.replicaFormID && a_intfc->ResolveFormID(data.replicaFormID, resolved)) ? resolved : 0;
@@ -104,16 +87,10 @@ namespace Events
 
 		void SerializationRevertCallback(SKSE::SerializationInterface*)
 		{
-			// Partida nueva, o carga de un save sin datos nuestros -- no
-			// arrastrar nada de una sesión anterior del proceso.
+			// Partida nueva o sin datos nuestros: se descarta lo anterior.
 			g_pendingRecovery.reset();
 		}
-		// Impide equipar cualquier otra arma mientras la arrojadiza está
-		// fuera de la mano (lanzando o lanzada), tal como exige el punto 4
-		// de Mecanica del arma.txt. RE::TESEquipEvent se notifica después
-		// de que el motor ya ha equipado el objeto (no es cancelable), así
-		// que la única forma de bloquearlo es desequiparlo de inmediato al
-		// detectarlo.
+		// Desequipa cualquier otra arma mientras la arrojadiza está fuera de la mano.
 		class EquipGuard final : public RE::BSTEventSink<RE::TESEquipEvent>
 		{
 		public:
@@ -141,10 +118,7 @@ namespace Events
 				}
 
 				if (Weapon::WeaponManager::GetSingleton()->IsEquipGuardSuppressed()) {
-					// Equipado propio (arma señuelo de Llamada/Atrape, ver
-					// WeaponManager::EquipGestureWeapon) -- no deshacerlo,
-					// a diferencia de cualquier otro equipado ajeno al ciclo.
-					logs::info("Events::EquipGuard: equipado permitido (suprimido por WeaponManager, arma señuelo).");
+					// Arma señuelo del gesto: no se deshace.
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
@@ -161,12 +135,8 @@ namespace Events
 			~EquipGuard() override = default;
 		};
 
-		// Concede/retira el Lesser Power Constants::kLightningDashSpell
-		// según el jugador equipe o desequipe el arma arrojadiza (ver
-		// WeaponManager::OnThrowableWeaponEquipChanged, donde vive la
-		// decisión de cuándo se retira de verdad). Sink aparte de
-		// EquipGuard: aquel deshace equipados ajenos al ciclo, este solo
-		// reacciona al arma propia -- no comparten ninguna lógica.
+		// Concede o retira el poder Lightning Dash al equipar/desequipar el arma arrojadiza.
+		// Avisa a WeaponManager::OnThrowableWeaponEquipChanged.
 		class LightningDashWatcher final : public RE::BSTEventSink<RE::TESEquipEvent>
 		{
 		public:
@@ -189,9 +159,7 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
-				// Tipo de animación del arma (ver AttackAnimType.h): antes de
-				// la guarda de pantalla de carga -- desequipada durante una
-				// carga tampoco debe quedarse como maza.
+				// Devuelve el tipo de arma original, también durante una carga.
 				{
 					auto* equipForm = RE::TESForm::LookupByID(a_event->baseObject);
 					auto* equipWeapon = equipForm ? equipForm->As<RE::TESObjectWEAP>() : nullptr;
@@ -206,13 +174,7 @@ namespace Events
 					}
 				}
 
-				// Durante una pantalla de carga el motor puede reequipar/
-				// desequipar por su cuenta el equipo del jugador, sin que
-				// sea una decisión suya -- se ignora, y kPostLoadGame
-				// (WeaponManager::RestoreLightningDashPower) ya cubre
-				// concederlo si hace falta. No verificado que esos eventos
-				// lleguen de verdad en una carga; la guarda solo evita
-				// quitar y volver a dar el poder si llegan.
+				// Durante una pantalla de carga se ignora; kPostLoadGame ya concede el poder.
 				if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
@@ -233,24 +195,7 @@ namespace Events
 			~LightningDashWatcher() override = default;
 		};
 
-		// Recupera el arma si el ciclo estaba en marcha cuando se cierra
-		// cualquier pantalla de carga (puerta, viaje rápido...). A
-		// diferencia de la resincronización de kPostLoadGame, aquí sí es
-		// seguro reequipar: WeaponManager recuerda el arma exacta de la
-		// sesión en curso, no hace falta adivinar nada (ver
-		// WeaponManager::OnLoadingScreenClosed).
-		//
-		// Se descartaron dos alternativas, probadas en el juego en la
-		// iteración anterior:
-		// - TESCellAttachDetachEvent filtrado al jugador: nunca se dispara
-		//   para su referencia (igual que en Papyrus, OnCellAttach/
-		//   OnCellDetach tampoco lo hacen).
-		// - TESCellFullyLoadedEvent: solo salta cuando el motor tiene que
-		//   cargar datos nuevos, así que no se dispara al volver a una
-		//   celda exterior ya visitada/en caché.
-		// El cierre de "Loading Menu" es independiente de la caché: salta
-		// siempre que el jugador termina cualquier transición con pantalla
-		// de carga.
+		// Al cerrarse cualquier pantalla de carga, avisa a WeaponManager::OnLoadingScreenClosed.
 		class LoadingScreenWatcher final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 		{
 		public:
@@ -274,8 +219,7 @@ namespace Events
 						Animation::AttackAnimType::EnsureRegistered(*player);
 						Animation::PowerAttackVFX::EnsureRegistered(*player);
 					}
-					// También aquí (y al equipar): con coc desde el menú
-					// principal no llega ni kNewGame ni kPostLoadGame.
+					// Con coc desde el menú principal no llega kNewGame ni kPostLoadGame.
 					Animation::GlowMapControl::EnsureRunning();
 				}
 
@@ -291,90 +235,52 @@ namespace Events
 		{
 			switch (a_message->type) {
 			case SKSE::MessagingInterface::kPostLoad:
-				// Registro del cosave lo antes posible en el ciclo de vida
-				// de SKSE. SKSE::GetSerializationInterface() es un objeto
-				// propio de SKSE (disponible ya tras SKSE::Init), no un
-				// singleton del motor del juego como RE::UI/
-				// RE::ScriptEventSourceHolder -- en teoría no tendría el
-				// mismo problema de timing que EquipGuard/
-				// LoadingScreenWatcher, pero se registra igualmente en un
-				// mensaje en vez de síncronamente en Events::Init(), por
-				// consistencia y para no repetir sin comprobar el mismo
-				// tipo de suposición que ya falló una vez (ver
-				// CHANGELOG.md v1.6.4).
+				// Registra los callbacks del cosave.
 				if (const auto* serialization = SKSE::GetSerializationInterface()) {
 					serialization->SetUniqueID(kPluginUniqueID);
 					serialization->SetSaveCallback(SerializationSaveCallback);
 					serialization->SetLoadCallback(SerializationLoadCallback);
 					serialization->SetRevertCallback(SerializationRevertCallback);
-					logs::info("Events::OnSKSEMessage: kPostLoad, cosave registrado.");
 				} else {
 					logs::warn("Events::OnSKSEMessage: kPostLoad, no se pudo obtener SerializationInterface.");
 				}
 
-				// Debe llamarse aquí o antes -- ver OARFunctions.h. No
-				// depende de ningún singleton del motor (a diferencia de
-				// EquipGuard/LoadingScreenWatcher, diferidos a kDataLoaded),
-				// solo de que la DLL de Open Animation Replacer ya esté
-				// cargada en el proceso.
+				// Registra las funciones de OAR (aquí o antes).
 				OARFunctions::RegisterAll();
 
-				// Mismo criterio que OAR: solo necesita que la DLL de True
-				// Directional Movement ya esté cargada (ver TDMBridge.h).
+				// Pide la API de TDM.
 				TDMBridge::Init();
 
-				// Menú de configuración en el juego (opcional, SKSE Menu
-				// Framework): aquí y no antes -- ver ConfigMenu.h.
+				// Menú de configuración (aquí, no antes).
 				UI::ConfigMenu::Register();
+				// Todos los plugins SKSE ya están cargados: requisitos al log.
+				Requirements::CheckPlugins();
 				break;
 			case SKSE::MessagingInterface::kInputLoaded:
-				// Los dispositivos de entrada ya están listos para
-				// registrar event sinks.
+				// Sink de entrada.
 				Input::InputManager::GetSingleton()->Init();
 				break;
 			case SKSE::MessagingInterface::kDataLoaded:
-				// Registro de sinks diferido hasta que los datos del
-				// juego están cargados (antes, en SKSEPluginLoad, ni
-				// siquiera existen los singletons de motor de forma
-				// fiable) — mismo motivo que InputManager espera a
-				// kInputLoaded, ver CLAUDE.md "Errores comunes a
-				// vigilar".
+				// Sinks del motor, con los datos del juego ya cargados.
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());
 				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
 				Combat::Init();
-				// Calentamiento de los Sound Descriptor del arma (ver
-				// 12.- AUDIO/SoundResolver.h): sin esto, el primer
-				// lanzamiento/llamada/atrape de la partida no se oye --
-				// investigado a fondo (CHANGELOG.md v1.19.3-v1.19.11), no
-				// es un problema de carga de recurso (esa hipótesis inicial
-				// se descartó), sino de que la primerísima vez que este
-				// mecanismo pide reproducir un Sound Descriptor concreto en
-				// la sesión, se pierde -- Audio::WarmUpAll gasta ese primer
-				// intento aquí, con un disparo real (audible una vez por
-				// cada uno) en vez de en el primer uso real del jugador.
+				Requirements::CheckPluginFile();
+				// Gasta el primer uso de cada sonido del arma.
 				Audio::WarmUpAll();
-				logs::info("Events::OnSKSEMessage: kDataLoaded, EquipGuard/LightningDashWatcher/LoadingScreenWatcher registrados y Combat::Init() ejecutado.");
 				break;
 			case SKSE::MessagingInterface::kNewGame:
-				logs::info("Events::OnSKSEMessage: kNewGame");
-				// Partida nueva: nunca hay un ciclo guardado que recuperar.
+				logs::info("Partida nueva.");
+				// Partida nueva: no hay ciclo guardado.
 				Weapon::WeaponManager::GetSingleton()->ResetToInHand();
 				Animation::GlowMapControl::EnsureRunning();
 				break;
 			case SKSE::MessagingInterface::kPostLoadGame:
-				logs::info("Events::OnSKSEMessage: kPostLoadGame");
-				// Si la partida se guardó a mitad de un ciclo,
-				// SerializationLoadCallback ya dejó los datos remapeados en
-				// g_pendingRecovery -- RecoverOrReset() recupera el arma
-				// real en vez de perderle la pista (bug detectado por el
-				// usuario: dos copias del arma tras guardar/cargar a
-				// medias). Sin datos pendientes (partida antigua, o
-				// guardada con el arma ya en mano), se comporta igual que
-				// ResetToInHand().
+				logs::info("Partida cargada.");
+				// Recupera el ciclo guardado en el cosave, o deja el arma en mano.
 				Weapon::WeaponManager::GetSingleton()->RecoverOrReset(g_pendingRecovery.value_or(Weapon::WeaponManager::SaveCycleData{}));
-				// Poder Lightning Dash: solo concede si el arma ya está en la
-				// mano, ver WeaponManager::RestoreLightningDashPower.
+				// Concede Lightning Dash si el arma ya está en la mano.
 				Weapon::WeaponManager::GetSingleton()->RestoreLightningDashPower();
 				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 					Animation::AttackAnimType::EnsureRegistered(*player);
@@ -391,13 +297,7 @@ namespace Events
 
 	void Init()
 	{
-		// Solo el registro del propio listener de mensajería aquí — los
-		// sinks de motor (EquipGuard/LoadingScreenWatcher) y Combat::Init()
-		// se difieren a kDataLoaded (ver OnSKSEMessage): en el momento en
-		// que se llama a Init() (desde SKSEPluginLoad) todavía no hay
-		// garantía de que los singletons del motor existan de forma
-		// fiable.
+		// Solo el listener de mensajería; lo demás espera a sus mensajes.
 		SKSE::GetMessagingInterface()->RegisterListener(OnSKSEMessage);
-		logs::info("EventManager inicializado (a la espera de kInputLoaded/kDataLoaded).");
 	}
 }

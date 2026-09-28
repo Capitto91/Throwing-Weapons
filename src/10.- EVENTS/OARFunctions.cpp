@@ -1,4 +1,4 @@
-// Implementación de Events::OARFunctions -- ver el .h para el porqué.
+// Funciones de OAR -- ver OARFunctions.h.
 
 #include "10.- EVENTS/OARFunctions.h"
 
@@ -9,13 +9,7 @@ namespace Events::OARFunctions
 {
 	namespace
 	{
-		// El "bare minimum" documentado por el propio ExamplePlugin oficial
-		// de OAR (github.com/ersh1/OpenAnimationReplacer-ExamplePlugin,
-		// Conditions.h -- Functions duplica la misma estructura, ver el
-		// comentario al principio de FunctionTypes.h): GetName/GetDescription/
-		// GetRequiredVersion más RunImpl. Todo lo demás (serialización de
-		// triggers, estado disabled/essential...) ya lo resuelve
-		// Functions::CustomFunction reenviando a su _wrappedFunction interno.
+		// Mínimo que pide OAR: nombre, descripción, versión requerida y RunImpl.
 		class ThrowReleaseFunction final : public Functions::CustomFunction
 		{
 		public:

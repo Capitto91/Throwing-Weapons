@@ -1,5 +1,4 @@
-// Implementación de utilidades para actores.
-// Centraliza operaciones repetidas sobre NPCs y criaturas.
+// Utilidades sobre actores -- ver ActorUtils.h.
 
 #include "11.- SKYRIM/ActorUtils.h"
 
@@ -11,12 +10,7 @@ namespace ActorUtils
 {
 	namespace
 	{
-		// Recorrido recursivo del árbol 3D: cada nodo se compara contra
-		// a_worldPoint, y si es un NiNode (AsNode() no nulo -- las hojas
-		// de geometría, p. ej. BSTriShape, no lo son) se sigue bajando por
-		// sus hijos (NiNode::GetChildren(), seguro en SE/AE/VR vía
-		// RUNTIME_DATA_ACCESSOR_EX, a diferencia del miembro "children"
-		// crudo).
+		// Recorre el árbol 3D y guarda en a_best el nodo más cercano a a_worldPoint.
 		void VisitNodes(RE::NiAVObject* a_node, const RE::NiPoint3& a_worldPoint, RE::NiAVObject*& a_best, float& a_bestDistanceSq)
 		{
 			if (!a_node) {

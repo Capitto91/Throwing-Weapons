@@ -17,28 +17,19 @@ namespace Animation::GlowMapControl
 {
 	namespace
 	{
-		// Todo en el hilo principal (callback del bucle de tick y el
-		// arranque diferido de EnsureRunning), sin mutex.
+		// Estado del bucle, solo hilo principal.
 		Physics::TickToken g_tickToken;
 
-		// emissiveMult original de cada malla con glow map, por nombre de
-		// malla. Se guarda antes de la primera escritura: todas las copias
-		// del arma salen del mismo .nif, así que el valor es el mismo para
-		// cualquier instancia (equipada, réplica, recargada tras cambiar
-		// de celda).
+		// emissiveMult original de cada malla con glow map, por nombre (100% del brillo).
 		std::unordered_map<std::string, float> g_originalMults;
 
-		// Fundido 0..1 hacia el objetivo (condición cumplida y modo no
-		// apagado), fase del pulso y temporizador de la búsqueda de
-		// criaturas.
-		float g_fade = -1.0f;  // < 0: todavía sin inicializar (sin fundido al arrancar)
+		// Fundido 0..1, fase del pulso y temporizador de la búsqueda de criaturas.
+		float g_fade = -1.0f;  // < 0: primer tick, sin fundido
 		float g_pulsePhase = 0.0f;
 		float g_scanTimer = 0.0f;
 		bool  g_creatureNearby = false;
 
-		// Actores cargados en proceso alto (los que están cerca y
-		// actualizándose de verdad) vivos, dentro del radio y cuya raza
-		// lleve una de las keywords marcadas.
+		// ¿Hay un actor vivo cercano (proceso alto) dentro del radio con una keyword de raza marcada?
 		bool ScanForCreatures(RE::Actor& a_player)
 		{
 			const bool dragons = Settings::GetGlowNearDragons();
@@ -79,9 +70,7 @@ namespace Animation::GlowMapControl
 			return false;
 		}
 
-		// Diagnóstico de una sola vez: si bajo el arma equipada no aparece
-		// ninguna malla con glow map, vuelca el tipo de material de cada
-		// malla que sí hay.
+		// Diagnóstico único: vuelca al log el material de cada malla si no hay glow map.
 		bool g_missingReported = false;
 
 		void DumpMaterials(RE::NiAVObject* a_object)
@@ -106,9 +95,8 @@ namespace Animation::GlowMapControl
 			}
 		}
 
-		// Escribe a_factor × original en cada malla con glow map bajo
-		// a_object (recorrido recursivo del árbol de nodos). Devuelve
-		// cuántas ha encontrado.
+		// Escribe a_factor × original en cada malla con glow map bajo a_object.
+		// Devuelve cuántas ha encontrado.
 		int ApplyToTree(RE::NiAVObject* a_object, float a_factor)
 		{
 			if (!a_object) {
@@ -123,9 +111,6 @@ namespace Animation::GlowMapControl
 					const std::string name = geometry->name.c_str();
 					const auto [it, inserted] = g_originalMults.try_emplace(name, lighting->emissiveMult);
 					if (inserted) {
-						// Diagnóstico: confirma en el log que se encuentra la
-						// malla y con qué valor original.
-						logs::info("GlowMapControl: malla con glow map '{}', emissiveMult original {:.3f}.", name, it->second);
 					}
 					lighting->emissiveMult = it->second * a_factor;
 					return 1;
@@ -142,9 +127,7 @@ namespace Animation::GlowMapControl
 			return found;
 		}
 
-		// 3D del arma equipada según los datos de biped del actor
-		// (BIPOBJECT::partClone de la pieza cuyo item es a_weapon): el
-		// modelo real, esté colgado de la mano o del nodo de envainado.
+		// 3D del arma equipada (BIPOBJECT::partClone), en la mano o envainada.
 		RE::NiAVObject* FindEquippedModel(RE::Actor& a_actor, RE::TESObjectWEAP* a_weapon, bool a_firstPerson)
 		{
 			const auto& biped = a_actor.GetBiped(a_firstPerson);
@@ -160,14 +143,8 @@ namespace Animation::GlowMapControl
 			return nullptr;
 		}
 
-		// Arma equipada en tercera y primera persona, desenvainada o
-		// envainada. Historial (probado en el juego, 2026-09-28): buscar
-		// solo bajo el hueso "WEAPON" dejaba el pulso congelado al
-		// envainar (el arma pasa al nodo de la cadera, "WeaponAxe"), y
-		// buscar el nodo de giro por nombre ("Mjolnir") desde la raíz del
-		// actor no lo encontraba en el arma equipada (sí en la réplica).
-		// Si el biped no da el modelo, se cae al hueso "WEAPON", que sí
-		// funcionaba desenvainada.
+		// Aplica el brillo al martillo equipado, en tercera y primera persona.
+		// Busca el modelo por biped y, si no aparece, bajo el hueso "WEAPON".
 		void ApplyToEquipped(RE::Actor& a_player, float a_factor)
 		{
 			auto* rightHand = a_player.GetEquippedObject(false);
@@ -177,21 +154,10 @@ namespace Animation::GlowMapControl
 			}
 
 			for (const bool firstPerson : { false, true }) {
-				auto*     model = FindEquippedModel(a_player, weapon, firstPerson);
-				const int source = model ? 1 : 2;
+				auto* model = FindEquippedModel(a_player, weapon, firstPerson);
 				if (!model) {
 					auto* root = a_player.Get3D(firstPerson);
 					model = root ? root->GetObjectByName("WEAPON") : nullptr;
-				}
-
-				// Diagnóstico: vía por la que se localiza el modelo en
-				// tercera persona (0 = ninguna), solo cuando cambia.
-				static int lastSource = -1;
-				const int  currentSource = model ? source : 0;
-				if (!firstPerson && currentSource != lastSource) {
-					lastSource = currentSource;
-					logs::info("GlowMapControl: modelo equipado (tercera persona) vía {}.",
-						currentSource == 1 ? "biped" : (currentSource == 2 ? "hueso WEAPON" : "ninguna"));
 				}
 
 				if (ApplyToTree(model, a_factor) == 0 && model && !firstPerson && !g_missingReported) {
@@ -226,7 +192,6 @@ namespace Animation::GlowMapControl
 					g_scanTimer = Constants::kGlowMapCreatureScanIntervalSeconds;
 					const bool nearby = ScanForCreatures(*player);
 					if (nearby != g_creatureNearby) {
-						logs::info("GlowMapControl: criatura cerca -> {}.", nearby);
 					}
 					g_creatureNearby = nearby;
 				}
@@ -238,8 +203,7 @@ namespace Animation::GlowMapControl
 			                    (condition == Settings::GlowCondition::kAlways || g_creatureNearby);
 			const float target = active ? 1.0f : 0.0f;
 
-			// Primer tick: directamente al objetivo, sin fundido (al
-			// cargar partida el arma no debe verse encenderse).
+			// Primer tick: directo al objetivo, sin fundido.
 			if (g_fade < 0.0f) {
 				g_fade = target;
 			} else {
@@ -263,13 +227,7 @@ namespace Animation::GlowMapControl
 
 	void EnsureRunning()
 	{
-		// Se llama desde sinks cuyo hilo no está garantizado (p. ej. el
-		// cierre de la pantalla de carga) y desde el evento de equipar, que
-		// puede dispararse dentro de una tarea ya en ejecución. El trabajo
-		// real se hace siempre en el hilo principal vía Scheduler (hilo
-		// aparte que reencola con AddTask, seguro en los dos casos): así
-		// dos peticiones simultáneas llegan en fila, la segunda ve el
-		// bucle ya en marcha y no se arrancan dos.
+		// Vía Scheduler: las peticiones llegan en fila al hilo principal y solo arranca un bucle.
 		(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [] {
 			if (g_tickToken && g_tickToken->load()) {
 				return;
@@ -284,7 +242,6 @@ namespace Animation::GlowMapControl
 			g_scanTimer = 0.0f;
 			g_creatureNearby = false;
 			g_tickToken = Physics::StartTickLoop(player->GetHandle(), Tick);
-			logs::info("GlowMapControl: bucle de glow del arma en marcha.");
 		});
 	}
 }

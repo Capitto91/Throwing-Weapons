@@ -1,5 +1,4 @@
-// Implementación de las trayectorias curvas de retorno.
-// Calcula posiciones intermedias y adapta el camino según enemigos cercanos.
+// Cálculos del regreso -- ver ReturnTrajectory.h.
 
 #include "5.- RETURN/ReturnTrajectory.h"
 
@@ -13,10 +12,7 @@ namespace Return
 {
 	namespace
 	{
-		// Motor de aleatoriedad propio de este módulo, reutilizado entre
-		// llamadas (no tiene sentido reconstruirlo cada vez) — solo se
-		// invoca desde el hilo principal (BeginReturn), así que no hace
-		// falta protegerlo entre hilos.
+		// Generador aleatorio del módulo (solo hilo principal).
 		float RandomLateralFraction()
 		{
 			static std::mt19937                  rng{ std::random_device{}() };
@@ -44,11 +40,7 @@ namespace Return
 
 		const auto forward = straight / distance;
 
-		// Gram-Schmidt: proyecta a_rightVector perpendicular a la línea
-		// recta para decidir el lado. Caso degenerado (vector "derecha"
-		// casi paralelo a la línea recta): se cae a perpendicular sobre
-		// el eje Z del mundo, igual que Collision::SweepRaycast resuelve
-		// el mismo problema para su base perpendicular.
+		// Proyecta a_rightVector perpendicular a la línea; si es casi paralelo usa el eje Z.
 		auto  side = a_rightVector - forward * a_rightVector.Dot(forward);
 		float sideLength = side.Length();
 		if (sideLength < 0.01f) {
@@ -75,27 +67,17 @@ namespace Return
 			return 0.0f;
 		}
 
-		// Aceleración que hace que la velocidad de llegada (v(T), con
-		// T = duración total) sea exactamente Constants::kReturnTargetArrivalSpeed
-		// sin importar a_distance -- despeje simultáneo de d(T)=a_distance
-		// (T = n·a_distance/vf, sustituyendo en v(T)=a/(n-1)·T^(n-1)) y
-		// v(T)=vf: a = (n-1)/n^(n-1) · vf^n / a_distance^(n-1). A diferencia
-		// de un coeficiente fijo, esto evita que un regreso corto se quede
-		// todo el trayecto dentro del primer tramo de la rampa sin llegar a
-		// coger velocidad (ver CLAUDE.md, 2026-08-07).
+		// Aceleración que da la velocidad de llegada objetivo: a = (n-1)/n^(n-1) · vf^n / d^(n-1).
 		constexpr float vf = Constants::kReturnTargetArrivalSpeed;
 		const float     defaultAcceleration = (n - 1.0f) / std::pow(n, n - 1.0f) * std::pow(vf, n) / std::pow(a_distance, n - 1.0f);
 
-		// T = n·a_distance/vf -- mismo despeje que arriba, para T en vez de
-		// para a.
+		// T = n·d/vf.
 		const float defaultDuration = n * a_distance / vf;
 		if (defaultDuration <= Constants::kReturnMaxDuration) {
 			return defaultAcceleration;
 		}
 
-		// A partir de aquí se sacrifica la velocidad de llegada constante:
-		// mismo despeje que ComputeTraveledDistance pero al revés (a partir
-		// de T fijo en kReturnMaxDuration): a = d·n·(n-1)/T^n.
+		// Si supera la duración máxima: a = d·n·(n-1)/T^n con T = kReturnMaxDuration.
 		return a_distance * n * (n - 1.0f) / std::pow(Constants::kReturnMaxDuration, n);
 	}
 
@@ -113,8 +95,7 @@ namespace Return
 			return 0.0f;
 		}
 
-		// Despeje directo de ComputeTraveledDistance (d = a/(n·(n-1))·T^n),
-		// mismo criterio de forma cerrada que el resto del módulo.
+		// T = (d·n·(n-1)/a)^(1/n).
 		return std::pow(a_distance * n * (n - 1.0f) / a_acceleration, 1.0f / n);
 	}
 
@@ -122,10 +103,7 @@ namespace Return
 	{
 		constexpr float n = Constants::kReturnAccelerationExponent;
 
-		// Mismo despeje que el límite superior dentro de
-		// ComputeReturnAcceleration (a = d·n·(n-1)/T^n), aquí parametrizado
-		// por a_targetDuration en vez de la constante fija
-		// kReturnMaxDuration.
+		// a = d·n·(n-1)/T^n con T = a_targetDuration.
 		return a_distance * n * (n - 1.0f) / std::pow(a_targetDuration, n);
 	}
 }

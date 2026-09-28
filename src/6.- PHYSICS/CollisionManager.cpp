@@ -1,5 +1,4 @@
-// Implementación del sistema de colisiones.
-// Procesa impactos y comunica los resultados al resto de sistemas.
+// Colisión por raycast -- ver CollisionManager.h.
 
 #include "6.- PHYSICS/CollisionManager.h"
 
@@ -10,14 +9,7 @@ namespace Collision
 {
 	namespace
 	{
-		// No toda capa que el raycast puede golpear es geometría física de
-		// verdad: Skyrim también usa Havok para volúmenes de detección/IA
-		// (p. ej. ActorZone) sin ninguna referencia sólida detrás.
-		// Confirmado en el juego (lanzamiento al cielo, sin nada visible
-		// alrededor): un impacto contra ActorZone se aceptaba como si
-		// fuera una pared. Lista blanca de capas que sí representan algo
-		// contra lo que el arma debe detenerse de verdad — el resto se
-		// descarta igual que un impacto ignorado.
+		// Capas que cuentan como impacto sólido; el resto (p. ej. ActorZone) se ignora.
 		bool IsSolidLayer(RE::COL_LAYER a_layer)
 		{
 			switch (a_layer) {
@@ -32,10 +24,7 @@ namespace Collision
 			case RE::COL_LAYER::kBiped:
 			case RE::COL_LAYER::kDeadBip:
 			case RE::COL_LAYER::kBipedNoCC:
-			// La cápsula de movimiento normal de un actor de pie (no en
-			// ragdoll) puede estar aquí en vez de en kBiped — añadida tras
-			// detectar en el juego que los NPC se atravesaban de forma
-			// intermitente; a confirmar si esto lo arregla del todo.
+			// Cápsula de movimiento de un actor de pie.
 			case RE::COL_LAYER::kCharController:
 			case RE::COL_LAYER::kWeapon:
 			case RE::COL_LAYER::kInvisibleWall:
@@ -81,26 +70,11 @@ namespace Collision
 		const bool selfOrShooter = target && (target == a_ignore1 || target == a_ignore2);
 		const bool accepted = !selfOrShooter && IsSolidLayer(layer);
 
-		// Diagnóstico (Fase 4): el comportamiento del raycast contra
-		// paredes/árboles/actores ha resultado poco fiable en las primeras
-		// pruebas en el juego; este log deja constancia de cada impacto
-		// real detectado por Havok —aceptado o descartado, y por qué— con
-		// su capa y referencia resuelta, para diagnosticar con datos en
-		// vez de a ciegas.
-		logs::info(
-			"Collision::Raycast: impacto en ({:.1f},{:.1f},{:.1f}), rayo={}, capa={}, referencia=\"{}\", {}",
-			point.x, point.y, point.z,
-			a_rayLayer,
-			layer,
-			target ? target->GetName() : "sin resolver",
-			accepted ? "aceptado" : (selfOrShooter ? "ignorado (lanzador/réplica)" : "ignorado (capa no sólida)"));
-
 		if (!accepted) {
 			return {};
 		}
 
-		// La normal de Havok es un vector unitario, sin escala de mundo que
-		// deshacer (a diferencia de from/to).
+		// La normal ya es unitaria, sin escala de mundo.
 		alignas(16) float normal[4]{};
 		_mm_store_ps(normal, pickData.rayOutput.normal.quad);
 
@@ -126,9 +100,7 @@ namespace Collision
 
 		const auto forward = segment / length;
 
-		// Base perpendicular a la dirección de vuelo, evitando el caso
-		// degenerado de un vuelo casi vertical (paralelo al eje Z, usado
-		// como referencia por defecto).
+		// Base perpendicular al vuelo, evitando el caso casi vertical.
 		RE::NiPoint3 reference{ 0.0f, 0.0f, 1.0f };
 		if (std::abs(forward.Dot(reference)) > 0.99f) {
 			reference = { 1.0f, 0.0f, 0.0f };
@@ -155,17 +127,10 @@ namespace Collision
 				continue;
 			}
 
-			// Todos los rayos del barrido son paralelos y de la misma
-			// longitud (solo trasladados), así que su fracción a lo largo
-			// del recorrido es directamente comparable entre ellos, sin
-			// necesidad de recalcular distancias.
+			// Rayos paralelos y de igual longitud: sus fracciones se comparan directamente.
 			if (!closest.hit || hit.fraction < closest.fraction) {
 				closest = hit;
-				// El punto se recalcula sobre la línea central
-				// (a_from->a_to), no sobre el rayo desviado que detectó el
-				// impacto: de lo contrario el arma se clavaría hasta
-				// a_radius unidades a un lado de la trayectoria real
-				// (comprobado en el juego).
+				// Punto sobre la línea central, no sobre el rayo desviado.
 				closest.point = a_from + segment * hit.fraction;
 			}
 		}

@@ -1,14 +1,10 @@
-// Gestiona el registro y distribución de eventos del plugin.
-// Conecta Skyrim, SKSE y los sistemas internos del arma.
+// Mensajes de SKSE, eventos del motor y cosave; los reparte a los módulos del arma.
 
 #pragma once
 
 namespace Events
 {
-	// Registra los listeners de SKSE y del motor (carga de partida, equipar
-	// objetos) necesarios para mantener sincronizados los sistemas internos
-	// del plugin con el estado real del juego. Debe llamarse una única vez
-	// desde Plugin::Init().
+	// Registra el listener de SKSE. Lo llama Plugin::Init una sola vez.
 	void Init();
 
 }

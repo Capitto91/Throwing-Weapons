@@ -1,5 +1,4 @@
-// Implementación del sistema de daño.
-// Calcula y aplica los efectos de impacto sobre actores.
+// Daño y efectos de impacto -- ver DamageManager.h.
 
 #include "7.- COMBAT/DamageManager.h"
 
@@ -17,43 +16,19 @@ namespace Combat
 {
 	namespace
 	{
-		// Función nativa del motor que procesa un golpe ya calculado (ver
-		// GameOffsets::ResolveProcessHit para de dónde sale y por qué no
-		// es un ID de Address Library). Se resuelve una vez en Init;
-		// nullptr en VR o si el sitio del call no tiene la forma esperada,
-		// y entonces se usa el camino anterior (ApplyDamage + NotifyHit).
+		// Función nativa de procesar golpe, resuelta en Init (nullptr en VR: se usa el respaldo).
 		GameOffsets::tProcessHit g_processHit = nullptr;
 
 		void ApplyDamage(RE::Actor* a_target, float a_amount)
 		{
-			// Actor hereda ActorValueOwner (de donde viene
-			// DamageActorValue) como una base más de una herencia
-			// múltiple, no la primera — su offset dentro de Actor cambia
-			// entre versiones del juego (0xB0 antes de 1.6.629, 0xB8 en
-			// AE/posteriores, ver Actor.h). Acceder a DamageActorValue
-			// directamente sobre un Actor* usa el offset fijo que decida
-			// el compilador para este build multi-runtime, que no tiene
-			// por qué coincidir con la versión real del juego — crasheaba
-			// el juego (comprobado). Actor::AsActorValueOwner() es el
-			// accessor de commonlibsse-ng que calcula el offset correcto
-			// según la versión real detectada en tiempo de ejecución.
+			// DamageActorValue vía AsActorValueOwner(): el offset de la base cambia entre versiones.
 			auto* avOwner = a_target->AsActorValueOwner();
 			if (avOwner) {
 				avOwner->DamageActorValue(RE::ActorValue::kHealth, a_amount);
 			}
 		}
 
-		// Camino de respaldo (solo sin g_processHit: VR, o sitio del call
-		// irreconocible). Actor::HandleHealthDamage + Actor::SetBeenAttacked
-		// (probado en el juego, ver CHANGELOG) no bastan por sí solos para
-		// que la IA reaccione (perseguir, aggro) ni para que un aliado lo
-		// tome como agresión. GameOffsets::DealDamage (Actor::CombatHit) sí
-		// -- pero calcula su propio daño a partir del arma que el atacante
-		// tenga equipada en ese instante, y durante todo nuestro ciclo la
-		// mano va vacía (arma real oculta, punto 2), así que ese importe es
-		// daño de puñetazo. Se usa aquí solo por su efecto colateral (el
-		// aviso a IA de combate/crimen), revirtiendo lo que le haya hecho a
-		// la vida; el importe real ya lo aplicó ApplyDamage.
+		// Respaldo sin g_processHit: daño directo y CombatHit solo para avisar a la IA (revirtiendo su daño).
 		void NotifyHit(RE::Actor* a_attacker, RE::Actor* a_target, float a_amount)
 		{
 			auto* avOwner = a_target->AsActorValueOwner();
@@ -61,7 +36,6 @@ namespace Combat
 			if (REL::Module::IsVR()) {
 				a_target->SetBeenAttacked(true);
 				a_target->HandleHealthDamage(a_attacker, a_amount);
-				logs::info("Combat::NotifyHit (VR, sin DealDamage verificado): \"{}\" avisado.", a_target->GetName());
 				return;
 			}
 
@@ -76,12 +50,7 @@ namespace Combat
 			}
 		}
 
-		// Entrada REAL del arma en el inventario del atacante (el arma
-		// nunca sale del inventario durante el ciclo, solo se desequipa):
-		// conserva sus extraLists (mejora de forja, encantamiento aplicado
-		// por el jugador), que HitData::Populate lee para el daño. nullptr
-		// si no se encuentra (el llamante usa entonces una entrada temporal
-		// sin extras).
+		// Entrada real del arma en el inventario del atacante (con forja y encantamiento), o nullptr.
 		RE::InventoryEntryData* FindInventoryEntry(RE::Actor* a_owner, RE::TESBoundObject* a_object)
 		{
 			auto* changes = a_owner ? a_owner->GetInventoryChanges() : nullptr;
@@ -97,17 +66,7 @@ namespace Combat
 			return nullptr;
 		}
 
-		// Golpe con el daño real del arma lanzada, escalado por a_mult
-		// (Settings: 75% en el golpe inicial, 25% en cada golpe del
-		// regreso). HitData::Populate calcula el daño como un golpe
-		// cuerpo a cuerpo normal con esa arma (perks, armadura del
-		// objetivo, sigilo, críticos), y la función nativa de procesar
-		// golpe lo aplica con todo el pipeline del motor (reacción de
-		// golpe, aviso a IA, muerte con autoría). El stagger que calcule el
-		// motor se anula (hitData.stagger = 0): el del regreso lo garantiza
-		// el nuestro propio (ApplyReturnHit), y en el golpe inicial el
-		// objetivo queda paralizado -- sin esto podría tambalearse dos
-		// veces (decisión del usuario 2026-09-27).
+		// Golpe con el daño real del arma × a_mult por el pipeline nativo; el stagger del motor se anula.
 		void ApplyWeaponHit(RE::Actor* a_attacker, RE::Actor* a_target, float a_mult, const RE::NiPoint3& a_hitPosition)
 		{
 			auto* manager = Weapon::WeaponManager::GetSingleton();
@@ -140,21 +99,12 @@ namespace Combat
 			}
 			hitData->hitDirection = direction;
 
-			auto*       avOwner = a_target->AsActorValueOwner();
-			const float before = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
-
 			if (g_processHit) {
 				g_processHit(a_target, *hitData);
 			} else {
 				ApplyDamage(a_target, hitData->totalDamage);
 				NotifyHit(a_attacker, a_target, hitData->totalDamage);
 			}
-
-			const float after = avOwner ? avOwner->GetActorValue(RE::ActorValue::kHealth) : 0.0f;
-			logs::info(
-				"Combat::ApplyWeaponHit: \"{}\" daño arma {:.1f} x {:.2f} = {:.1f} ({}) -> vida {:.1f} -> {:.1f}.",
-				a_target->GetName(), fullDamage, a_mult, fullDamage * a_mult,
-				g_processHit ? "pipeline nativo" : "respaldo", before, after);
 
 			hitData->~HitData();
 			RE::free(hitData);
@@ -173,9 +123,7 @@ namespace Combat
 			return form;
 		}
 
-		// Hazards eléctricos propios resueltos una sola vez por sesión
-		// (static local, mismo patrón que GetImpactExplosionForm en
-		// WeaponImpactVFX.cpp).
+		// Hazards resueltos una vez por sesión.
 		RE::BGSHazard* GetActorHazardForm()
 		{
 			static RE::BGSHazard* cache = LookupHazardForm(Constants::kEmbeddedHazardLocalFormID);
@@ -188,33 +136,20 @@ namespace Combat
 			return cache;
 		}
 
-		// Hazard del impacto actual, para quitarlo al desclavar el arma
-		// (RemoveImpactHazard). Solo hay un ciclo de lanzamiento a la vez,
-		// así que basta uno. g_hazardGeneration cubre la carrera con la
-		// colocación diferida un tick (Throw::LaunchWeapon): si se desclava
-		// antes de que llegue a colocarse, la generación ya no coincide y
-		// no se coloca. Todo en el hilo principal.
+		// Hazard del impacto actual y generación para descartar una colocación diferida obsoleta.
 		RE::ObjectRefHandle g_activeHazard;
 		std::uint32_t       g_hazardGeneration = 0;
 
-		// Capa de colisión que tenía la réplica antes de clavarse
-		// (BeginEmbeddedEffect la pasa a kNonCollidable), para devolvérsela
-		// al desclavar (RestoreReplicaCollision). kUnidentified = nada que
-		// restaurar. Mismo razonamiento que g_activeHazard: un solo ciclo
-		// a la vez, todo en el hilo principal.
+		// Capa de colisión de la réplica antes de clavarse (kUnidentified = nada que restaurar).
 		RE::COL_LAYER g_embeddedReplicaLayer = RE::COL_LAYER::kUnidentified;
 
-		// Coloca a_form sobre a_anchor y lo registra como hazard activo.
-		// ownerActor = atacante para atribuirle el daño (campo de
-		// commonlibsse-ng, accessor versionado GetHazardRuntimeData; sin
-		// confirmar en el juego que el motor lo use para la autoría).
+		// Coloca a_form sobre a_anchor como hazard activo, con el atacante como dueño.
 		RE::TESObjectREFR* PlaceHazard(RE::BGSHazard* a_form, RE::Actor* a_attacker, RE::TESObjectREFR& a_anchor, std::uint32_t a_generation)
 		{
 			if (!a_form) {
 				return nullptr;
 			}
 			if (a_generation != g_hazardGeneration) {
-				logs::info("Combat::PlaceHazard: el arma ya se desclavó antes de colocarlo, se omite.");
 				return nullptr;
 			}
 
@@ -238,17 +173,7 @@ namespace Combat
 			return ref.get();
 		}
 
-		// Formularios resueltos por EditorID una sola vez, no en cada golpe/
-		// recuperación (punto 6 de la revisión de buenas prácticas,
-		// 2026-09-23) -- ninguno de los dos cambia de FormID durante una
-		// sesión, así que repetir la búsqueda por cadena cada vez es trabajo
-		// de sobra. static local (mismo patrón Meyers ya usado en los
-		// singletons de este proyecto, ver WeaponManager::GetSingleton()):
-		// se resuelve solo la primera vez que hace falta de verdad, sin
-		// depender de enganchar esto a kDataLoaded aparte. El aviso de log
-		// se mantiene fuera del static, así que sigue avisando en cada
-		// llamada mientras el formulario no aparezca -- solo se ahorra la
-		// búsqueda en sí, no el aviso de que falta.
+		// Formularios buscados por EditorID una vez; el aviso de log se repite mientras falten.
 		RE::SpellItem* GetEmbeddedParalysisSpell()
 		{
 			static RE::SpellItem* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell);
@@ -290,48 +215,23 @@ namespace Combat
 			return;
 		}
 
-		// Posición de la réplica en el instante del impacto (punto de
-		// golpe para el motor); respaldo, la del objetivo.
+		// Punto de golpe: la réplica, o el objetivo como respaldo.
 		auto               impactReplica = a_replicaHandle.get();
 		const RE::NiPoint3 hitPosition = impactReplica ? impactReplica->GetPosition() : a_target->GetPosition();
 		ApplyWeaponHit(a_attacker, a_target, Settings::GetThrowHitMult(), hitPosition);
 
-		// Quién es inmune (dragones, criaturas concretas...) lo decide
-		// solo la condición del propio efecto en la Creation Kit — no se
-		// duplica esa lógica aquí. El sondeo de más abajo
-		// (MagicTarget::HasMagicEffect) ya cubre cualquier caso de
-		// inmunidad de forma genérica, así que cambiar quién es inmune
-		// solo requiere tocar la condición en el CK, nunca este código.
+		// La inmunidad la decide la condición del efecto en la Creation Kit.
 		a_onStuck(RE::ActorHandle(a_target));
 
 		if (auto* spell = GetEmbeddedParalysisSpell()) {
 			a_target->AddSpell(spell);
 		}
 
-		// El propio efecto mágico (EffectSetting) dentro del hechizo,
-		// distinto del hechizo en sí — hace falta para comprobar más
-		// abajo, con MagicTarget::HasMagicEffect, si de verdad ha quedado
-		// activo en el objetivo (AddSpell siempre tiene éxito aunque la
-		// condición del efecto se lo impida, ver Constants::kEmbeddedParalysisEffect).
+		// Efecto de parálisis, para comprobar si quedó activo (AddSpell siempre tiene éxito).
 		auto* paralysisEffect = GetEmbeddedParalysisEffect();
 
-		// Desplazamiento respecto al hueso más cercano al punto de impacto
-		// (ActorUtils::FindNearestBoneName) en el instante del impacto,
-		// guardado en su espacio LOCAL (girado con su rotación de ese
-		// momento) en vez de un vector fijo en espacio del mundo — un
-		// vector fijo se notaba flotando lejos del cuerpo en cuanto el
-		// actor caía por la parálisis (comprobado en el juego): la
-		// orientación cambia por completo al caer, y un desplazamiento en
-		// espacio del mundo no la sigue. Cada tick se reconvierte a
-		// espacio del mundo con la rotación actual de ESE hueso (ver más
-		// abajo), así que el arma sigue el movimiento real del cuerpo
-		// (respiración, tembleque de la parálisis, reacciones de golpe) en
-		// vez de solo el del nodo raíz, que antes se notaba flotando —
-		// comprobado en el juego. Se guarda el *nombre* del hueso, no un
-		// puntero crudo, y se resuelve de nuevo cada tick (ver más abajo),
-		// mismo motivo de cautela que ya había para el nodo raíz: el 3D
-		// podría recargarse. Si no se encuentra ningún hueso (actor sin
-		// 3D), se cae al nodo raíz — mismo comportamiento que antes.
+		// Desplazamiento en el espacio local del hueso más cercano; cada tick se reaplica con su transformación.
+		// Sin hueso, el nodo raíz.
 		auto                    replica = a_replicaHandle.get();
 		const RE::BSFixedString boneName = replica ? ActorUtils::FindNearestBoneName(a_target, replica->GetPosition()) : RE::BSFixedString{};
 		auto*                   rootNode = a_target->Get3D();
@@ -342,34 +242,18 @@ namespace Combat
 		}
 		RE::ActorHandle targetHandle(a_target);
 
-		// Sin colisión mientras siga clavada: la réplica se avanza DENTRO
-		// del cuerpo (Constants::kActorStickForwardOffset) y es kKeyframed
-		// (masa infinita para Havok), así que con la parálisis (ragdoll)
-		// empujaba el hueso que sigue, lo seguía, volvía a solaparse y lo
-		// empujaba otra vez cada tick -- el NPC acababa flotando/subiendo
-		// (reportado por el usuario, 2026-09-28). Aquí no necesita colisión
-		// para nada: solo copia la transformación de un hueso, y los
-		// impactos del regreso son raycasts que ya ignoran la réplica. No
-		// contradice el "mejor mantener la colisión" de CLAUDE.md, que es
-		// sobre los tirones en vuelo. Se restaura al desclavar
-		// (RestoreReplicaCollision, desde WeaponManager::BeginReturn).
+		// Sin colisión mientras está clavada, para no empujar el ragdoll.
+		// La restaura RestoreReplicaCollision al desclavar.
 		if (auto* replica3D = replica ? replica->Get3D() : nullptr) {
 			g_embeddedReplicaLayer = replica3D->GetCollisionLayer();
 			replica3D->SetCollisionLayer(RE::COL_LAYER::kNonCollidable);
-			logs::info("Combat::BeginEmbeddedEffect: colisión de la réplica desactivada mientras siga clavada (capa original {}).", static_cast<int>(g_embeddedReplicaLayer));
 		}
 
-		// Punto 10 (segunda mitad, caso impacto): eliminado el enderezado
-		// al clavarse (decisión del usuario, 2026-08-08, ver
-		// Constants::kSpinStraightenLeadTime para el porqué) -- el arma se
-		// queda congelada en el ángulo de vuelo arbitrario que tuviera al
-		// golpear, sin ningún ajuste posterior.
+		// El arma se queda en el ángulo que tenía al impactar.
 		auto token = Physics::StartTickLoop(a_replicaHandle, [targetHandle, localOffset, boneName, paralysisEffect, onAutoRecall = a_onAutoRecall, totalElapsed = 0.0f, effectConfirmed = false](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			auto target = targetHandle.get();
 			if (!target) {
-				// El actor ya no existe (p. ej. la celda se ha
-				// descargado); la réplica se queda donde estaba, sigue
-				// pudiendo recuperarse con el botón.
+				// El actor ya no existe: la réplica se queda donde está.
 				return false;
 			}
 
@@ -386,15 +270,7 @@ namespace Combat
 
 			totalElapsed += a_deltaSeconds;
 
-			// Comprobación exacta (no una inferencia): MagicTarget no es
-			// la primera clase base de Actor tampoco, así que se usa
-			// Actor::AsMagicTarget() (accessor versionado, mismo motivo
-			// que ActorValueOwner/ActorState) para preguntar directamente
-			// si nuestro efecto concreto está activo de verdad. AddSpell
-			// siempre tiene éxito aunque la condición del propio efecto
-			// (inmune a parálisis, dragón...) le impida aplicarse — el
-			// motor necesita al menos un tick para reflejarlo, así que se
-			// comprueba cada tick hasta confirmarse o agotar el margen.
+			// Comprueba cada tick con AsMagicTarget() si la parálisis quedó activa.
 			if (!effectConfirmed) {
 				auto* magicTarget = target->AsMagicTarget();
 				if (paralysisEffect && magicTarget && magicTarget->HasMagicEffect(paralysisEffect)) {
@@ -406,8 +282,7 @@ namespace Combat
 				}
 			}
 
-			// Nerfeo pedido tras las primeras pruebas: duración máxima
-			// clavada, pasado ese tiempo el arma vuelve sola.
+			// Pasado Constants::kEmbeddedMaxDuration el arma vuelve sola.
 			if (totalElapsed >= Constants::kEmbeddedMaxDuration) {
 				logs::info("Combat: duración máxima clavada alcanzada, recuperando automáticamente.");
 				onAutoRecall();
@@ -427,26 +302,20 @@ namespace Combat
 
 	void SpawnActorHazard(RE::Actor* a_attacker, RE::Actor& a_target, std::uint32_t a_generation)
 	{
-		// Desactivable desde [Damage] HazardOnActor (Settings). Sin hazard
-		// no hay daño continuo mientras el arma sigue clavada: solo el
-		// golpe inicial.
+		// Desactivable con [Damage] HazardOnActor.
 		if (!Settings::GetHazardOnActor()) {
-			logs::info("Combat::SpawnActorHazard: desactivado en la configuración (HazardOnActor), no se coloca.");
 			return;
 		}
 
 		if (auto* ref = PlaceHazard(GetActorHazardForm(), a_attacker, a_target, a_generation)) {
 			const auto pos = ref->GetPosition();
-			logs::info("Combat::SpawnActorHazard: hazard colocado sobre \"{}\" en ({:.1f},{:.1f},{:.1f}).",
-				a_target.GetName(), pos.x, pos.y, pos.z);
 		}
 	}
 
 	void SpawnSurfaceHazard(RE::Actor* a_attacker, RE::TESObjectREFR& a_anchor, const RE::NiPoint3& a_point, const RE::NiPoint3& a_normal, std::uint32_t a_generation)
 	{
-		// Desactivable desde [Damage] HazardOnSurface (Settings).
+		// Desactivable con [Damage] HazardOnSurface.
 		if (!Settings::GetHazardOnSurface()) {
-			logs::info("Combat::SpawnSurfaceHazard: desactivado en la configuración (HazardOnSurface), no se coloca.");
 			return;
 		}
 
@@ -455,14 +324,7 @@ namespace Combat
 			return;
 		}
 
-		// Eje Z local del hazard sobre la normal. Convención de ángulos de
-		// una referencia: angle.z = rumbo (0 = +Y, creciente hacia +X),
-		// angle.x = cabeceo positivo hacia abajo del eje "adelante" --
-		// que, para el eje "arriba", es inclinarlo hacia delante: arriba =
-		// (sin z·sin x, cos z·sin x, cos x). Despejando para arriba = n:
-		// x = acos(n.z), z = atan2(n.x, n.y). Suelo (n = +Z) -> sin giro.
-		// Suposición sin verificar: que la malla del hazard
-		// (ShockWallFX01.nif) está pensada con Z como "arriba".
+		// Orienta el eje Z del hazard según la normal: x = acos(n.z), z = atan2(n.x, n.y).
 		RE::NiPoint3 n = a_normal;
 		if (n.Length() < 0.001f) {
 			n = { 0.0f, 0.0f, 1.0f };
@@ -475,8 +337,6 @@ namespace Combat
 		ref->SetPosition(a_point);
 		ref->SetAngle(angle);
 
-		logs::info("Combat::SpawnSurfaceHazard: hazard en ({:.1f},{:.1f},{:.1f}), normal ({:.2f},{:.2f},{:.2f}), ángulo x={:.2f} z={:.2f} rad.",
-			a_point.x, a_point.y, a_point.z, n.x, n.y, n.z, angle.x, angle.z);
 	}
 
 	void RemoveImpactHazard()
@@ -485,7 +345,6 @@ namespace Combat
 		if (auto hazard = g_activeHazard.get()) {
 			hazard->Disable();
 			hazard->SetDelete(true);
-			logs::info("Combat::RemoveImpactHazard: hazard retirado al desclavar el arma.");
 		}
 		g_activeHazard = {};
 	}
@@ -500,7 +359,6 @@ namespace Combat
 
 		if (auto* replica3D = a_replica ? a_replica->Get3D() : nullptr) {
 			replica3D->SetCollisionLayer(layer);
-			logs::info("Combat::RestoreReplicaCollision: colisión de la réplica restaurada (capa {}).", static_cast<int>(layer));
 		}
 	}
 
@@ -521,42 +379,18 @@ namespace Combat
 			return;
 		}
 
-		logs::info("Combat::ApplyReturnHit: golpe durante el regreso contra \"{}\".", a_target->GetName());
 
-		// El golpe se aplica siempre, aunque el multiplicador sea 0 (INI
-		// [Damage] ReturnHitMultiplier): la reacción del objetivo
-		// (perseguir, o que un aliado se lo tome como agresión) no debe
-		// depender de esa opción, solo de que hubo un golpe de verdad.
+		// El golpe se aplica siempre, aunque el multiplicador sea 0.
 		ApplyWeaponHit(a_attacker, a_target, Settings::GetReturnHitMult(), a_hitPosition);
 
-		// Desactivable desde [Damage] ReturnStagger (Settings): el golpe
-		// sigue aplicándose, solo se omite el tambaleo.
+		// Desactivable con [Damage] ReturnStagger.
 		if (!Settings::GetReturnStagger()) {
-			logs::info("Combat::ApplyReturnHit: stagger desactivado en la configuración (ReturnStagger).");
 			return;
 		}
 
-		// Mejora Kratos #2 (PLAN-mejoras-kratos.md): stagger escrito
-		// directamente en el animation graph del actor golpeado, en vez de
-		// concederle un hechizo propio y retirarlo con un hilo (mecanismo
-		// anterior). SetGraphVariableFloat/NotifyAnimationGraph existen en
-		// IAnimationGraphManagerHolder (verificado,
-		// commonlibsse-ng/include/RE/I/IAnimationGraphManagerHolder.h) y
-		// Actor los hereda a través de TESObjectREFR (primera base de
-		// Actor, offset 0) con IAnimationGraphManagerHolder a offset fijo
-		// 0x38 dentro de TESObjectREFR (sin variación por runtime, a
-		// diferencia de ActorValueOwner/MagicTarget) — llamable
-		// directamente sobre Actor* sin ningún accessor AsX(). Los nombres
-		// "staggerMagnitude"/"staggerDirection" están pre-registrados como
-		// BSFixedString propias del motor (FixedStrings.h), y
-		// "staggerStart" es el evento real que usa KratosCombat
-		// (FenixUtils::stagger, ver PLAN-proyectil-nativo.md) para el mismo
-		// propósito sobre su propia arma.
+		// Tambaleo propio con las graph variables staggerMagnitude/staggerDirection y el evento staggerStart.
 		a_target->SetGraphVariableFloat("staggerMagnitude", Constants::kStaggerMagnitude);
-		a_target->SetGraphVariableFloat("staggerDirection", 0.0f);  // placeholder, "de frente" -- sin verificar unidades/rango real
+		a_target->SetGraphVariableFloat("staggerDirection", 0.0f);  // de frente
 		a_target->NotifyAnimationGraph("staggerStart");
-		logs::info(
-			"Combat::ApplyReturnHit: stagger vía animation graph, magnitude={:.1f}, direction=0.0.",
-			Constants::kStaggerMagnitude);
 	}
 }

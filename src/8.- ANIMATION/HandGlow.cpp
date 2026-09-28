@@ -1,5 +1,4 @@
-// Implementación del destello de manos. Ver el header y Constants.h
-// ("-- Brillo de manos --") para la arquitectura completa.
+// Destello de manos -- ver HandGlow.h.
 
 #include "8.- ANIMATION/HandGlow.h"
 
@@ -10,8 +9,7 @@ namespace Animation
 {
 	namespace
 	{
-		// Formulario resuelto una sola vez por sesión -- mismo patrón que
-		// GetGlowLightForm en WeaponGlow.cpp.
+		// Formulario resuelto una vez por sesión.
 		RE::BGSArtObject* GetHandGlowArtObject()
 		{
 			static RE::BGSArtObject* cache = nullptr;

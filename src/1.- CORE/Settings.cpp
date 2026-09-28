@@ -1,4 +1,4 @@
-// Implementación de la configuración editable en tiempo de ejecución.
+// Ajustes editables en juego -- ver Settings.h.
 
 #include "1.- CORE/Settings.h"
 
@@ -17,9 +17,7 @@ namespace Settings
 		constexpr const char* kDamageSection = "Damage";
 		constexpr const char* kVfxSection = "VFX";
 
-		// Nombres de clave de [Controls] sin cambiar (AimDevice/AimKeyCode)
-		// aunque ya no haya fase de apuntado: renombrarlas rompería los INI
-		// que ya tengan los usuarios.
+		// Claves de [Controls] con el nombre antiguo para no romper los INI existentes.
 		constexpr const char* kDeviceKey = "AimDevice";
 		constexpr const char* kKeyCodeKey = "AimKeyCode";
 		constexpr const char* kSpeedKey = "Speed";
@@ -84,8 +82,7 @@ namespace Settings
 			return RE::INPUT_DEVICE::kKeyboard;
 		}
 
-		// Valores del INI en texto ("Off"/"Constant"/"Pulse",
-		// "Always"/"NearCreatures"), igual que AimDevice.
+		// Valores de texto del INI para el modo y la condición del glow.
 		const char* GlowModeToString(GlowMode a_mode)
 		{
 			switch (a_mode) {
@@ -122,9 +119,7 @@ namespace Settings
 			return a_value == "NearCreatures" ? GlowCondition::kNearCreatures : GlowCondition::kAlways;
 		}
 
-		// std::clamp evitado a propósito: Windows.h define min/max como
-		// macros (mismo problema ya documentado en el proyecto, ver
-		// Return::BeginReturn).
+		// Sin std::clamp: Windows.h define min/max como macros.
 		float Clamp(float a_value, float a_min, float a_max)
 		{
 			return a_value < a_min ? a_min : (a_value > a_max ? a_max : a_value);
@@ -201,8 +196,7 @@ namespace Settings
 			current = g_values;
 		}
 
-		// Se carga el archivo existente (si lo hay) para conservar todo lo
-		// que no es nuestro: otras secciones, comentarios, orden.
+		// Carga el archivo existente para conservar lo que no es nuestro.
 		CSimpleIniA ini;
 		ini.SetUnicode();
 		ini.LoadFile(Constants::kInputConfigPath);

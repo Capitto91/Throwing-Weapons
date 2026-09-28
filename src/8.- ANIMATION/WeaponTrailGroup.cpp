@@ -1,4 +1,4 @@
-// Implementación de WeaponTrailGroup -- ver WeaponTrailGroup.h para el diseño.
+// Copias de la estela -- ver WeaponTrailGroup.h.
 
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 
@@ -12,11 +12,7 @@ namespace Animation
 {
 	namespace
 	{
-		// Roll (radianes) de la copia a_index: a_baseRoll más
-		// a_index·Constants::kTrailCopyRollStepDegrees, convertido a
-		// radianes. Misma fórmula usada por Start y SetRoll, para que el
-		// desfase entre copias no cambie de significado entre una llamada
-		// y otra.
+		// Roll de la copia a_index en radianes.
 		float ComputeCopyRoll(float a_baseRoll, std::size_t a_index)
 		{
 			return a_baseRoll + static_cast<float>(a_index) * Constants::kTrailCopyRollStepDegrees * std::numbers::pi_v<float> / 180.0f;
@@ -35,7 +31,6 @@ namespace Animation
 	{
 		enabled = Settings::GetTrail();
 		if (!enabled) {
-			logs::info("Animation::WeaponTrailGroup::Start: estela desactivada en la configuración ([VFX] Trail).");
 			return;
 		}
 
@@ -45,8 +40,7 @@ namespace Animation
 
 		previousRawPosition.reset();
 
-		// Fuerza un resorteo inmediato en el primer Update() -- un tramo
-		// nuevo no debe heredar el desvío mantenido del tramo anterior.
+		// Fuerza un sorteo nuevo en el primer Update.
 		std::ranges::fill(heldDeviationRight, 0.0f);
 		std::ranges::fill(heldDeviationUp, 0.0f);
 		std::ranges::fill(holdTimers, Constants::kTrailLightningHoldSeconds);
@@ -69,17 +63,7 @@ namespace Animation
 			return;
 		}
 
-		// Efecto rayo (ver cabecera de WeaponTrailGroup.h) -- base
-		// perpendicular a la dirección de avance REAL (sin desviar),
-		// calculada una única vez por tick; el sorteo del desvío en sí
-		// pasa a hacerse POR COPIA dentro del bucle de más abajo (cambio
-		// 2026-08-26, a petición del usuario: compartir un único desvío
-		// entre las 8 copias se notaba como que "todas se desvían de la
-		// misma manera" -- con sorteo independiente por copia, cada una
-		// traza su propio zigzag, aunque las 8 sigan centradas en la
-		// misma trayectoria real de fondo). Dirección estimada por
-		// diferencia con la posición del tick anterior (sin ella todavía,
-		// primer tick tras Start(), no hay desviación posible).
+		// Base perpendicular a la dirección real de avance (por diferencia con el tick anterior).
 		RE::NiPoint3 right{ 1.0f, 0.0f, 0.0f };
 		RE::NiPoint3 up{ 0.0f, 0.0f, 1.0f };
 		bool         hasDeviationBasis = false;
@@ -90,9 +74,7 @@ namespace Animation
 			if (travelLength > 0.0f) {
 				travelDir = travelDir / travelLength;
 
-				// Gram-Schmidt contra el eje Z del mundo -- mismo
-				// convenio de respaldo que Math::SetRotationFromForwardUp
-				// para direcciones (casi) verticales.
+				// Respaldo con el eje Z del mundo para direcciones casi verticales.
 				right = travelDir.Cross(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 				float rightLength = right.Length();
 				if (rightLength < 1.0e-4f) {
@@ -110,10 +92,7 @@ namespace Animation
 		std::uniform_real_distribution<float> jitterDist(-Constants::kTrailLightningMaxDeviation, Constants::kTrailLightningMaxDeviation);
 
 		for (std::size_t i = 0; i < trails.size(); ++i) {
-			// Resorteo por copia solo al agotarse su propio holdTimer (ver
-			// cabecera del archivo) -- el resto de ticks reutiliza la misma
-			// magnitud por eje, así que el punto de quiebro en el
-			// historial de WeaponTrail no aparece cada 16ms.
+			// Nuevo sorteo de cada copia solo al agotarse su holdTimer.
 			holdTimers[i] += a_deltaSeconds;
 			if (holdTimers[i] >= Constants::kTrailLightningHoldSeconds) {
 				holdTimers[i] -= Constants::kTrailLightningHoldSeconds;

@@ -1,5 +1,4 @@
-// Implementación de los dos sonidos de atrape (arranque + golpe final).
-// Ver CatchSound.h para el porqué de cada decisión.
+// Sonidos de atrape -- ver CatchSound.h.
 
 #include "12.- AUDIO/CatchSound.h"
 

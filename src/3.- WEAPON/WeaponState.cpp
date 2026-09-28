@@ -1,5 +1,4 @@
-// Implementación de la gestión del estado del arma.
-// Controla cambios entre estados como equipada, lanzada, clavada o regresando.
+// Estado del ciclo del arma -- ver WeaponState.h.
 
 #include "3.- WEAPON/WeaponState.h"
 

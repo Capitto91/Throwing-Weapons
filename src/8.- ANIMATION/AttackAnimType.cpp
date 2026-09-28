@@ -13,9 +13,7 @@ namespace Animation::AttackAnimType
 {
 	namespace
 	{
-		// Tipo original del registro de cada arma cuyo tipo se ha tocado.
-		// Compartido entre el hilo principal (EnsureRegistered/Restore) y
-		// los hilos de animación (ProcessEvent) -- protegido por mutex.
+		// Tipo original de cada arma cambiada. Compartido con los hilos de animación: mutex.
 		std::mutex                                              mutex;
 		std::unordered_map<RE::TESObjectWEAP*, RE::WEAPON_TYPE> originalTypes;
 
@@ -32,40 +30,33 @@ namespace Animation::AttackAnimType
 		}
 
 		// Requiere el mutex tomado.
-		void SetType(RE::TESObjectWEAP* a_weapon, RE::WEAPON_TYPE a_type, std::string_view a_reason)
+		void SetType(RE::TESObjectWEAP* a_weapon, RE::WEAPON_TYPE a_type)
 		{
 			if (a_weapon->GetWeaponType() == a_type) {
 				return;
 			}
 
-			logs::info("AttackAnimType: '{}' tipo {} -> {} ({}).",
-				a_weapon->GetName(), std::to_underlying(a_weapon->GetWeaponType()), std::to_underlying(a_type), a_reason);
 			a_weapon->weaponData.animationType = a_type;
 		}
 
 		// Requiere el mutex tomado.
-		void RestoreAllExcept(RE::TESObjectWEAP* a_keep, std::string_view a_reason)
+		void RestoreAllExcept(RE::TESObjectWEAP* a_keep)
 		{
 			for (auto& [weapon, original] : originalTypes) {
 				if (weapon != a_keep) {
-					SetType(weapon, original, a_reason);
+					SetType(weapon, original);
 				}
 			}
 		}
 
-		// Tipo de maza solo con el arma desenvainada del todo y el ciclo en
-		// reposo (kInHand). En cualquier fase del ciclo (lanzando, lanzada,
-		// llamando, regresando) se queda en el tipo original: la réplica se
-		// crea (PlaceObjectAtMe) y el arma se desequipa/reequipa con el
-		// tipo del registro, igual que antes de este módulo.
+		// Maza solo desenvainada del todo y con el ciclo en reposo (kInHand).
 		bool WantsDrawnType(RE::Actor& a_actor)
 		{
 			return a_actor.AsActorState()->GetWeaponState() == RE::WEAPON_STATE::kDrawn &&
 			       Weapon::WeaponManager::GetSingleton()->GetState() == Weapon::State::kInHand;
 		}
 
-		// El modelo equipado ya cuelga del hueso "WEAPON" de la mano (3D de
-		// tercera persona, que existe también en primera).
+		// ¿Cuelga ya el modelo del hueso "WEAPON" de la mano?
 		bool IsModelInHand(RE::Actor& a_actor)
 		{
 			auto* root = a_actor.Get3D(false);
@@ -76,21 +67,14 @@ namespace Animation::AttackAnimType
 
 		void Promote();
 
-		// Requiere el mutex tomado. Programa Promote en el hilo principal
-		// (Scheduler: hilo propio que reencola con AddTask, seguro desde
-		// cualquier hilo, también desde dentro de una tarea).
+		// Programa Promote en el hilo principal. Requiere el mutex tomado.
 		void RequestPromote()
 		{
 			promoteToken = Scheduler::After(Constants::kDrawnTypePromoteRetryInterval, Promote);
 		}
 
-		// Paso a maza, en el hilo principal y solo con el modelo ya en la
-		// mano. Comprobado en el juego (2026-09-28): cambiarlo en el propio
-		// evento "weaponDraw" (el instante en que el motor pasa el modelo
-		// de la cadera a la mano) dejaba el modelo colgado en la cadera y
-		// la mano vacía -- el motor lo buscaba en el nodo de cadera del
-		// tipo nuevo (maza), no lo encontraba y no lo movía; y la réplica
-		// del lanzamiento no se veía.
+		// Paso a maza en el hilo principal, solo con el modelo ya en la mano;
+		// reintenta cada kDrawnTypePromoteRetryInterval.
 		void Promote()
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
@@ -111,19 +95,17 @@ namespace Animation::AttackAnimType
 				return;
 			}
 
-			SetType(weapon, Constants::kDrawnAnimationWeaponType, "Promote");
+			SetType(weapon, Constants::kDrawnAnimationWeaponType);
 		}
 
-		void Sync(RE::Actor& a_actor, std::string_view a_reason)
+		void Sync(RE::Actor& a_actor)
 		{
 			auto* weapon = GetEquippedThrowableWeapon(a_actor);
 
 			std::lock_guard lock(mutex);
 
-			// Sin el arma en la mano (desequipada por el jugador, o fuera
-			// de ella por el propio ciclo de lanzamiento): ninguna debe
-			// quedarse como maza.
-			RestoreAllExcept(weapon, a_reason);
+			// Sin el arma en la mano ninguna se queda como maza.
+			RestoreAllExcept(weapon);
 			if (!weapon) {
 				return;
 			}
@@ -132,7 +114,7 @@ namespace Animation::AttackAnimType
 			if (!WantsDrawnType(a_actor)) {
 				Scheduler::Cancel(promoteToken);
 				promoteToken.reset();
-				SetType(weapon, original, a_reason);
+				SetType(weapon, original);
 				return;
 			}
 
@@ -148,11 +130,10 @@ namespace Animation::AttackAnimType
 		public:
 			RE::BSEventNotifyControl ProcessEvent(const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>*) override
 			{
-				// Solo se registra en los grafos del jugador (EnsureRegistered),
-				// pero se comprueba igualmente el emisor.
+				// Solo el jugador.
 				auto* player = RE::PlayerCharacter::GetSingleton();
 				if (a_event && player && a_event->holder == player) {
-					Sync(*player, a_event->tag.c_str());
+					Sync(*player);
 				}
 				return RE::BSEventNotifyControl::kContinue;
 			}
@@ -163,11 +144,7 @@ namespace Animation::AttackAnimType
 
 	void EnsureRegistered(RE::Actor& a_actor)
 	{
-		// Todos los grafos, no solo el primero como
-		// Actor::AddAnimationGraphEventSink: el jugador tiene uno de
-		// tercera y otro de primera persona, y en primera persona los
-		// eventos salen del segundo. BSTEventSource::AddEventSink ya
-		// ignora un sink repetido.
+		// Todos los grafos (tercera y primera persona); AddEventSink ignora repetidos.
 		RE::BSAnimationGraphManagerPtr graphManager;
 		a_actor.GetAnimationGraphManager(graphManager);
 		if (!graphManager) {
@@ -181,7 +158,7 @@ namespace Animation::AttackAnimType
 			}
 		}
 
-		Sync(a_actor, "EnsureRegistered");
+		Sync(a_actor);
 	}
 
 	void Restore(RE::TESObjectWEAP* a_weapon)
@@ -192,7 +169,7 @@ namespace Animation::AttackAnimType
 
 		std::lock_guard lock(mutex);
 		if (const auto it = originalTypes.find(a_weapon); it != originalTypes.end()) {
-			SetType(a_weapon, it->second, "Restore");
+			SetType(a_weapon, it->second);
 		}
 	}
 }

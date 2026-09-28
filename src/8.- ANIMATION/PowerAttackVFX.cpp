@@ -13,11 +13,8 @@ namespace Animation::PowerAttackVFX
 {
 	namespace
 	{
-		// Estado de los efectos del power attack en curso. Solo se toca en
-		// el hilo principal (el sink reencola con AddTask), sin mutex.
-		// g_ownsGlow: el destello lo arrancó este módulo (StartWeaponGlow
-		// no arranca uno si ya había otro activo, p. ej. el del final de
-		// un Atrape) -- así el apagado nunca corta un destello ajeno.
+		// Estado del power attack en curso (solo hilo principal).
+		// g_ownsGlow: el destello lo encendió este módulo, así solo apaga el suyo.
 		bool                   g_active{ false };
 		bool                   g_ownsGlow{ false };
 		Scheduler::CancelToken g_safetyToken;
@@ -38,20 +35,17 @@ namespace Animation::PowerAttackVFX
 			g_ownsGlow = false;
 		}
 
-		// Apagado normal: los dos efectos con su propio fundido.
-		void Stop(std::string_view a_reason)
+		// Apaga los dos efectos con su fundido.
+		void Stop()
 		{
 			if (!g_active) {
 				return;
 			}
 
-			logs::info("PowerAttackVFX: apagando efectos ({}).", a_reason);
 			const bool ownsGlow = g_ownsGlow;
 			ClearState();
 
-			// Si el ciclo ya no está en reposo, los efectos activos son del
-			// lanzamiento (Cancel ya debería haber limpiado el estado antes
-			// de llegar aquí, esto es solo una red por si acaso).
+			// Fuera de reposo los efectos activos son del lanzamiento: no se tocan.
 			if (Weapon::WeaponManager::GetSingleton()->GetState() != Weapon::State::kInHand) {
 				return;
 			}
@@ -69,10 +63,9 @@ namespace Animation::PowerAttackVFX
 				return;
 			}
 
-			// Un ataque normal encadenado tras un power attack (combo) no
-			// pasa por attackStop entre medias: se apaga aquí.
+			// Un ataque normal encadenado tras un power attack los apaga.
 			if (!player->IsPowerAttacking()) {
-				Stop("swing sin power attack");
+				Stop();
 				return;
 			}
 
@@ -82,11 +75,8 @@ namespace Animation::PowerAttackVFX
 				return;
 			}
 
-			// Power attacks encadenados, o el mismo evento llegando desde
-			// los dos grafos (tercera y primera persona): los efectos ya
-			// están encendidos, solo se alarga la red de seguridad.
+			// Ya encendidos (combo o evento repetido desde el otro grafo): solo alarga la red.
 			if (!g_active) {
-				logs::info("PowerAttackVFX: power attack, encendiendo efectos.");
 				g_active = true;
 				Animation::StartMovementVFXOnActor(*player, false);
 				g_ownsGlow = Animation::StartWeaponGlow(*player, false);
@@ -94,7 +84,7 @@ namespace Animation::PowerAttackVFX
 
 			Scheduler::Cancel(g_safetyToken);
 			g_safetyToken = Scheduler::After(Constants::kPowerAttackVfxSafetyTimeout, [] {
-				Stop("red de seguridad, sin attackStop");
+				Stop();
 			});
 		}
 
@@ -108,13 +98,12 @@ namespace Animation::PowerAttackVFX
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
-				// Hilo de animación: todo lo que toca efectos/3D se reencola
-				// al hilo principal.
+				// Hilo de animación: el trabajo se reencola al hilo principal.
 				const std::string_view tag = a_event->tag.c_str();
 				if (tag == Constants::kPowerAttackVfxStartEvent) {
 					SKSE::GetTaskInterface()->AddTask(OnSwing);
 				} else if (tag == Constants::kPowerAttackVfxStopEvent) {
-					SKSE::GetTaskInterface()->AddTask([] { Stop("attackStop"); });
+					SKSE::GetTaskInterface()->AddTask([] { Stop(); });
 				}
 				return RE::BSEventNotifyControl::kContinue;
 			}
@@ -125,9 +114,7 @@ namespace Animation::PowerAttackVFX
 
 	void EnsureRegistered(RE::Actor& a_actor)
 	{
-		// Todos los grafos, igual que AttackAnimType::EnsureRegistered (el
-		// jugador tiene uno de tercera y otro de primera persona).
-		// BSTEventSource::AddEventSink ya ignora un sink repetido.
+		// Todos los grafos (tercera y primera persona); AddEventSink ignora repetidos.
 		RE::BSAnimationGraphManagerPtr graphManager;
 		a_actor.GetAnimationGraphManager(graphManager);
 		if (!graphManager) {
@@ -148,7 +135,6 @@ namespace Animation::PowerAttackVFX
 			return;
 		}
 
-		logs::info("PowerAttackVFX: cancelado por el inicio de un lanzamiento.");
 		const bool ownsGlow = g_ownsGlow;
 		ClearState();
 
@@ -156,8 +142,7 @@ namespace Animation::PowerAttackVFX
 			Animation::StopWeaponGlow();
 		}
 
-		// Con las chispas del lanzamiento desactivadas nadie va a relevar
-		// las de este power attack: se cortan aquí.
+		// Sin chispas de lanzamiento nadie releva estas: se cortan aquí.
 		if (!Settings::GetParticles()) {
 			Animation::StopMovementVFX();
 		}
