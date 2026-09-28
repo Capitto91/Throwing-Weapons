@@ -11,6 +11,7 @@
 #include "2.- INPUT/InputManager.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/AttackAnimType.h"
 
 #include <optional>
 
@@ -186,6 +187,21 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
+				// Tipo de animación del arma (ver AttackAnimType.h): antes de
+				// la guarda de pantalla de carga -- desequipada durante una
+				// carga tampoco debe quedarse como maza.
+				{
+					auto* equipForm = RE::TESForm::LookupByID(a_event->baseObject);
+					auto* equipWeapon = equipForm ? equipForm->As<RE::TESObjectWEAP>() : nullptr;
+					if (equipWeapon && equipWeapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
+						if (a_event->equipped) {
+							Animation::AttackAnimType::EnsureRegistered(*player);
+						} else {
+							Animation::AttackAnimType::Restore(equipWeapon);
+						}
+					}
+				}
+
 				// Durante una pantalla de carga el motor puede reequipar/
 				// desequipar por su cuenta el equipo del jugador, sin que
 				// sea una decisión suya -- se ignora, y kPostLoadGame
@@ -250,6 +266,9 @@ namespace Events
 			{
 				if (a_event && !a_event->opening && a_event->menuName == RE::LoadingMenu::MENU_NAME) {
 					Weapon::WeaponManager::GetSingleton()->OnLoadingScreenClosed();
+					if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+						Animation::AttackAnimType::EnsureRegistered(*player);
+					}
 				}
 
 				return RE::BSEventNotifyControl::kContinue;
@@ -348,6 +367,9 @@ namespace Events
 				// Poder Lightning Dash: solo concede si el arma ya está en la
 				// mano, ver WeaponManager::RestoreLightningDashPower.
 				Weapon::WeaponManager::GetSingleton()->RestoreLightningDashPower();
+				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+					Animation::AttackAnimType::EnsureRegistered(*player);
+				}
 				g_pendingRecovery.reset();
 				break;
 			default:

@@ -139,6 +139,21 @@ namespace Constants
 	// valor real confirmado en vez de depender de esa coincidencia.
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
 
+	// Tipo de animación que se da al arma arrojadiza mientras está
+	// desenvainada (ver 8.- ANIMATION/AttackAnimType.h). El registro WEAP
+	// de la Creation Kit se queda en OneHandAxe (posición en la cadera y
+	// desenvainado/envainado de hacha); con el arma ya en la mano, los
+	// packs de animación que eligen set por tipo (condición IsEquippedType
+	// de OAR: SIGMA, Smooth Moveset, For Honor, MCO...) le dan los ataques
+	// de maza.
+	inline constexpr RE::WEAPON_TYPE kDrawnAnimationWeaponType = RE::WEAPON_TYPE::kOneHandMace;
+
+	// Reintentos del paso a kDrawnAnimationWeaponType mientras el modelo
+	// del arma todavía no ha llegado a la mano (AttackAnimType.cpp,
+	// Promote): 20 x 50ms = 1s como máximo.
+	inline constexpr std::chrono::milliseconds kDrawnTypePromoteRetryInterval{ 50 };
+	inline constexpr int                       kDrawnTypePromoteMaxAttempts = 20;
+
 	// Mismo mecanismo que Lanzar (ver el bloque de comentarios sobre
 	// kThrowReleaseFallbackWindow: API de Functions de Open Animation
 	// Replacer). Antes de esto, un primer intento con un evento SoundPlay
