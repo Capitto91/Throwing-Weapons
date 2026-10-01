@@ -173,21 +173,31 @@ namespace Combat
 			return ref.get();
 		}
 
-		// Formularios buscados por EditorID una vez; el aviso de log se repite mientras falten.
+		// Busca un formulario del plugin por FormID local; nullptr si no existe o es de otro tipo.
+		template <class T>
+		T* LookupPluginForm(RE::FormID a_localFormID)
+		{
+			auto* dataHandler = RE::TESDataHandler::GetSingleton();
+			return dataHandler ? dataHandler->LookupForm<T>(a_localFormID, Constants::kSoundPluginName) : nullptr;
+		}
+
+		// Formularios buscados una vez; el aviso de log se repite mientras falten.
 		RE::SpellItem* GetEmbeddedParalysisSpell()
 		{
-			static RE::SpellItem* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kEmbeddedParalysisSpell);
+			static RE::SpellItem* spell = LookupPluginForm<RE::SpellItem>(Constants::kEmbeddedParalysisSpellLocalFormID);
 			if (!spell) {
-				logs::warn("Combat::GetEmbeddedParalysisSpell: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).", Constants::kEmbeddedParalysisSpell);
+				logs::warn("Combat::GetEmbeddedParalysisSpell: no se encontró el hechizo (FormID local 0x{:03X}) en \"{}\".",
+					Constants::kEmbeddedParalysisSpellLocalFormID, Constants::kSoundPluginName);
 			}
 			return spell;
 		}
 
 		RE::EffectSetting* GetEmbeddedParalysisEffect()
 		{
-			static RE::EffectSetting* effect = RE::TESForm::LookupByEditorID<RE::EffectSetting>(Constants::kEmbeddedParalysisEffect);
+			static RE::EffectSetting* effect = LookupPluginForm<RE::EffectSetting>(Constants::kEmbeddedParalysisEffectLocalFormID);
 			if (!effect) {
-				logs::warn("Combat::GetEmbeddedParalysisEffect: no se encontró el efecto \"{}\" (revisa que exista en la Creation Kit).", Constants::kEmbeddedParalysisEffect);
+				logs::warn("Combat::GetEmbeddedParalysisEffect: no se encontró el efecto (FormID local 0x{:03X}) en \"{}\".",
+					Constants::kEmbeddedParalysisEffectLocalFormID, Constants::kSoundPluginName);
 			}
 			return effect;
 		}

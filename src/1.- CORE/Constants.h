@@ -153,10 +153,12 @@ namespace Constants
 
 // -- Clavado en un actor (punto 6) --
 	// Habilidad de parálisis (Ability, Constant Effect) concedida mientras el arma está clavada.
-	inline constexpr std::string_view kEmbeddedParalysisSpell{ "CAP_ThorMjolnir_Ability_ThrowingParalysis" };
+	// CAP_ThorMjolnir_Ability_ThrowingParalysis, FormID local del ESL.
+	inline constexpr RE::FormID kEmbeddedParalysisSpellLocalFormID = 0x019;
 
 	// Efecto de la parálisis, para comprobar si quedó activo (inmunidad).
-	inline constexpr std::string_view kEmbeddedParalysisEffect{ "CAP_ThorMjolnir_ParalysisAbilityEffect" };
+	// CAP_ThorMjolnir_ParalysisAbilityEffect, FormID local del ESL.
+	inline constexpr RE::FormID kEmbeddedParalysisEffectLocalFormID = 0x01A;
 
 	// Hazard eléctrico (con Drop To Ground) colocado sobre el actor al clavarse; FormID local del ESL.
 	inline constexpr RE::FormID kEmbeddedHazardLocalFormID = 0x0C3;
@@ -176,7 +178,8 @@ namespace Constants
 
 	// -- Poder Lightning Dash --
 	// Lesser Power concedido mientras el arma está equipada.
-	inline constexpr std::string_view kLightningDashSpell{ "CAP_ThorMjolnir_Spell_LightningDash" };
+	// CAP_ThorMjolnir_Spell_LightningDash, FormID local del ESL.
+	inline constexpr RE::FormID kLightningDashSpellLocalFormID = 0x00E;
 
 	// -- Temblor al desclavar (punto 11) --
 	// Duración mínima del temblor; BeginReturn puede alargarlo.

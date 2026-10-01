@@ -272,12 +272,16 @@ namespace Weapon
 
 	namespace
 	{
-		// Formulario buscado por EditorID una vez.
+		// Formulario buscado por FormID local una vez.
 		RE::SpellItem* GetLightningDashSpell()
 		{
-			static RE::SpellItem* spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(Constants::kLightningDashSpell);
+			static RE::SpellItem* spell = [] {
+				auto* dataHandler = RE::TESDataHandler::GetSingleton();
+				return dataHandler ? dataHandler->LookupForm<RE::SpellItem>(Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName) : nullptr;
+			}();
 			if (!spell) {
-				logs::warn("WeaponManager::GetLightningDashSpell: no se encontró el hechizo \"{}\" (revisa que exista en la Creation Kit).", Constants::kLightningDashSpell);
+				logs::warn("WeaponManager::GetLightningDashSpell: no se encontró el hechizo (FormID local 0x{:03X}) en \"{}\".",
+					Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName);
 			}
 			return spell;
 		}
