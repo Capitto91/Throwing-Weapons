@@ -3,10 +3,17 @@
 
 #pragma once
 
+#include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
 #include "3.- WEAPON/WeaponState.h"
 
 #include <chrono>
+#include <memory>
+
+namespace Return
+{
+	class CatchSync;
+}
 
 namespace Weapon
 {
@@ -66,8 +73,8 @@ namespace Weapon
 		void FinishCallAnimation();
 
 		// Anotación de Catch.hkx (mano cerrada): sonido final y reequipado, diferido hasta la llegada física
-		// si aún no llegó. La llaman OARFunctions y la red de seguridad (kCatchReleaseFallbackWindow).
-		void OnCatchReleaseAnimationEvent();
+		// si aún no llegó. La llaman OARFunctions (a_fromAnnotation=true) y la red de seguridad (false).
+		void OnCatchReleaseAnimationEvent(bool a_fromAnnotation);
 
 		// Llegada física de la réplica a la mano (onArrived de Return); completa un reequipado pendiente.
 		void OnPhysicalArrival();
@@ -127,7 +134,7 @@ namespace Weapon
 		// Sin jugador o réplica, RecallWeapon.
 		void BeginReturn(bool a_wasStuck);
 
-		// Gesto de Atrape (Catch.hkx) al quedar kCatchAnimationLeadTime para la llegada; no cambia el estado.
+		// Gesto de Atrape (Catch.hkx); al empezar fija en catchSync la llegada del arma. No cambia el estado.
 		// Lo llama onApproaching de Return.
 		void BeginCatchAnimation();
 
@@ -179,6 +186,16 @@ namespace Weapon
 
 		// true tras el sonido final del atrape, para no repetirlo si llegan la anotación y la red de seguridad.
 		bool catchEndSoundPlayed{ false };
+
+		// Sincronía del regreso en curso con Catch.hkx; se crea en BeginReturn.
+		std::shared_ptr<Return::CatchSync> catchSync;
+
+		// Tiempo real de Catch.hkx hasta su anotación, medido en el último Atrape (nominal al cargar).
+		float catchLeadSeconds{ Constants::kCatchAnimationLeadTime };
+
+		// Instante del attackStart de Catch.hkx y si falta medir su anotación.
+		std::chrono::steady_clock::time_point catchAnimationStartTime;
+		bool                                  catchLeadMeasurePending{ false };
 
 		// true desde BeginCallAnimation hasta FinishCallAnimation.
 		bool callAnimationActive{ false };

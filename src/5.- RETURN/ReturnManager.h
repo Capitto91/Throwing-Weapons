@@ -5,16 +5,57 @@
 
 #include "6.- PHYSICS/PhysicsManager.h"
 
+#include <chrono>
 #include <functional>
+#include <memory>
+#include <optional>
 
 namespace Return
 {
+	// Sincronía del regreso con Catch.hkx: fija la hora de llegada del arma cuando el gesto empieza.
+	// La crea WeaponManager::BeginReturn y la comparten los bucles del regreso y BeginCatchAnimation.
+	class CatchSync
+	{
+	public:
+		// a_leadSeconds: segundos reales desde el inicio de Catch.hkx hasta su anotación de mano cerrada.
+		explicit CatchSync(float a_leadSeconds) noexcept :
+			leadSeconds(a_leadSeconds)
+		{}
+
+		[[nodiscard]] float GetLeadSeconds() const noexcept { return leadSeconds; }
+
+		// Catch.hkx acaba de empezar: la llegada queda fijada a ahora + GetLeadSeconds().
+		// Lo llama WeaponManager::BeginCatchAnimation si el grafo acepta el attackStart.
+		void OnCatchStarted();
+
+		// Catch.hkx no se reproducirá: el arma vuelve a su ritmo natural, sin esperarlo.
+		// Lo llama WeaponManager::BeginCatchAnimation si el grafo rechaza el attackStart.
+		void Release() noexcept { released = true; }
+
+		// Marca que ya se pidió el Atrape (onApproaching). Lo llaman los bucles del regreso.
+		void               MarkRequested();
+		[[nodiscard]] bool IsRequested() const noexcept { return requestedAt.has_value(); }
+
+		// Segundos reales hasta la llegada fijada; vacío mientras Catch.hkx no haya empezado.
+		[[nodiscard]] std::optional<float> GetSecondsToDeadline() const;
+
+		// true si el arma ya no espera a Catch.hkx: liberada, o pedida y sin empezar pasado
+		// Constants::kCatchStartTimeout. Lo consulta el temblor para decidir el despegue.
+		[[nodiscard]] bool IsFree();
+
+	private:
+		float                                                leadSeconds;
+		std::optional<std::chrono::steady_clock::time_point> requestedAt;
+		std::optional<std::chrono::steady_clock::time_point> deadline;
+		bool                                                 released{ false };
+	};
+
 	struct ReturnCallbacks
 	{
 		// Token del bucle del regreso, para cancelarlo desde fuera.
 		std::function<void(Physics::TickToken)> onTickStarted;
 
-		// Aviso cuando faltan Constants::kCatchAnimationLeadTime segundos para llegar.
+		// Aviso cuando la llegada prevista queda a CatchSync::GetLeadSeconds() o menos.
 		// WeaponManager arranca aquí el gesto de Atrape.
 		std::function<void()> onApproaching;
 
@@ -24,6 +65,6 @@ namespace Return
 	};
 
 	// Inicia el regreso de a_replicaHandle a la mano de a_player (curva que sigue a la mano y giro).
-	// Con a_wasStuck, primero tiembla; el temblor se alarga si hace falta tiempo para el Atrape.
-	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, bool a_wasStuck, ReturnCallbacks a_callbacks);
+	// Con a_wasStuck, primero tiembla hasta que el vuelo natural llegue a la anotación de Catch.hkx.
+	void BeginReturn(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, bool a_wasStuck, std::shared_ptr<CatchSync> a_catchSync, ReturnCallbacks a_callbacks);
 }

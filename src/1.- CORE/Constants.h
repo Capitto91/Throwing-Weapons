@@ -125,6 +125,17 @@ namespace Constants
 	// Distancia a la que el arma ha llegado a la mano.
 	inline constexpr float kReturnArrivalDistance = 30.0f;
 
+	// Con Catch.hkx en marcha, el ritmo del vuelo se reescala para llegar a su anotación,
+	// sin bajar de Min (no se arrastra) ni pasar de Max (no salta).
+	inline constexpr float kReturnRetimeMinRate = 0.5f;
+	inline constexpr float kReturnRetimeMaxRate = 2.0f;
+
+	// Paso máximo del reloj real del regreso por tick, tras un tirón o una pausa (s).
+	inline constexpr float kReturnMaxTickDelta = 0.1f;
+
+	// Tope de la simulación de la llegada prevista (s).
+	inline constexpr float kReturnArrivalLookahead = 4.0f;
+
 	// Desvío lateral de la curva: fracción aleatoria de la distancia entre Min y Max, acotada en unidades.
 	inline constexpr float kReturnCurveLateralFractionMin = 0.20f;
 	inline constexpr float kReturnCurveLateralFractionMax = 0.30f;
@@ -215,11 +226,17 @@ namespace Constants
 	// Antelación del sonido de arranque respecto a la llegada.
 	inline constexpr float kCatchStartSoundLeadTime = 1.066f;
 
-	// Tiempo desde el inicio de Catch.hkx hasta su anotación de mano cerrada.
-	inline constexpr float kCatchAnimationLeadTime = 0.5f;
+	// Tiempo real desde el attackStart de Catch.hkx hasta su anotación de mano cerrada (medido en el juego).
+	// Valor inicial: WeaponManager lo vuelve a medir en cada Atrape y usa la última medida.
+	inline constexpr float kCatchAnimationLeadTime = 0.51f;
 
-	// Margen extra de onApproaching para que la llegada física gane a la anotación de Catch.hkx.
-	inline constexpr float kCatchApproachSafetyMargin = 0.1f;
+	// Rango válido de una medida de kCatchAnimationLeadTime (fracción del nominal); fuera de él
+	// (pausa o tirón durante el gesto) se descarta.
+	inline constexpr float kCatchLeadMeasureMinFactor = 0.5f;
+	inline constexpr float kCatchLeadMeasureMaxFactor = 2.0f;
+
+	// Red de seguridad: si Catch.hkx no empieza en este margen tras pedirlo, el arma deja de esperarlo.
+	inline constexpr std::chrono::milliseconds kCatchStartTimeout{ 1000 };
 
 	// Tiempo mínimo tras la liberación de Call.hkx antes de arrancar Catch.hkx.
 	inline constexpr float kMinCatchAnimationDelay = 0.5f;

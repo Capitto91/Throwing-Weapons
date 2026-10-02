@@ -22,6 +22,7 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
+				logs::info("[DIAG] OAR: anotación ThorMjolnirThrowRelease recibida");
 				Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
 				return true;
 			}
@@ -39,6 +40,7 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
+				logs::info("[DIAG] OAR: anotación ThorMjolnirCallRelease recibida");
 				Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
 				return true;
 			}
@@ -56,7 +58,8 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent();
+				logs::info("[DIAG] OAR: anotación ThorMjolnirCatchRelease recibida");
+				Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true);
 				return true;
 			}
 		};

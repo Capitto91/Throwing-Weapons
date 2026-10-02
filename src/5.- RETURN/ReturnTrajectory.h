@@ -19,8 +19,8 @@ namespace Return
 	// n = Constants::kReturnAccelerationExponent.
 	float ComputeTraveledDistance(float a_acceleration, float a_elapsedSeconds);
 
-	// Duración prevista para recorrer a_distance con a_acceleration.
-	// La usa Return::BeginReturn para adelantar el sonido de atrape.
+	// Duración prevista para recorrer a_distance con a_acceleration (sin el tramo final lento).
+	// La usa BeginReturnMovement para decidir si alarga el vuelo sin temblor.
 	float ComputeReturnDuration(float a_acceleration, float a_distance);
 
 	// Aceleración para recorrer a_distance en a_targetDuration.

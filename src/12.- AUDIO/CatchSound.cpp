@@ -7,23 +7,20 @@
 
 namespace Audio
 {
-	void CatchCue::UpdateStart(const RE::NiPoint3& a_position, float a_deltaSeconds)
+	void CatchCue::UpdateStart(const RE::NiPoint3& a_position, float a_secondsToArrival)
 	{
-		if (startFired) {
-			return;
-		}
-
-		elapsed += a_deltaSeconds;
-		if (elapsed < startDelay) {
+		if (startFired || a_secondsToArrival > Constants::kCatchStartSoundLeadTime) {
 			return;
 		}
 
 		startFired = true;
+		logs::info("[DIAG] Sonido de arranque: llegada prevista en {:.3f} s", a_secondsToArrival);
 		PlayFileOneShot(a_position, Constants::kCatchStartSoundFilePath, Constants::kSoundHandleVolume);
 	}
 
 	void CatchCue::PlayEnd(const RE::NiPoint3& a_position)
 	{
+		logs::info("[DIAG] Sonido final");
 		PlayFileOneShot(a_position, Constants::kCatchEndSoundFilePath, Constants::kSoundHandleVolume);
 	}
 }
