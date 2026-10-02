@@ -3,6 +3,7 @@
 #include "5.- RETURN/ReturnManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/FrameHook.h"
 #include "12.- AUDIO/CatchSound.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "6.- PHYSICS/CollisionManager.h"
@@ -21,13 +22,13 @@ namespace Return
 {
 	void CatchSync::OnCatchStarted()
 	{
-		deadline = std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<float>(leadSeconds));
+		deadline = FrameHook::Now() + leadSeconds;
 	}
 
 	void CatchSync::MarkRequested()
 	{
 		if (!requestedAt) {
-			requestedAt = std::chrono::steady_clock::now();
+			requestedAt = FrameHook::Now();
 		}
 	}
 
@@ -37,7 +38,7 @@ namespace Return
 			return std::nullopt;
 		}
 
-		return std::chrono::duration<float>(*deadline - std::chrono::steady_clock::now()).count();
+		return static_cast<float>(*deadline - FrameHook::Now());
 	}
 
 	bool CatchSync::IsFree()
@@ -46,7 +47,8 @@ namespace Return
 			return true;
 		}
 
-		if (requestedAt && !deadline && std::chrono::steady_clock::now() - *requestedAt > Constants::kCatchStartTimeout) {
+		const double startTimeout = std::chrono::duration<double>(Constants::kCatchStartTimeout).count();
+		if (requestedAt && !deadline && FrameHook::Now() - *requestedAt > startTimeout) {
 			logs::warn("Return::CatchSync: Catch.hkx no empezó tras pedir el Atrape; el arma vuelve sin esperarlo.");
 			released = true;
 			return true;
@@ -57,22 +59,10 @@ namespace Return
 
 	namespace
 	{
-		using Clock = std::chrono::steady_clock;
-
-		// Segundos reales entre dos instantes.
-		float SecondsBetween(Clock::time_point a_from, Clock::time_point a_to)
+		// Segundos de FrameHook::Now (el reloj de Catch.hkx) desde a_from.
+		float SecondsSince(double a_from)
 		{
-			return std::chrono::duration<float>(a_to - a_from).count();
-		}
-
-		// Segundos reales desde a_lastTick (que pasa a ser ahora), acotados a kReturnMaxTickDelta
-		// tras un tirón o una pausa. Reloj de los bucles del regreso, el mismo que el de Catch.hkx.
-		float ConsumeTickDelta(Clock::time_point& a_lastTick)
-		{
-			const auto  now = Clock::now();
-			const float delta = SecondsBetween(a_lastTick, now);
-			a_lastTick = now;
-			return delta < Constants::kReturnMaxTickDelta ? delta : Constants::kReturnMaxTickDelta;
+			return static_cast<float>(FrameHook::Now() - a_from);
 		}
 
 		// Posición del nodo del arma en la mano derecha: destino del regreso.
@@ -128,8 +118,8 @@ namespace Return
 		}
 
 		// Movimiento de vuelta (curva y aceleración); se llama tras el temblor o de inmediato.
-		// a_callTime: instante en que se soltó la Llamada.
-		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks, std::shared_ptr<Audio::CatchCue> a_catchCue, std::shared_ptr<CatchSync> a_catchSync, Clock::time_point a_callTime, bool a_wasStuck)
+		// a_callTime: instante (FrameHook::Now) en que se soltó la Llamada.
+		void BeginReturnMovement(RE::Actor* a_player, RE::ObjectRefHandle a_replicaHandle, ReturnCallbacks a_callbacks, std::shared_ptr<Audio::CatchCue> a_catchCue, std::shared_ptr<CatchSync> a_catchSync, double a_callTime, bool a_wasStuck)
 		{
 			auto replica = a_replicaHandle.get();
 			if (!a_player || !replica) {
@@ -157,11 +147,6 @@ namespace Return
 
 			const auto controlPoint = ComputeReturnControlPoint(start, initialHandPos, GetPlayerRightVector(a_player), Constants::kReturnCurveAnchorFraction);
 
-			logs::info("[DIAG] Inicio del vuelo: real {:.3f} s, distancia {:.0f} u, vuelo natural {:.3f} s, Catch.hkx {}",
-				SecondsBetween(a_callTime, Clock::now()), initialDistance,
-				SimulateRemainingReturnTime(start, initialHandPos, start, controlPoint, acceleration, initialDistance, 0.0f, Constants::kReturnArrivalLookahead),
-				a_catchSync->GetSecondsToDeadline() ? "ya en marcha" : "sin empezar");
-
 			// Sin silbido: el sonido de arranque del atrape ya suena en el regreso.
 
 			// Rotación del nodo de giro al empezar el tramo (base del giro) y del nodo raíz (constante).
@@ -184,8 +169,8 @@ namespace Return
 
 			trail->Start(replica->GetParentCell(), start, trailUpReference, trailRoll, trailAnchorWorldOffset);
 
-			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, trail, trailUpReference, trailRoll, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), catchSync = std::move(a_catchSync), callTime = a_callTime, lastTick = Clock::now(), diagInitialHandPos = initialHandPos](RE::TESObjectREFR& a_refr, float) mutable {
-				const float deltaSeconds = ConsumeTickDelta(lastTick);
+			auto token = Physics::StartTickLoop(a_replicaHandle, [a_player, start, controlPoint, initialDistance, acceleration, rootWorld, movementBaseLocal, trail, trailUpReference, trailRoll, onArrived = a_callbacks.onArrived, onApproaching = a_callbacks.onApproaching, straightening = false, arrivedFired = false, straightenStart = 0.0f, straightenDuration = Constants::kSpinStraightenLeadTime, straightenBlendFromLocal = RE::NiMatrix3{}, elapsed = 0.0f, progressElapsed = 0.0f, hitActors = std::vector<RE::ActorHandle>{}, catchCue = std::move(a_catchCue), catchSync = std::move(a_catchSync), callTime = a_callTime](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+				const float deltaSeconds = a_deltaSeconds;
 				const auto  previousPos = a_refr.GetPosition();
 				elapsed += deltaSeconds;
 
@@ -277,10 +262,8 @@ namespace Return
 
 				// Pide el Atrape cuando la llegada queda a la duración de Catch.hkx hasta su anotación,
 				// nunca antes de kMinCatchAnimationDelay desde la Llamada.
-				const float sinceCall = SecondsBetween(callTime, Clock::now());
+				const float sinceCall = SecondsSince(callTime);
 				if (!catchSync->IsRequested() && sinceCall >= Constants::kMinCatchAnimationDelay && timeToArrival <= catchSync->GetLeadSeconds()) {
-					logs::info("[DIAG] onApproaching (vuelo): real {:.3f} s, llegada prevista en {:.3f} s, distancia {:.0f} u",
-						sinceCall, timeToArrival, distanceToHand);
 					catchSync->MarkRequested();
 					onApproaching();
 				}
@@ -296,10 +279,6 @@ namespace Return
 				}
 
 				if (distanceToHand <= Constants::kReturnArrivalDistance) {
-					const auto toDeadline = catchSync->GetSecondsToDeadline();
-					logs::info("[DIAG] Llegada física: real {:.3f} s, {:+.3f} s respecto a la anotación prevista, ritmo {:.2f}, la mano se movió {:.0f} u durante el vuelo",
-						SecondsBetween(callTime, Clock::now()), toDeadline ? -*toDeadline : 0.0f, retimeRate, (handPos - diagInitialHandPos).Length());
-
 					// Redes de seguridad: onApproaching y el enderezado se disparan antes de onArrived si no lo hicieron.
 					if (!catchSync->IsRequested()) {
 						catchSync->MarkRequested();
@@ -335,12 +314,8 @@ namespace Return
 			return;
 		}
 
-		const auto callTime = Clock::now();
-		auto       catchCue = std::make_shared<Audio::CatchCue>();
-
-		logs::info("[DIAG] BeginReturn: distancia {:.0f} u, clavada {}, vuelo natural previsto {:.3f} s, Catch.hkx hasta su anotación {:.3f} s",
-			(GetHandPosition(a_player) - replica->GetPosition()).Length(), a_wasStuck,
-			EstimateFlightDuration(replica->GetPosition(), GetHandPosition(a_player)), a_catchSync->GetLeadSeconds());
+		const double callTime = FrameHook::Now();
+		auto         catchCue = std::make_shared<Audio::CatchCue>();
 
 		if (!a_wasStuck) {
 			BeginReturnMovement(a_player, a_replicaHandle, std::move(a_callbacks), std::move(catchCue), std::move(a_catchSync), callTime, false);
@@ -361,8 +336,8 @@ namespace Return
 			}
 		}
 
-		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, catchSync = a_catchSync, callTime, plannedShudder, lastTick = Clock::now(), elapsed = 0.0f](RE::TESObjectREFR& a_refr, float) mutable {
-			elapsed += ConsumeTickDelta(lastTick);
+		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, catchSync = a_catchSync, callTime, plannedShudder, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+			elapsed += a_deltaSeconds;
 
 			const auto  replicaPos = a_refr.GetPosition();
 			const float flight = EstimateFlightDuration(replicaPos, GetHandPosition(a_player));
@@ -381,7 +356,6 @@ namespace Return
 			// Pide el Atrape cuando, despegando cuanto antes, el arma llegaría dentro de la duración de Catch.hkx.
 			const float minShudderLeft = Constants::kStickShudderDuration > elapsed ? Constants::kStickShudderDuration - elapsed : 0.0f;
 			if (!catchSync->IsRequested() && elapsed >= Constants::kMinCatchAnimationDelay && minShudderLeft + flight <= lead) {
-				logs::info("[DIAG] onApproaching (temblor): real {:.3f} s, vuelo natural {:.3f} s", elapsed, flight);
 				catchSync->MarkRequested();
 				callbacks.onApproaching();
 			}
@@ -398,8 +372,6 @@ namespace Return
 			}
 
 			if (depart) {
-				logs::info("[DIAG] Fin del temblor: real {:.3f} s (previsto {:.3f} s), vuelo natural {:.3f} s, faltan {:.3f} s para la anotación",
-					elapsed, plannedShudder, flight, toDeadline ? *toDeadline : -1.0f);
 				BeginReturnMovement(a_player, a_replicaHandle, std::move(callbacks), std::move(catchCue), std::move(catchSync), callTime, true);
 				return false;
 			}

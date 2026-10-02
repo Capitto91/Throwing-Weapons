@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <memory>
+#include <vector>
 
 namespace Return
 {
@@ -190,12 +191,15 @@ namespace Weapon
 		// Sincronía del regreso en curso con Catch.hkx; se crea en BeginReturn.
 		std::shared_ptr<Return::CatchSync> catchSync;
 
-		// Tiempo real de Catch.hkx hasta su anotación, medido en el último Atrape (nominal al cargar).
+		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now): mediana de catchLeadSamples (nominal al cargar).
 		float catchLeadSeconds{ Constants::kCatchAnimationLeadTime };
 
-		// Instante del attackStart de Catch.hkx y si falta medir su anotación.
-		std::chrono::steady_clock::time_point catchAnimationStartTime;
-		bool                                  catchLeadMeasurePending{ false };
+		// Últimas medidas válidas de Catch.hkx (hasta Constants::kCatchLeadSampleCount), la más antigua primero.
+		std::vector<float> catchLeadSamples;
+
+		// Instante (FrameHook::Now) del attackStart de Catch.hkx y si falta medir su anotación.
+		double catchAnimationStartTime{ 0.0 };
+		bool   catchLeadMeasurePending{ false };
 
 		// true desde BeginCallAnimation hasta FinishCallAnimation.
 		bool callAnimationActive{ false };

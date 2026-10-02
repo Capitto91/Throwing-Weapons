@@ -89,9 +89,13 @@ namespace Constants
 	// Tras soltar el arma se oculta y el desequipado real espera este margen, para no cortar Throw.hkx.
 	inline constexpr std::chrono::milliseconds kThrowReleaseVisualHoldDuration{ 400 };
 
-	// Intervalo del bucle de tick manual (~60 por segundo).
+	// Intervalo de los bucles de Physics con hilos (respaldo sin FrameHook, ~60 por segundo).
+	// kTickDeltaSeconds es además el paso de la simulación de la llegada del regreso.
 	inline constexpr std::chrono::milliseconds kTickInterval{ 16 };
 	inline constexpr float                     kTickDeltaSeconds = 0.016f;
+
+	// Paso máximo de un bucle de Physics por tick, tras un tirón (s).
+	inline constexpr float kMaxTickDeltaSeconds = 0.1f;
 
 	// -- Ida (punto 3) --
 	// Gravedad del mundo si no se puede leer de Havok (u/s²); velocidad y multiplicador en Settings.
@@ -129,9 +133,6 @@ namespace Constants
 	// sin bajar de Min (no se arrastra) ni pasar de Max (no salta).
 	inline constexpr float kReturnRetimeMinRate = 0.5f;
 	inline constexpr float kReturnRetimeMaxRate = 2.0f;
-
-	// Paso máximo del reloj real del regreso por tick, tras un tirón o una pausa (s).
-	inline constexpr float kReturnMaxTickDelta = 0.1f;
 
 	// Tope de la simulación de la llegada prevista (s).
 	inline constexpr float kReturnArrivalLookahead = 4.0f;
@@ -226,14 +227,17 @@ namespace Constants
 	// Antelación del sonido de arranque respecto a la llegada.
 	inline constexpr float kCatchStartSoundLeadTime = 1.066f;
 
-	// Tiempo real desde el attackStart de Catch.hkx hasta su anotación de mano cerrada (medido en el juego).
+	// Tiempo desde el attackStart de Catch.hkx hasta su anotación de mano cerrada (reloj de FrameHook, medido en el juego).
 	// Valor inicial: WeaponManager lo vuelve a medir en cada Atrape y usa la última medida.
 	inline constexpr float kCatchAnimationLeadTime = 0.51f;
 
 	// Rango válido de una medida de kCatchAnimationLeadTime (fracción del nominal); fuera de él
-	// (pausa o tirón durante el gesto) se descarta.
+	// (tirón durante el gesto, o pausa sin FrameHook) se descarta.
 	inline constexpr float kCatchLeadMeasureMinFactor = 0.5f;
 	inline constexpr float kCatchLeadMeasureMaxFactor = 2.0f;
+
+	// Medidas recientes de Catch.hkx cuya mediana fija la llegada del Atrape (impar: la mediana es una medida real).
+	inline constexpr std::size_t kCatchLeadSampleCount = 5;
 
 	// Red de seguridad: si Catch.hkx no empieza en este margen tras pedirlo, el arma deja de esperarlo.
 	inline constexpr std::chrono::milliseconds kCatchStartTimeout{ 1000 };

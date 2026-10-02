@@ -1,5 +1,5 @@
 // Funciones propias registradas en Open Animation Replacer: OAR las llama en las anotaciones
-// de liberación de Lanzar/Llamada/Atrape y avisan a WeaponManager.
+// de liberación de Lanzar/Llamada/Atrape y avisan a WeaponManager en el hilo principal (AddTask).
 #pragma once
 
 namespace Events::OARFunctions

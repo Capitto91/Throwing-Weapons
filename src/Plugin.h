@@ -1,4 +1,4 @@
-// Arranque del plugin: carga Settings e inicia EventManager.
+// Arranque del plugin: carga Settings, instala FrameHook e inicia EventManager.
 
 #pragma once
 

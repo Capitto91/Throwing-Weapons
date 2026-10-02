@@ -3,6 +3,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/AttackInterruptWatcher.h"
 #include "11.- SKYRIM/ActorUtils.h"
@@ -18,6 +19,8 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
+
+#include <algorithm>
 
 namespace Weapon
 {
@@ -560,8 +563,6 @@ namespace Weapon
 			return;
 		}
 
-		logs::info("[DIAG] Llamada soltada (clavada {})", wasStuckBeforeCalling);
-
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			// Chasquido en el mismo instante que el regreso.
 			Audio::PlayFileOneShot(player->GetPosition(), Constants::kCallReleaseSoundFilePath, Constants::kCallReleaseSoundVolume);
@@ -582,7 +583,6 @@ namespace Weapon
 			// Ya limpiado por otra vía.
 			return;
 		}
-		logs::info("[DIAG] FinishCallAnimation (attackStop, movimiento desbloqueado)");
 		callAnimationActive = false;
 
 		// Bandera y timestamp juntos, para que una pulsación no lea un timestamp viejo.
@@ -634,10 +634,9 @@ namespace Weapon
 		Animation::TriggerHandGlow(*player);
 
 		const bool accepted = player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent);
-		logs::info("[DIAG] BeginCatchAnimation: attackStart aceptado {}", accepted);
 		if (accepted) {
 			// Catch.hkx empieza ahora: el arma debe llegar a su anotación; se mide cuánto tarda.
-			catchAnimationStartTime = std::chrono::steady_clock::now();
+			catchAnimationStartTime = FrameHook::Now();
 			catchLeadMeasurePending = true;
 			if (catchSync) {
 				catchSync->OnCatchStarted();
@@ -661,19 +660,26 @@ namespace Weapon
 
 	void WeaponManager::OnCatchReleaseAnimationEvent(bool a_fromAnnotation)
 	{
-		logs::info("[DIAG] OnCatchReleaseAnimationEvent: anotación {}, gesto activo {}, reequipado hecho {}, llegada física {}", a_fromAnnotation, catchAnimationActive, catchReequipDone, catchPhysicallyArrived);
 		if (!catchAnimationActive || catchReequipDone) {
 			return;
 		}
 
-		// Tiempo real de Catch.hkx hasta su anotación, para fijar la llegada del próximo Atrape.
+		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now), para fijar la llegada del próximo Atrape.
 		if (a_fromAnnotation && catchLeadMeasurePending) {
 			catchLeadMeasurePending = false;
-			const float measured = std::chrono::duration<float>(std::chrono::steady_clock::now() - catchAnimationStartTime).count();
+			const float measured = static_cast<float>(FrameHook::Now() - catchAnimationStartTime);
 			const float nominal = Constants::kCatchAnimationLeadTime;
 			if (measured >= nominal * Constants::kCatchLeadMeasureMinFactor && measured <= nominal * Constants::kCatchLeadMeasureMaxFactor) {
-				catchLeadSeconds = measured;
-				logs::info("[DIAG] Catch.hkx hasta su anotación: {:.3f} s", measured);
+				// Mediana de las últimas medidas: un gesto retrasado suelto no cambia la llegada del siguiente.
+				catchLeadSamples.push_back(measured);
+				if (catchLeadSamples.size() > Constants::kCatchLeadSampleCount) {
+					catchLeadSamples.erase(catchLeadSamples.begin());
+				}
+
+				std::vector<float> sorted = catchLeadSamples;
+				std::ranges::sort(sorted);
+				const std::size_t middle = sorted.size() / 2;
+				catchLeadSeconds = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
 			} else {
 				logs::warn("WeaponManager: medida de Catch.hkx fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, catchLeadSeconds);
 			}
@@ -699,7 +705,6 @@ namespace Weapon
 
 	void WeaponManager::OnPhysicalArrival()
 	{
-		logs::info("[DIAG] OnPhysicalArrival: reequipado pendiente de la anotación {}", catchReequipPending);
 		catchPhysicallyArrived = true;
 		if (catchReequipPending) {
 			catchReequipPending = false;
@@ -709,7 +714,6 @@ namespace Weapon
 
 	void WeaponManager::PerformCatchReequip()
 	{
-		logs::info("[DIAG] PerformCatchReequip");
 		catchReequipDone = true;
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -733,7 +737,6 @@ namespace Weapon
 			// Ya limpiado por otra vía.
 			return;
 		}
-		logs::info("[DIAG] FinishCatchAnimation (attackStop, movimiento desbloqueado)");
 		catchAnimationActive = false;
 		catchReequipDone = false;
 		catchPhysicallyArrived = false;
@@ -902,10 +905,6 @@ namespace Weapon
 			weaponState.SetActiveTickToken(a_token);
 		};
 		callbacks.onApproaching = [this]() {
-			if (auto* diagPlayer = RE::PlayerCharacter::GetSingleton()) {
-				logs::info("[DIAG] onApproaching -> InterruptAttackThen: attackState {}, bloqueando {}",
-					static_cast<std::uint32_t>(diagPlayer->AsActorState()->GetAttackState()), diagPlayer->IsBlocking());
-			}
 			// Con el bloqueo pulsado, corta el bloqueo antes del gesto de Atrape.
 			InterruptAttackThen([this]() {
 				if (weaponState.GetState() == State::kReturning) {

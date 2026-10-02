@@ -5,19 +5,18 @@
 
 #include "6.- PHYSICS/PhysicsManager.h"
 
-#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
 
 namespace Return
 {
-	// Sincronía del regreso con Catch.hkx: fija la hora de llegada del arma cuando el gesto empieza.
-	// La crea WeaponManager::BeginReturn y la comparten los bucles del regreso y BeginCatchAnimation.
+	// Sincronía del regreso con Catch.hkx: fija la hora de llegada del arma cuando el gesto empieza
+	// (reloj FrameHook::Now). La crea WeaponManager::BeginReturn; la usan los bucles y BeginCatchAnimation.
 	class CatchSync
 	{
 	public:
-		// a_leadSeconds: segundos reales desde el inicio de Catch.hkx hasta su anotación de mano cerrada.
+		// a_leadSeconds: segundos desde el inicio de Catch.hkx hasta su anotación de mano cerrada.
 		explicit CatchSync(float a_leadSeconds) noexcept :
 			leadSeconds(a_leadSeconds)
 		{}
@@ -36,7 +35,7 @@ namespace Return
 		void               MarkRequested();
 		[[nodiscard]] bool IsRequested() const noexcept { return requestedAt.has_value(); }
 
-		// Segundos reales hasta la llegada fijada; vacío mientras Catch.hkx no haya empezado.
+		// Segundos hasta la llegada fijada; vacío mientras Catch.hkx no haya empezado.
 		[[nodiscard]] std::optional<float> GetSecondsToDeadline() const;
 
 		// true si el arma ya no espera a Catch.hkx: liberada, o pedida y sin empezar pasado
@@ -44,10 +43,10 @@ namespace Return
 		[[nodiscard]] bool IsFree();
 
 	private:
-		float                                                leadSeconds;
-		std::optional<std::chrono::steady_clock::time_point> requestedAt;
-		std::optional<std::chrono::steady_clock::time_point> deadline;
-		bool                                                 released{ false };
+		float                 leadSeconds;
+		std::optional<double> requestedAt;
+		std::optional<double> deadline;
+		bool                  released{ false };
 	};
 
 	struct ReturnCallbacks

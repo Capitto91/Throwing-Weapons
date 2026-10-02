@@ -28,15 +28,11 @@ namespace Input
 		return a_event->GetDevice() == binding.device && a_event->GetIDCode() == binding.keyCode;
 	}
 
-	RE::BSEventNotifyControl InputManager::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*)
+	void InputManager::HandleActionButton(bool a_down)
 	{
-		if (!a_event) {
-			return RE::BSEventNotifyControl::kContinue;
-		}
-
 		// Nada con el juego en pausa (menús abiertos).
 		if (auto* ui = RE::UI::GetSingleton(); !ui || ui->GameIsPaused()) {
-			return RE::BSEventNotifyControl::kContinue;
+			return;
 		}
 
 		auto* player = RE::PlayerCharacter::GetSingleton();
@@ -44,13 +40,27 @@ namespace Input
 
 		// Participa con el martillo en la mano (lanzar) o con el ciclo en marcha (recuperar).
 		const bool participa = player &&
-		                        (weaponManager->GetState() != Weapon::State::kInHand ||
-									ActorUtils::IsThrowableWeaponEquipped(player));
+		                       (weaponManager->GetState() != Weapon::State::kInHand ||
+								   ActorUtils::IsThrowableWeaponEquipped(player));
 
 		if (!participa) {
+			return;
+		}
+
+		if (a_down) {
+			weaponManager->OnActionButtonDown();
+		} else {
+			weaponManager->OnActionButtonUp();
+		}
+	}
+
+	RE::BSEventNotifyControl InputManager::ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*)
+	{
+		if (!a_event) {
 			return RE::BSEventNotifyControl::kContinue;
 		}
 
+		// Llega por un hilo del motor: aquí solo se reconoce la tecla; HandleActionButton, en el hilo principal.
 		for (auto* event = *a_event; event; event = event->next) {
 			const auto* button = event->AsButtonEvent();
 			if (!button || !IsActionBinding(button)) {
@@ -58,9 +68,9 @@ namespace Input
 			}
 
 			if (button->IsDown()) {
-				weaponManager->OnActionButtonDown();
+				SKSE::GetTaskInterface()->AddTask([] { HandleActionButton(true); });
 			} else if (button->IsUp()) {
-				weaponManager->OnActionButtonUp();
+				SKSE::GetTaskInterface()->AddTask([] { HandleActionButton(false); });
 			}
 		}
 

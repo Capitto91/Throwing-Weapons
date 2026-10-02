@@ -9,8 +9,8 @@
 
 namespace Physics
 {
-	// Callback de cada tick (hilo principal) con la réplica y el tiempo transcurrido.
-	// Devuelve false para terminar; el bucle también para si la réplica deja de existir.
+	// Callback de cada tick (hilo principal) con la réplica y los segundos desde el tick anterior
+	// (de juego con FrameHook, reales sin él; tope Constants::kMaxTickDeltaSeconds). false para terminar.
 	using TickCallback = std::function<bool(RE::TESObjectREFR&, float)>;
 
 	// Token para detener un bucle de tick desde fuera.
@@ -26,12 +26,16 @@ namespace Physics
 	// Sincroniza Havok y el nodo visual tras SetPosition/SetAngle.
 	void SyncHavok(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position, const RE::NiPoint3& a_angle);
 
-	// Llama a a_callback cada Constants::kTickInterval en el hilo principal.
-	// Devuelve el token para cancelarlo.
+	// Llama a a_callback en el hilo principal en cada fotograma sin pausa (FrameHook) o, sin hook,
+	// cada Constants::kTickInterval. Empieza en el tick siguiente. Devuelve el token para cancelarlo.
 	[[nodiscard]] TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback);
 
 	// Detiene un bucle desde fuera; sin efecto si el token está vacío.
 	void CancelTickLoop(const TickToken& a_token);
+
+	// Avanza un fotograma los bucles de StartTickLoop con a_deltaSeconds de juego.
+	// Lo llama FrameHook en cada PlayerCharacter::Update sin pausa.
+	void RunFrame(float a_deltaSeconds);
 
 	// Borra la réplica (Disable + SetDelete); su bucle de tick para solo.
 	void DestroyReplica(RE::ObjectRefHandle a_handle);

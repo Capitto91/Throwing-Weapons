@@ -3,17 +3,50 @@
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/FrameHook.h"
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <exception>
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 namespace Physics
 {
 	namespace
 	{
+		using Clock = std::chrono::steady_clock;
+
 		// Intentos de espera a que cargue el 3D (~800 ms).
 		constexpr int kMax3DWaitAttempts = 50;
+
+		// Bucle de StartTickLoop movido por RunFrame.
+		struct FrameLoop
+		{
+			RE::ObjectRefHandle           handle;
+			std::shared_ptr<TickCallback> callback;
+			TickToken                     active;
+		};
+
+		// Bucles recién creados; RunFrame los incorpora al empezar el fotograma siguiente.
+		std::mutex             g_pendingLock;
+		std::vector<FrameLoop> g_pendingLoops;
+
+		// Bucles en marcha; solo los toca RunFrame (hilo principal).
+		std::vector<FrameLoop> g_frameLoops;
+
+		// Segundos reales desde a_lastTick (que pasa a ser ahora), con tope kMaxTickDeltaSeconds.
+		// Paso de los bucles con hilos, sin FrameHook.
+		float ConsumeRealDelta(Clock::time_point& a_lastTick)
+		{
+			const auto  now = Clock::now();
+			const float delta = std::chrono::duration<float>(now - a_lastTick).count();
+			a_lastTick = now;
+			return (std::min)(delta, Constants::kMaxTickDeltaSeconds);
+		}
 
 		void WaitFor3DThenReady(RE::ObjectRefHandle a_handle, int a_attemptsLeft, ReadyCallback a_onReady)
 		{
@@ -96,7 +129,16 @@ namespace Physics
 		auto callback = std::make_shared<TickCallback>(std::move(a_callback));
 		auto active = std::make_shared<std::atomic<bool>>(true);
 
-		std::thread([a_handle, callback, active]() {
+		if (FrameHook::IsInstalled()) {
+			std::scoped_lock lock(g_pendingLock);
+			g_pendingLoops.push_back(FrameLoop{ a_handle, std::move(callback), active });
+			return active;
+		}
+
+		// Sin FrameHook: hilo que duerme kTickInterval y reencola con el tiempo real transcurrido.
+		auto lastTick = std::make_shared<Clock::time_point>(Clock::now());
+
+		std::thread([a_handle, callback, active, lastTick]() {
 			while (active->load()) {
 				std::this_thread::sleep_for(Constants::kTickInterval);
 				if (!active->load()) {
@@ -104,13 +146,13 @@ namespace Physics
 				}
 
 				// Este hilo aparte es quien reencola; nunca una tarea a sí misma.
-				SKSE::GetTaskInterface()->AddTask([a_handle, callback, active]() {
+				SKSE::GetTaskInterface()->AddTask([a_handle, callback, active, lastTick]() {
 					if (!active->load()) {
 						return;
 					}
 
 					auto refr = a_handle.get();
-					if (!refr || !(*callback)(*refr, Constants::kTickDeltaSeconds)) {
+					if (!refr || !(*callback)(*refr, ConsumeRealDelta(*lastTick))) {
 						active->store(false);
 					}
 				});
@@ -118,6 +160,47 @@ namespace Physics
 		}).detach();
 
 		return active;
+	}
+
+	void RunFrame(float a_deltaSeconds)
+	{
+		{
+			std::scoped_lock lock(g_pendingLock);
+			for (auto& loop : g_pendingLoops) {
+				g_frameLoops.push_back(std::move(loop));
+			}
+			g_pendingLoops.clear();
+		}
+
+		const float delta = (std::min)(a_deltaSeconds, Constants::kMaxTickDeltaSeconds);
+
+		// Un callback puede crear bucles (van a g_pendingLoops) o cancelar otros (su token).
+		for (auto& loop : g_frameLoops) {
+			if (!loop.active->load()) {
+				continue;
+			}
+
+			auto refr = loop.handle.get();
+			if (!refr) {
+				loop.active->store(false);
+				continue;
+			}
+
+			// Un callback que lanza se detiene solo, sin afectar a los demás bucles.
+			try {
+				if (!(*loop.callback)(*refr, delta)) {
+					loop.active->store(false);
+				}
+			} catch (const std::exception& e) {
+				logs::error("Physics::RunFrame: excepción en un bucle, se detiene: {}", e.what());
+				loop.active->store(false);
+			} catch (...) {
+				logs::error("Physics::RunFrame: excepción desconocida en un bucle, se detiene.");
+				loop.active->store(false);
+			}
+		}
+
+		std::erase_if(g_frameLoops, [](const FrameLoop& a_loop) { return !a_loop.active->load(); });
 	}
 
 	void CancelTickLoop(const TickToken& a_token)

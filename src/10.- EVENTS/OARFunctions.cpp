@@ -10,6 +10,7 @@ namespace Events::OARFunctions
 	namespace
 	{
 		// Mínimo que pide OAR: nombre, descripción, versión requerida y RunImpl.
+		// OAR llama a RunImpl desde un hilo de animación: el aviso a WeaponManager se encola al hilo principal.
 		class ThrowReleaseFunction final : public Functions::CustomFunction
 		{
 		public:
@@ -22,8 +23,7 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				logs::info("[DIAG] OAR: anotación ThorMjolnirThrowRelease recibida");
-				Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
+				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent(); });
 				return true;
 			}
 		};
@@ -40,8 +40,7 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				logs::info("[DIAG] OAR: anotación ThorMjolnirCallRelease recibida");
-				Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
+				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent(); });
 				return true;
 			}
 		};
@@ -58,8 +57,7 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				logs::info("[DIAG] OAR: anotación ThorMjolnirCatchRelease recibida");
-				Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true);
+				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true); });
 				return true;
 			}
 		};

@@ -25,6 +25,10 @@ namespace Input
 		~InputManager() override = default;
 
 		static bool IsActionBinding(const RE::ButtonEvent* a_event);
+
+		// Pulsar (a_down) o soltar la tecla: avisa a WeaponManager si procede.
+		// Lo encola ProcessEvent con AddTask, así que corre en el hilo principal.
+		static void HandleActionButton(bool a_down);
 	};
 
 	// Bloquea o desbloquea el movimiento del jugador (RE::ControlMap).

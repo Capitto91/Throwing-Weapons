@@ -14,13 +14,11 @@ namespace Audio
 		}
 
 		startFired = true;
-		logs::info("[DIAG] Sonido de arranque: llegada prevista en {:.3f} s", a_secondsToArrival);
 		PlayFileOneShot(a_position, Constants::kCatchStartSoundFilePath, Constants::kSoundHandleVolume);
 	}
 
 	void CatchCue::PlayEnd(const RE::NiPoint3& a_position)
 	{
-		logs::info("[DIAG] Sonido final");
 		PlayFileOneShot(a_position, Constants::kCatchEndSoundFilePath, Constants::kSoundHandleVolume);
 	}
 }
