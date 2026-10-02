@@ -86,9 +86,6 @@ namespace Weapon
 		// Pasada la cola de Catch.hkx, envía attackStop y suelta bloqueos y el trigger de Atrape.
 		void FinishCatchAnimation();
 
-		// true mientras se equipa el arma señuelo del gesto. Lo consulta EquipGuard.
-		[[nodiscard]] bool IsEquipGuardSuppressed() const noexcept { return suppressEquipGuard; }
-
 		// Concede el poder Lightning Dash al equiparla y lo retira al desequiparla en reposo.
 		// Lo llama LightningDashWatcher (EventManager).
 		void OnThrowableWeaponEquipChanged(bool a_equipped);
@@ -125,12 +122,6 @@ namespace Weapon
 		// Guarda si el arma estaba clavada para BeginReturn.
 		void BeginCallAnimation();
 
-		// Sin uso: equipa el arma real como señuelo para el gesto (reserva).
-		void EquipGestureWeapon();
-
-		// Sin uso: desequipa el arma señuelo.
-		void UnequipGestureWeapon();
-
 		// Cancela el bucle actual, libera al objetivo y arranca Return::BeginReturn sobre la réplica.
 		// Sin jugador o réplica, RecallWeapon.
 		void BeginReturn(bool a_wasStuck);
@@ -150,9 +141,6 @@ namespace Weapon
 
 		// Si el arma estaba clavada al llamar, para BeginReturn.
 		bool wasStuckBeforeCalling{ false };
-
-		// Activo mientras se equipa el señuelo.
-		bool suppressEquipGuard{ false };
 
 		// true desde que ThrowWeapon oculta el arma hasta que termina su desequipado diferido.
 		bool throwTailActive{ false };

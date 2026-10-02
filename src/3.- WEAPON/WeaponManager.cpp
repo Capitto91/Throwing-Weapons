@@ -760,48 +760,6 @@ namespace Weapon
 		Animation::StopWeaponGlow();
 	}
 
-	void WeaponManager::EquipGestureWeapon()
-	{
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto* weapon = weaponState.GetActiveWeapon();
-		if (!player || !weapon) {
-			return;
-		}
-
-		// EquipGuard no deshace este equipado.
-		suppressEquipGuard = true;
-
-		// Sin animación de desenvainar (SkipEquipAnimation).
-		player->SetGraphVariableBool("SkipEquipAnimation", true);
-		RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
-
-		// No se oculta aún: el equipado no está listo en este instante.
-
-		// SkipEquipAnimation y la supresión de EquipGuard se apagan pasado kSkipEquipAnimationWindow.
-		(void)Scheduler::After(Constants::kSkipEquipAnimationWindow, [this, player]() {
-			player->SetGraphVariableBool("SkipEquipAnimation", false);
-			suppressEquipGuard = false;
-		});
-	}
-
-	void WeaponManager::UnequipGestureWeapon()
-	{
-		auto* player = RE::PlayerCharacter::GetSingleton();
-		auto* weapon = weaponState.GetActiveWeapon();
-		if (!player || !weapon) {
-			return;
-		}
-
-		// EquipGuard solo reacciona a equipados.
-		player->SetGraphVariableBool("SkipEquipAnimation", true);
-		RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
-
-		// (void): nada cancela esta ventana desde fuera todavía.
-		(void)Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
-			player->SetGraphVariableBool("SkipEquipAnimation", false);
-		});
-	}
-
 	void WeaponManager::ThrowWeapon()
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();

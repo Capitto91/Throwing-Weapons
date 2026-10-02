@@ -117,11 +117,6 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
-				if (Weapon::WeaponManager::GetSingleton()->IsEquipGuardSuppressed()) {
-					// Arma señuelo del gesto: no se deshace.
-					return RE::BSEventNotifyControl::kContinue;
-				}
-
 				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
 				if (auto* boundObject = form ? form->As<RE::TESBoundObject>() : nullptr) {
 					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, boundObject);

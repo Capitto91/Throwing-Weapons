@@ -190,10 +190,7 @@ namespace Animation::GlowMapControl
 				g_scanTimer -= a_deltaSeconds;
 				if (g_scanTimer <= 0.0f) {
 					g_scanTimer = Constants::kGlowMapCreatureScanIntervalSeconds;
-					const bool nearby = ScanForCreatures(*player);
-					if (nearby != g_creatureNearby) {
-					}
-					g_creatureNearby = nearby;
+					g_creatureNearby = ScanForCreatures(*player);
 				}
 			} else {
 				g_scanTimer = 0.0f;
