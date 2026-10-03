@@ -18,7 +18,8 @@ namespace Animation
 		WeaponTrailGroup();
 
 		// Arranca todas las copias; a_roll es el de la copia 0, las demás suman su desfase.
-		void Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset);
+		// Con a_checkSetting=false arranca aunque [VFX] Trail esté desactivado (LightningDash).
+		void Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset, bool a_checkSetting = true);
 
 		// Cambia el roll base de todas las copias.
 		void SetRoll(float a_roll);
@@ -27,7 +28,7 @@ namespace Animation
 		void Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds);
 
 	private:
-		// [VFX] Trail leído en Start: con false no hace nada en ese tramo.
+		// [VFX] Trail leído en Start (o true si no se consulta): con false no hace nada en ese tramo.
 		bool                        enabled{ false };
 		std::vector<WeaponTrail>    trails;
 		std::mt19937                randomEngine{ std::random_device{}() };

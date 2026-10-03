@@ -229,7 +229,7 @@ namespace Throw
 					if (actor) {
 						Combat::BeginEmbeddedEffect(a_shooter, actor, a_handle, onStuck, onAutoRecall, onTickStarted);
 					} else {
-						onStuck(RE::ActorHandle{});
+						onStuck(RE::ActorHandle{}, hit.normal);
 					}
 
 					return false;

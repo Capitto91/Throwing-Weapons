@@ -193,6 +193,53 @@ namespace Constants
 	// CAP_ThorMjolnir_Spell_LightningDash, FormID local del ESL.
 	inline constexpr RE::FormID kLightningDashSpellLocalFormID = 0x00E;
 
+	// Hechizo de cooldown lanzado sobre el jugador al usar el poder y su efecto invisible (10 s).
+	// CAP_ThorMjolnir_Spell_LightningDash_Cooldown / _MagicEffect_LightningDash_Cooldown, FormID locales del ESL.
+	inline constexpr RE::FormID kLightningDashCooldownSpellLocalFormID = 0x010;
+	inline constexpr RE::FormID kLightningDashCooldownEffectLocalFormID = 0x011;
+
+	// Distancia máxima del jugador al arma para desplazarse (~100 m).
+	inline constexpr float kLightningDashMaxDistance = 7000.0f;
+
+	// Velocidad del desplazamiento (~100 m/s).
+	inline constexpr float kLightningDashSpeed = 7000.0f;  // u/s
+
+	// Separación del destino respecto a la superficie (a lo largo de su normal) y hueco
+	// entre el cuerpo del actor clavado y el jugador.
+	inline constexpr float kLightningDashSurfaceStandoff = 60.0f;
+	inline constexpr float kLightningDashActorGap = 60.0f;
+
+	// Eventos vanilla del grito de sprint, enviados al jugador al empezar, y espera entre ambos.
+	inline constexpr const char*               kLightningDashShoutStartEvent = "ShoutStart";
+	inline constexpr const char*               kLightningDashSprintStartEvent = "ShoutSprintMediumStart";
+	inline constexpr std::chrono::milliseconds kLightningDashSprintEventDelay{ 50 };
+
+	// Avisos en pantalla: arma en la mano, ya volviendo, demasiado lejos y cooldown activo.
+	inline constexpr const char* kLightningDashInHandMessage = "Kyne's Thunder must be thrown first.";
+	inline constexpr const char* kLightningDashReturningMessage = "Kyne's Thunder is already returning.";
+	inline constexpr const char* kLightningDashTooFarMessage = "Kyne's Thunder is too far away.";
+	inline constexpr const char* kLightningDashCooldownMessage = "Kyne's Thunder is still recharging.";
+
+	// Tiempo mínimo antes de repetir el mismo aviso (el motor puede comprobar el lanzamiento más de una vez por pulsación).
+	inline constexpr float kLightningDashMessageRepeatSeconds = 1.0f;
+
+	// VisualEffect del poder, CAP_ThorMjolnir_VisualEffect_LightningDash (arte LightningStormCastBodyFX + shader
+	// CAP_ThorMjolnir_ShockStormFXShader): su arte y su shader van sobre el jugador durante el desplazamiento,
+	// y los persistentes que quedaran en una partida se retiran al cargar. FormID local del ESL.
+	inline constexpr RE::FormID kLightningDashVisualEffectLocalFormID = 0x013;
+
+	// Modificador de imagen al empezar el desplazamiento (CAP_ThorMjolnir_ImageSPaceMod_LightningDash), FormID local del ESL.
+	inline constexpr RE::FormID kLightningDashImageSpaceModLocalFormID = 0x017;
+
+	// Explosiones vanilla sin daño colocadas donde está el jugador al empezar: polvo (FXdustDropSmExplosion)
+	// y descarga (ExplosionShockMass01, empuja objetos sueltos).
+	inline constexpr RE::FormID       kLightningDashDustExplosionFormID = 0x01A13C;
+	inline constexpr RE::FormID       kLightningDashShockExplosionFormID = 0x0D13E8;
+	inline constexpr std::string_view kLightningDashVanillaPluginName = "Skyrim.esm";
+
+	// Hueso del esqueleto vanilla donde se ancla la estela del jugador durante el desplazamiento.
+	inline constexpr const char* kLightningDashTrailNodeName = "NPC Spine2 [Spn2]";
+
 	// -- Temblor al desclavar (punto 11) --
 	// Duración mínima del temblor; BeginReturn puede alargarlo.
 	inline constexpr float kStickShudderDuration = 0.5f;

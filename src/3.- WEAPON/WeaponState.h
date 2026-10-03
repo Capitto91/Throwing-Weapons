@@ -37,6 +37,11 @@ namespace Weapon
 		[[nodiscard]] RE::ActorHandle GetStuckActorHandle() const noexcept { return stuckActorHandle; }
 		void                          SetStuckActorHandle(RE::ActorHandle a_handle) noexcept { stuckActorHandle = a_handle; }
 
+		// Normal de la superficie donde está clavada la réplica (cero si es un actor). La fija onStuck
+		// de Throw::LaunchWeapon; la usa LightningDash para el destino del desplazamiento.
+		[[nodiscard]] const RE::NiPoint3& GetStuckSurfaceNormal() const noexcept { return stuckSurfaceNormal; }
+		void                              SetStuckSurfaceNormal(const RE::NiPoint3& a_normal) noexcept { stuckSurfaceNormal = a_normal; }
+
 		// Bucle de tick que mueve la réplica ahora (ida, clavada o regreso).
 		// WeaponManager lo cancela desde fuera al recuperar el arma.
 		[[nodiscard]] Physics::TickToken GetActiveTickToken() const noexcept { return activeTickToken; }
@@ -47,6 +52,7 @@ namespace Weapon
 		RE::TESBoundObject* activeWeapon{ nullptr };
 		RE::ObjectRefHandle activeReplicaHandle;
 		RE::ActorHandle     stuckActorHandle;
+		RE::NiPoint3        stuckSurfaceNormal{};
 		Physics::TickToken  activeTickToken;
 	};
 }

@@ -14,12 +14,12 @@ namespace Combat
 	// Golpe inicial sobre a_target al clavarse, parálisis y seguimiento de la réplica sobre su hueso.
 	// Avisa por a_onStuck, a_onAutoRecall (inmune o tiempo máximo) y a_onTickStarted (token del bucle).
 	void BeginEmbeddedEffect(
-		RE::Actor*                              a_attacker,
-		RE::Actor*                              a_target,
-		RE::ObjectRefHandle                     a_replicaHandle,
-		std::function<void(RE::ActorHandle)>    a_onStuck,
-		std::function<void()>                   a_onAutoRecall,
-		std::function<void(Physics::TickToken)> a_onTickStarted);
+		RE::Actor*                                                a_attacker,
+		RE::Actor*                                                a_target,
+		RE::ObjectRefHandle                                       a_replicaHandle,
+		std::function<void(RE::ActorHandle, const RE::NiPoint3&)> a_onStuck,
+		std::function<void()>                                     a_onAutoRecall,
+		std::function<void(Physics::TickToken)>                   a_onTickStarted);
 
 	// Descarga eléctrica (BGSHazard) de un impacto de la ida, colocada un tick después.
 	// No se coloca si cambió GetHazardGeneration(); RemoveImpactHazard la quita.

@@ -214,12 +214,12 @@ namespace Combat
 	}
 
 	void BeginEmbeddedEffect(
-		RE::Actor*                              a_attacker,
-		RE::Actor*                              a_target,
-		RE::ObjectRefHandle                     a_replicaHandle,
-		std::function<void(RE::ActorHandle)>    a_onStuck,
-		std::function<void()>                   a_onAutoRecall,
-		std::function<void(Physics::TickToken)> a_onTickStarted)
+		RE::Actor*                                                a_attacker,
+		RE::Actor*                                                a_target,
+		RE::ObjectRefHandle                                       a_replicaHandle,
+		std::function<void(RE::ActorHandle, const RE::NiPoint3&)> a_onStuck,
+		std::function<void()>                                     a_onAutoRecall,
+		std::function<void(Physics::TickToken)>                   a_onTickStarted)
 	{
 		if (!a_attacker || !a_target) {
 			return;
@@ -231,7 +231,7 @@ namespace Combat
 		ApplyWeaponHit(a_attacker, a_target, Settings::GetThrowHitMult(), hitPosition);
 
 		// La inmunidad la decide la condición del efecto en la Creation Kit.
-		a_onStuck(RE::ActorHandle(a_target));
+		a_onStuck(RE::ActorHandle(a_target), RE::NiPoint3{});
 
 		if (auto* spell = GetEmbeddedParalysisSpell()) {
 			a_target->AddSpell(spell);

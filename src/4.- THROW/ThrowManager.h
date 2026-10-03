@@ -18,8 +18,8 @@ namespace Throw
 		std::function<void(Physics::TickToken)> onTickStarted;
 
 		// Impacto: la réplica se ha detenido. a_actor es válido si se clavó en un actor
-		// (ya con Combat::BeginEmbeddedEffect aplicado).
-		std::function<void(RE::ActorHandle a_actor)> onStuck;
+		// (ya con Combat::BeginEmbeddedEffect aplicado); si no, a_surfaceNormal es la normal de la superficie.
+		std::function<void(RE::ActorHandle a_actor, const RE::NiPoint3& a_surfaceNormal)> onStuck;
 
 		// Caída al agua: la réplica se ha detenido sin clavarse.
 		std::function<void()> onAutoRecall;

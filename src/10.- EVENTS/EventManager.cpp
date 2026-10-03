@@ -9,6 +9,7 @@
 #include "12.- AUDIO/SoundResolver.h"
 #include "14.- UI/ConfigMenu.h"
 #include "2.- INPUT/InputManager.h"
+#include "3.- WEAPON/LightningDash.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/AttackAnimType.h"
@@ -190,6 +191,43 @@ namespace Events
 			~LightningDashWatcher() override = default;
 		};
 
+		// El jugador lanza el poder Lightning Dash: encola WeaponManager::OnLightningDashCast
+		// para ejecutarlo fuera del procesado del hechizo.
+		class LightningDashCastWatcher final : public RE::BSTEventSink<RE::TESSpellCastEvent>
+		{
+		public:
+			static LightningDashCastWatcher* GetSingleton()
+			{
+				static LightningDashCastWatcher singleton;
+				return &singleton;
+			}
+
+			LightningDashCastWatcher(const LightningDashCastWatcher&) = delete;
+			LightningDashCastWatcher(LightningDashCastWatcher&&) = delete;
+			LightningDashCastWatcher& operator=(const LightningDashCastWatcher&) = delete;
+			LightningDashCastWatcher& operator=(LightningDashCastWatcher&&) = delete;
+
+		protected:
+			RE::BSEventNotifyControl ProcessEvent(const RE::TESSpellCastEvent* a_event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override
+			{
+				auto* player = RE::PlayerCharacter::GetSingleton();
+				auto* spell = Weapon::LightningDash::GetSpell();
+				if (!a_event || !player || !spell || a_event->object.get() != player || a_event->spell != spell->GetFormID()) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
+				SKSE::GetTaskInterface()->AddTask([]() {
+					Weapon::WeaponManager::GetSingleton()->OnLightningDashCast();
+				});
+
+				return RE::BSEventNotifyControl::kContinue;
+			}
+
+		private:
+			LightningDashCastWatcher() = default;
+			~LightningDashCastWatcher() override = default;
+		};
+
 		// Al cerrarse cualquier pantalla de carga, avisa a WeaponManager::OnLoadingScreenClosed.
 		class LoadingScreenWatcher final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 		{
@@ -216,6 +254,11 @@ namespace Events
 					}
 					// Con coc desde el menú principal no llega kNewGame ni kPostLoadGame.
 					Animation::GlowMapControl::EnsureRunning();
+
+					// Efectos persistentes del VisualEffect del poder guardados en la partida.
+					SKSE::GetTaskInterface()->AddTask([]() {
+						Weapon::LightningDash::RemoveLegacyEffects();
+					});
 				}
 
 				return RE::BSEventNotifyControl::kContinue;
@@ -259,6 +302,7 @@ namespace Events
 				// Sinks del motor, con los datos del juego ya cargados.
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());
+				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashCastWatcher::GetSingleton());
 				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
 				Combat::Init();
 				Requirements::CheckPluginFile();
@@ -277,6 +321,8 @@ namespace Events
 				Weapon::WeaponManager::GetSingleton()->RecoverOrReset(g_pendingRecovery.value_or(Weapon::WeaponManager::SaveCycleData{}));
 				// Concede Lightning Dash si el arma ya está en la mano.
 				Weapon::WeaponManager::GetSingleton()->RestoreLightningDashPower();
+				// Quita los efectos persistentes que su VisualEffect dejó guardados en la partida.
+				Weapon::LightningDash::RemoveLegacyEffects();
 				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 					Animation::AttackAnimType::EnsureRegistered(*player);
 					Animation::PowerAttackVFX::EnsureRegistered(*player);

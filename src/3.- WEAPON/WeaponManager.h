@@ -93,6 +93,14 @@ namespace Weapon
 		// Al cargar partida, concede el poder si el arma ya está en la mano (nunca lo retira).
 		void RestoreLightningDashPower();
 
+		// true si Lightning Dash puede desplazar al jugador ahora (arma lanzada o clavada, a menos de
+		// kLightningDashMaxDistance y sin cooldown); si no, muestra el aviso. La consulta CastHook antes de lanzarlo.
+		[[nodiscard]] bool CanCastLightningDash();
+
+		// El jugador ha lanzado Lightning Dash: lo desplaza hasta el arma (donde esté en ese instante,
+		// LightningDash::Begin) y al llegar la recupera. Lo encola el sink de TESSpellCastEvent.
+		void OnLightningDashCast();
+
 	private:
 		WeaponManager() = default;
 		~WeaponManager() = default;

@@ -10,6 +10,7 @@
 #include "12.- AUDIO/CatchSound.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
+#include "3.- WEAPON/LightningDash.h"
 #include "4.- THROW/ThrowManager.h"
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
@@ -94,7 +95,7 @@ namespace Weapon
 		// Pulsar solo prepara; Lanzar se dispara al soltar. Cada pulsación desarma la anterior.
 		throwPressArmed = false;
 
-		if (weaponState.GetState() != State::kInHand) {
+		if (weaponState.GetState() != State::kInHand || LightningDash::IsActive()) {
 			return;
 		}
 
@@ -115,6 +116,11 @@ namespace Weapon
 
 	void WeaponManager::OnActionButtonUp()
 	{
+		// Durante Lightning Dash la tecla no llama ni lanza; la llegada recupera el arma.
+		if (LightningDash::IsActive()) {
+			return;
+		}
+
 		// Respeta Constants::kMinAttackStartInterval desde el último cambio del grafo.
 		const auto elapsedSinceLastAttackEvent = std::chrono::duration<float>(std::chrono::steady_clock::now() - lastAttackAnimationEventTime).count();
 
@@ -175,10 +181,14 @@ namespace Weapon
 
 	void WeaponManager::ResetToInHand()
 	{
+		// Un Lightning Dash en curso se corta (devuelve el movimiento).
+		LightningDash::Cancel();
+
 		// No hay réplica que borrar al cargar: solo se olvida el handle.
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetActiveReplicaHandle({});
 		weaponState.SetStuckActorHandle({});
+		weaponState.SetStuckSurfaceNormal({});
 		weaponState.SetActiveTickToken({});
 		TransitionState(State::kInHand);
 
@@ -274,20 +284,6 @@ namespace Weapon
 
 	namespace
 	{
-		// Formulario buscado por FormID local una vez.
-		RE::SpellItem* GetLightningDashSpell()
-		{
-			static RE::SpellItem* spell = [] {
-				auto* dataHandler = RE::TESDataHandler::GetSingleton();
-				return dataHandler ? dataHandler->LookupForm<RE::SpellItem>(Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName) : nullptr;
-			}();
-			if (!spell) {
-				logs::warn("WeaponManager::GetLightningDashSpell: no se encontró el hechizo (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName);
-			}
-			return spell;
-		}
-
 		// Concede o retira Lightning Dash (idempotente).
 		void SetLightningDashPower(bool a_granted)
 		{
@@ -296,7 +292,7 @@ namespace Weapon
 				return;
 			}
 
-			auto* spell = GetLightningDashSpell();
+			auto* spell = LightningDash::GetSpell();
 			if (!spell) {
 				return;
 			}
@@ -307,6 +303,84 @@ namespace Weapon
 			} else if (!a_granted && hasSpell) {
 				player->RemoveSpell(spell);
 			}
+		}
+
+		// Motivo por el que Lightning Dash no puede desplazar al jugador (kNone si puede).
+		enum class DashBlock
+		{
+			kNone,
+			kSilent,  // ya en marcha o sin réplica: sin aviso
+			kInHand,
+			kReturning,
+			kCooldown,
+			kTooFar
+		};
+
+		DashBlock GetDashBlock(RE::PlayerCharacter& a_player, State a_state, RE::TESObjectREFR* a_replica)
+		{
+			if (LightningDash::IsActive()) {
+				return DashBlock::kSilent;
+			}
+
+			switch (a_state) {
+			case State::kInHand:
+			case State::kThrowing:
+				return DashBlock::kInHand;
+			case State::kCalling:
+			case State::kReturning:
+				return DashBlock::kReturning;
+			default:
+				break;
+			}
+
+			if (!a_replica) {
+				return DashBlock::kSilent;
+			}
+			if (LightningDash::IsOnCooldown(a_player)) {
+				return DashBlock::kCooldown;
+			}
+			if (a_player.GetPosition().GetDistance(a_replica->GetPosition()) > Constants::kLightningDashMaxDistance) {
+				return DashBlock::kTooFar;
+			}
+			return DashBlock::kNone;
+		}
+
+		// Aviso en pantalla del motivo, sin repetir el mismo antes de kLightningDashMessageRepeatSeconds.
+		// Diferido con Scheduler: CastHook lo pide desde dentro de la comprobación del lanzamiento.
+		void ShowDashBlockMessage(DashBlock a_block)
+		{
+			const char* message = nullptr;
+			switch (a_block) {
+			case DashBlock::kInHand:
+				message = Constants::kLightningDashInHandMessage;
+				break;
+			case DashBlock::kReturning:
+				message = Constants::kLightningDashReturningMessage;
+				break;
+			case DashBlock::kCooldown:
+				message = Constants::kLightningDashCooldownMessage;
+				break;
+			case DashBlock::kTooFar:
+				message = Constants::kLightningDashTooFarMessage;
+				break;
+			default:
+				return;
+			}
+
+			static DashBlock lastBlock = DashBlock::kNone;
+			static double    lastTime = 0.0;
+			const double     now = FrameHook::Now();
+			if (a_block == lastBlock && now - lastTime < Constants::kLightningDashMessageRepeatSeconds) {
+				return;
+			}
+			lastBlock = a_block;
+			lastTime = now;
+
+			logs::info("WeaponManager: Lightning Dash denegado: \"{}\".", message);
+
+			(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [message]() {
+				RE::SendHUDMessage::ShowHUDMessage(message);
+			});
 		}
 	}
 
@@ -324,8 +398,56 @@ namespace Weapon
 		}
 	}
 
+	bool WeaponManager::CanCastLightningDash()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return true;
+		}
+
+		auto       replica = weaponState.GetActiveReplicaHandle().get();
+		const auto block = GetDashBlock(*player, weaponState.GetState(), replica.get());
+		ShowDashBlockMessage(block);
+		return block == DashBlock::kNone;
+	}
+
+	void WeaponManager::OnLightningDashCast()
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+
+		// Misma comprobación que CastHook, por si el estado cambió entre medias.
+		auto       replica = weaponState.GetActiveReplicaHandle().get();
+		const auto state = weaponState.GetState();
+		const auto block = GetDashBlock(*player, state, replica.get());
+		if (block != DashBlock::kNone) {
+			ShowDashBlockMessage(block);
+			return;
+		}
+
+		// Clavada: delante del actor o separada de la superficie. En vuelo: el punto donde está ahora.
+		const bool         stuck = state == State::kStuck;
+		auto               stuckActor = stuck ? weaponState.GetStuckActorHandle().get() : RE::NiPointer<RE::Actor>{};
+		const RE::NiPoint3 surfaceNormal = stuck ? weaponState.GetStuckSurfaceNormal() : RE::NiPoint3{};
+		const auto         destination = LightningDash::ComputeDestination(*player, replica->GetPosition(), stuckActor.get(), surfaceNormal);
+
+		LightningDash::StartCooldown(*player);
+		LightningDash::Begin(*player, destination, [this]() {
+			// Si volvió sola entretanto (agua, inmune o tiempo máximo), el regreso ya la trae a la mano.
+			const auto current = weaponState.GetState();
+			if (current == State::kThrown || current == State::kStuck) {
+				RecallWeapon();
+			}
+		});
+	}
+
 	void WeaponManager::OnLoadingScreenClosed()
 	{
+		// Un Lightning Dash en curso se corta.
+		LightningDash::Cancel();
+
 		// Cancela un corte de ataque pendiente.
 		Scheduler::Cancel(attackInterruptToken);
 		Events::AttackInterruptWatcher::Disarm();
@@ -799,10 +921,11 @@ namespace Weapon
 			callbacks.onTickStarted = [this](Physics::TickToken a_token) {
 				weaponState.SetActiveTickToken(a_token);
 			};
-			callbacks.onStuck = [this](RE::ActorHandle a_actor) {
+			callbacks.onStuck = [this](RE::ActorHandle a_actor, const RE::NiPoint3& a_surfaceNormal) {
 				// Solo si el ciclo sigue en kThrown.
 				if (weaponState.GetState() == State::kThrown) {
 					weaponState.SetStuckActorHandle(a_actor);
+					weaponState.SetStuckSurfaceNormal(a_surfaceNormal);
 
 					// Las chispas se apagan con fundido; a_manageVfx=false para no cortarlas.
 					TransitionState(State::kStuck, false);

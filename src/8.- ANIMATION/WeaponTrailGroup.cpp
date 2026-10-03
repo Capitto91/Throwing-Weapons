@@ -27,9 +27,9 @@ namespace Animation
 		holdTimers.resize(Constants::kTrailCopyCount, 0.0f);
 	}
 
-	void WeaponTrailGroup::Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset)
+	void WeaponTrailGroup::Start(RE::TESObjectCELL* a_cell, const RE::NiPoint3& a_initialPosition, const RE::NiPoint3& a_upReference, float a_roll, const RE::NiPoint3& a_anchorWorldOffset, bool a_checkSetting)
 	{
-		enabled = Settings::GetTrail();
+		enabled = !a_checkSetting || Settings::GetTrail();
 		if (!enabled) {
 			return;
 		}

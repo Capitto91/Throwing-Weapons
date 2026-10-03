@@ -2,6 +2,7 @@
 
 #include "Plugin.h"
 
+#include "1.- CORE/CastHook.h"
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Settings.h"
 #include "10.- EVENTS/EventManager.h"
@@ -14,6 +15,8 @@ namespace Plugin
 		Settings::Load();
 		// Antes de cualquier bucle de Physics, que elige entre fotogramas e hilos al crearse.
 		FrameHook::Install();
+		// Deniega Lightning Dash antes de lanzarlo si no puede desplazar al jugador.
+		CastHook::Install();
 		Events::Init();
 	}
 }
