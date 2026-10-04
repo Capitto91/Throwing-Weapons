@@ -201,18 +201,14 @@ namespace Constants
 	// Distancia máxima del jugador al arma para desplazarse (~100 m).
 	inline constexpr float kLightningDashMaxDistance = 7000.0f;
 
-	// Velocidad del desplazamiento (~100 m/s).
-	inline constexpr float kLightningDashSpeed = 7000.0f;  // u/s
+	// Velocidad del desplazamiento (~70 m/s).
+	inline constexpr float kLightningDashSpeed = 4900.0f;  // u/s
 
 	// Separación del destino respecto a la superficie (a lo largo de su normal) y hueco
 	// entre el cuerpo del actor clavado y el jugador.
 	inline constexpr float kLightningDashSurfaceStandoff = 60.0f;
 	inline constexpr float kLightningDashActorGap = 60.0f;
 
-	// Eventos vanilla del grito de sprint, enviados al jugador al empezar, y espera entre ambos.
-	inline constexpr const char*               kLightningDashShoutStartEvent = "ShoutStart";
-	inline constexpr const char*               kLightningDashSprintStartEvent = "ShoutSprintMediumStart";
-	inline constexpr std::chrono::milliseconds kLightningDashSprintEventDelay{ 50 };
 
 	// Avisos en pantalla: arma en la mano, ya volviendo, demasiado lejos y cooldown activo.
 	inline constexpr const char* kLightningDashInHandMessage = "Kyne's Thunder must be thrown first.";
@@ -239,6 +235,37 @@ namespace Constants
 
 	// Hueso del esqueleto vanilla donde se ancla la estela del jugador durante el desplazamiento.
 	inline constexpr const char* kLightningDashTrailNodeName = "NPC Spine2 [Spn2]";
+
+	// -- Golpe en salto de Lightning Dash (arma en vuelo y llegada a poca altura) --
+	// Global que hace que el submod Slam de OAR sustituya el ataque ligero por el golpe en salto.
+	inline constexpr const char* kSlamTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_SlamTrigger";
+
+	// BGSExplosion del golpe en salto (CAP_ThorMjolnir_Explosion_MjolnirSlam, ThorMjolnirExplosion.nif), FormID local del ESL.
+	inline constexpr RE::FormID kSlamExplosionLocalFormID = 0x01D;
+
+	// Altura máxima de la llegada sobre el suelo para acabar en golpe en salto (~10 m); más alto (o sin suelo
+	// a esa distancia), llegada normal y el jugador cae.
+	inline constexpr float kLightningDashSlamMaxHeight = 700.0f;
+
+	// Tiempo desde el attackStart del golpe hasta su anotación OAR.MjolnirSlam: la bajada dura esto para tocar
+	// el suelo en el golpe. Valor inicial; LightningDash lo vuelve a medir en cada golpe (mediana de las últimas).
+	inline constexpr float kSlamAnimationLeadTime = 0.666667f;  // Slam.hkx: fotograma 20 a 30 fps
+
+	// Rango válido de una medida (fracción del nominal) y medidas recientes cuya mediana fija la bajada (impar).
+	inline constexpr float       kSlamLeadMeasureMinFactor = 0.5f;
+	inline constexpr float       kSlamLeadMeasureMaxFactor = 2.0f;
+	inline constexpr std::size_t kSlamLeadSampleCount = 5;
+
+	// Red de seguridad: si la anotación no llega, el golpe se da por terminado (sin explosión) pasado este margen.
+	inline constexpr std::chrono::milliseconds kSlamReleaseFallbackWindow{ 1500 };
+
+	// Resto del clip tras la anotación (duración del clip menos kSlamAnimationLeadTime) antes de enviar attackStop:
+	// el submod solo procesa sus anotaciones, así que el clip no devuelve solo el grafo a reposo.
+	inline constexpr std::chrono::milliseconds kSlamAnimationTailDuration{ 567 };  // Slam.hkx: 1.233 s - 0.667 s
+
+	// Red de seguridad: si en este tiempo no se cierra el ataque en curso y el grafo no acepta el attackStart
+	// del golpe (reintentado cada tick con el jugador suspendido), baja sin animación.
+	inline constexpr float kSlamStartTimeoutSeconds = 1.0f;
 
 	// -- Temblor al desclavar (punto 11) --
 	// Duración mínima del temblor; BeginReturn puede alargarlo.

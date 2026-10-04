@@ -3,6 +3,7 @@
 #include "10.- EVENTS/OARFunctions.h"
 
 #include "13.- EXTERNAL/OpenAnimationReplacer/OpenAnimationReplacerAPI-Functions.h"
+#include "3.- WEAPON/LightningDash.h"
 #include "3.- WEAPON/WeaponManager.h"
 
 namespace Events::OARFunctions
@@ -62,6 +63,23 @@ namespace Events::OARFunctions
 			}
 		};
 
+		class SlamImpactFunction final : public Functions::CustomFunction
+		{
+		public:
+			constexpr static inline std::string_view FUNCTION_NAME = "ThorMjolnirSlamImpact"sv;
+
+			RE::BSString GetName() const override { return FUNCTION_NAME.data(); }
+			RE::BSString GetDescription() const override { return "Dispara LightningDash::OnSlamImpactAnimationEvent (ThorMjolnir)."sv.data(); }
+			REL::Version GetRequiredVersion() const override { return { 1, 0, 0 }; }
+
+		protected:
+			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
+			{
+				SKSE::GetTaskInterface()->AddTask([] { Weapon::LightningDash::OnSlamImpactAnimationEvent(true); });
+				return true;
+			}
+		};
+
 		template <typename T>
 		void Register()
 		{
@@ -94,5 +112,6 @@ namespace Events::OARFunctions
 		Register<ThrowReleaseFunction>();
 		Register<CallReleaseFunction>();
 		Register<CatchReleaseFunction>();
+		Register<SlamImpactFunction>();
 	}
 }

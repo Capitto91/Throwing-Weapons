@@ -433,8 +433,11 @@ namespace Weapon
 		const RE::NiPoint3 surfaceNormal = stuck ? weaponState.GetStuckSurfaceNormal() : RE::NiPoint3{};
 		const auto         destination = LightningDash::ComputeDestination(*player, replica->GetPosition(), stuckActor.get(), surfaceNormal);
 
+		// Golpe en salto: solo con el arma en vuelo y la llegada a menos de kLightningDashSlamMaxHeight del suelo.
+		const auto slamGround = state == State::kThrown ? LightningDash::FindSlamGround(*player, destination, replica.get()) : std::nullopt;
+
 		LightningDash::StartCooldown(*player);
-		LightningDash::Begin(*player, destination, [this]() {
+		LightningDash::Begin(*player, destination, slamGround, [this]() {
 			// Si volvió sola entretanto (agua, inmune o tiempo máximo), el regreso ya la trae a la mano.
 			const auto current = weaponState.GetState();
 			if (current == State::kThrown || current == State::kStuck) {
@@ -1021,7 +1024,8 @@ namespace Weapon
 
 	void WeaponManager::ReequipAndReset(bool a_reattachVfxToHand)
 	{
-		// Cancela el desequipado diferido de Lanzar si seguía pendiente.
+		// Cancela el desequipado diferido de Lanzar si seguía pendiente: el arma sigue equipada, solo oculta.
+		const bool throwTailWasPending = throwTailActive;
 		Scheduler::Cancel(throwTailToken);
 		throwTailActive = false;
 
@@ -1041,7 +1045,17 @@ namespace Weapon
 
 		auto* weapon = weaponState.GetActiveWeapon();
 
-		if (player && weapon) {
+		if (player && weapon && throwTailWasPending) {
+			// Sin desequipar todavía: se vuelve a mostrar en vez de reequiparla encima (que desequipa y equipa, y con el
+			// estado ya en mano retiraría Lightning Dash), y se hace la limpieza del desequipado diferido. El desequipado
+			// también cerraba el ataque de Throw.hkx: sin él lo cierra attackStop, como al final de Llamada y Atrape.
+			Animation::SetEquippedWeaponHidden(*player, false);
+			if (!callAnimationActive && !catchAnimationActive) {
+				Animation::SetAnimationDriven(*player, false);
+				Input::SetMovementLocked(false);
+				player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
+			}
+		} else if (player && weapon) {
 			// Diferido un tick: tras una pantalla de carga, síncrono no equipa.
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
 				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").

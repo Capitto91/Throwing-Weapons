@@ -38,6 +38,10 @@ namespace Animation
 	// Igual para Atrape (Constants::kCatchTriggerGlobalEditorID).
 	void SetCatchTrigger(RE::Actor& a_actor, bool a_active);
 
+	// Igual para el golpe en salto de Lightning Dash (Constants::kSlamTriggerGlobalEditorID).
+	// false si el Global no existe (LightningDash baja entonces sin animación).
+	bool SetSlamTrigger(RE::Actor& a_actor, bool a_active);
+
 	// Activa o desactiva la graph variable vanilla Constants::kAnimationDrivenGraphVariable.
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active);
 

@@ -162,6 +162,16 @@ namespace Animation
 		}
 	}
 
+	bool SetSlamTrigger(RE::Actor&, bool a_active)
+	{
+		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kSlamTriggerGlobalEditorID);
+		if (!global) {
+			return false;
+		}
+		global->value = a_active ? 1.0f : 0.0f;
+		return true;
+	}
+
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)
 	{
 		a_actor.SetGraphVariableBool(Constants::kAnimationDrivenGraphVariable, a_active);
