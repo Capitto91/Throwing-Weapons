@@ -45,7 +45,7 @@ namespace Animation
 	// Activa o desactiva la graph variable vanilla Constants::kAnimationDrivenGraphVariable.
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active);
 
-	// Oculta o muestra la malla del arma equipada sin desequiparla. false si aún no tiene 3D.
+	// Oculta o muestra la malla del arma equipada sin desequiparla, en los esqueletos de 1ª y 3ª persona. false si aún no tiene 3D.
 	// La usa WeaponManager::ThrowWeapon al soltar el arma.
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
 }

@@ -81,4 +81,39 @@ namespace Input
 	{
 		RE::ControlMap::GetSingleton()->ToggleControls(RE::UserEvents::USER_EVENT_FLAG::kMovement, !a_locked, true);
 	}
+
+	void SetCameraSwitchLocked(bool a_locked)
+	{
+		using UEFlag = RE::UserEvents::USER_EVENT_FLAG;
+
+		// Controles que bloqueó esta función (los que ya estaban bloqueados por otros no se tocan).
+		static bool povLockedHere = false;
+		static bool wheelLockedHere = false;
+
+		auto* controlMap = RE::ControlMap::GetSingleton();
+		if (!controlMap) {
+			return;
+		}
+
+		if (a_locked) {
+			if (!povLockedHere && controlMap->IsPOVSwitchControlsEnabled()) {
+				controlMap->ToggleControls(UEFlag::kPOVSwitch, false, true);
+				povLockedHere = true;
+			}
+			if (!wheelLockedHere && controlMap->IsWheelZoomControlsEnabled()) {
+				controlMap->ToggleControls(UEFlag::kWheelZoom, false, true);
+				wheelLockedHere = true;
+			}
+			return;
+		}
+
+		if (povLockedHere) {
+			controlMap->ToggleControls(UEFlag::kPOVSwitch, true, true);
+			povLockedHere = false;
+		}
+		if (wheelLockedHere) {
+			controlMap->ToggleControls(UEFlag::kWheelZoom, true, true);
+			wheelLockedHere = false;
+		}
+	}
 }

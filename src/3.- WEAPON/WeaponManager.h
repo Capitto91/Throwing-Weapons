@@ -7,6 +7,7 @@
 #include "1.- CORE/Scheduler.h"
 #include "3.- WEAPON/WeaponState.h"
 
+#include <array>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -187,15 +188,20 @@ namespace Weapon
 		// Sincronía del regreso en curso con Catch.hkx; se crea en BeginReturn.
 		std::shared_ptr<Return::CatchSync> catchSync;
 
-		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now): mediana de catchLeadSamples (nominal al cargar).
-		float catchLeadSeconds{ Constants::kCatchAnimationLeadTime };
+		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now), por cámara ([0] tercera, [1] primera
+		// persona): mediana de catchLeadSamples (nominal al cargar).
+		std::array<float, 2> catchLeadSeconds{ Constants::kCatchAnimationLeadTime, Constants::kCatchAnimationLeadTimeFirstPerson };
 
-		// Últimas medidas válidas de Catch.hkx (hasta Constants::kCatchLeadSampleCount), la más antigua primero.
-		std::vector<float> catchLeadSamples;
+		// Últimas medidas válidas de Catch.hkx por cámara (hasta Constants::kCatchLeadSampleCount), la más antigua primero.
+		std::array<std::vector<float>, 2> catchLeadSamples;
 
 		// Instante (FrameHook::Now) del attackStart de Catch.hkx y si falta medir su anotación.
 		double catchAnimationStartTime{ 0.0 };
 		bool   catchLeadMeasurePending{ false };
+
+		// Cámara al arrancar Catch.hkx y Call.hkx: elige su clip (primera o tercera persona), su cola y sus medidas.
+		bool catchAnimationFirstPerson{ false };
+		bool callAnimationFirstPerson{ false };
 
 		// true desde BeginCallAnimation hasta FinishCallAnimation.
 		bool callAnimationActive{ false };

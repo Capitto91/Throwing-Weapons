@@ -57,4 +57,10 @@ namespace ActorUtils
 
 		return best ? best->name : RE::BSFixedString{};
 	}
+
+	bool IsPlayerInFirstPerson()
+	{
+		auto* camera = RE::PlayerCamera::GetSingleton();
+		return camera && camera->IsInFirstPerson();
+	}
 }

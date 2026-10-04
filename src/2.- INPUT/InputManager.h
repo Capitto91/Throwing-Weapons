@@ -34,4 +34,8 @@ namespace Input
 	// Bloquea o desbloquea el movimiento del jugador (RE::ControlMap).
 	// Lo usa WeaponManager en los gestos para que no escalen a power attack direccional.
 	void SetMovementLocked(bool a_locked);
+
+	// Bloquea el cambio de cámara (tecla y rueda) o devuelve solo los controles que bloqueó esta función.
+	// Lo usa Lightning Dash durante el desplazamiento y WeaponManager al reiniciar.
+	void SetCameraSwitchLocked(bool a_locked);
 }

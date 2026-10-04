@@ -6,7 +6,9 @@
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/AttackInterruptWatcher.h"
+#include "10.- EVENTS/GraphSettleWatcher.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "12.- AUDIO/CatchSound.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
@@ -205,8 +207,9 @@ namespace Weapon
 		callAnimationActive = false;
 		throwPressArmed = false;
 
-		// Desbloquea movimiento y AnimationDriven por si se cargó en kThrowing.
+		// Desbloquea movimiento, cambio de cámara y AnimationDriven por si se cargó en kThrowing o en un dash.
 		Input::SetMovementLocked(false);
+		Input::SetCameraSwitchLocked(false);
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetAnimationDriven(*player, false);
 			Animation::SetThrowTrigger(*player, false);
@@ -565,7 +568,12 @@ namespace Weapon
 		// El Global hace que OAR sustituya el ataque ligero por Throw.hkx.
 		Animation::SetThrowTrigger(*player, true);
 
+		// Antes del desequipado de la cola: el vigilante tiene que ver el final del desenvainado que provoca.
+		Events::GraphSettleWatcher::Track(*player);
+
 		// Si el grafo rechaza el evento, la animación no se verá (conflicto con otro behavior).
+		Diag::StartTrace("Lanzar", 6.0f);
+		Diag::NoteSent("attackStart", "Lanzar");
 		if (!player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 			logs::warn("WeaponManager: el grafo de animación rechazó '{}' para Lanzar; el arma saldrá por la red de seguridad.", Constants::kLightAttackAnimationEvent);
 		}
@@ -612,6 +620,7 @@ namespace Weapon
 			(void)Scheduler::After(Constants::kAttackInterruptPostEventDelay, fire);
 		});
 
+		Diag::NoteSent("attackStop", "interrumpir ataque");
 		player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 
 		(void)Scheduler::After(Constants::kAttackInterruptFallbackDelay, fire);
@@ -659,6 +668,7 @@ namespace Weapon
 		wasStuckBeforeCalling = weaponState.GetState() == State::kStuck;
 		TransitionState(State::kCalling);
 		callAnimationActive = true;
+		callAnimationFirstPerson = ActorUtils::IsPlayerInFirstPerson();
 
 		// Bloquea el movimiento durante Llamada.
 		Input::SetMovementLocked(true);
@@ -697,7 +707,8 @@ namespace Weapon
 		BeginReturn(wasStuckBeforeCalling);
 
 		// FinishCallAnimation ya comprueba callAnimationActive.
-		(void)Scheduler::After(Constants::kCallAnimationTailDuration, [this]() {
+		const auto tail = callAnimationFirstPerson ? Constants::kCallAnimationTailDurationFirstPerson : Constants::kCallAnimationTailDuration;
+		(void)Scheduler::After(tail, [this]() {
 			FinishCallAnimation();
 		});
 	}
@@ -745,6 +756,7 @@ namespace Weapon
 		catchAnimationActive = true;
 		catchReequipDone = false;
 		catchEndSoundPlayed = false;
+		catchAnimationFirstPerson = ActorUtils::IsPlayerInFirstPerson();
 
 		// Bloquea el movimiento durante Atrape.
 		Input::SetMovementLocked(true);
@@ -789,24 +801,27 @@ namespace Weapon
 			return;
 		}
 
-		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now), para fijar la llegada del próximo Atrape.
+		// Tiempo de Catch.hkx hasta su anotación (reloj FrameHook::Now), para fijar la llegada del próximo Atrape
+		// con la misma cámara.
 		if (a_fromAnnotation && catchLeadMeasurePending) {
 			catchLeadMeasurePending = false;
-			const float measured = static_cast<float>(FrameHook::Now() - catchAnimationStartTime);
-			const float nominal = Constants::kCatchAnimationLeadTime;
+			const std::size_t view = catchAnimationFirstPerson ? 1 : 0;
+			const float       measured = static_cast<float>(FrameHook::Now() - catchAnimationStartTime);
+			const float       nominal = catchAnimationFirstPerson ? Constants::kCatchAnimationLeadTimeFirstPerson : Constants::kCatchAnimationLeadTime;
 			if (measured >= nominal * Constants::kCatchLeadMeasureMinFactor && measured <= nominal * Constants::kCatchLeadMeasureMaxFactor) {
 				// Mediana de las últimas medidas: un gesto retrasado suelto no cambia la llegada del siguiente.
-				catchLeadSamples.push_back(measured);
-				if (catchLeadSamples.size() > Constants::kCatchLeadSampleCount) {
-					catchLeadSamples.erase(catchLeadSamples.begin());
+				auto& samples = catchLeadSamples[view];
+				samples.push_back(measured);
+				if (samples.size() > Constants::kCatchLeadSampleCount) {
+					samples.erase(samples.begin());
 				}
 
-				std::vector<float> sorted = catchLeadSamples;
+				std::vector<float> sorted = samples;
 				std::ranges::sort(sorted);
 				const std::size_t middle = sorted.size() / 2;
-				catchLeadSeconds = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
+				catchLeadSeconds[view] = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
 			} else {
-				logs::warn("WeaponManager: medida de Catch.hkx fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, catchLeadSeconds);
+				logs::warn("WeaponManager: medida de Catch.hkx fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, catchLeadSeconds[view]);
 			}
 		}
 
@@ -850,8 +865,9 @@ namespace Weapon
 		// iRightHandType no se toca: ya vale "una mano".
 		ReequipAndReset(true);
 
-		// El resto del gesto se difiere a FinishCatchAnimation (kCatchAnimationTailDuration).
-		(void)Scheduler::After(Constants::kCatchAnimationTailDuration, [this]() {
+		// El resto del gesto se difiere a FinishCatchAnimation (cola del clip de la cámara con la que arrancó).
+		const auto tail = catchAnimationFirstPerson ? Constants::kCatchAnimationTailDurationFirstPerson : Constants::kCatchAnimationTailDuration;
+		(void)Scheduler::After(tail, [this]() {
 			FinishCatchAnimation();
 		});
 	}
@@ -900,6 +916,9 @@ namespace Weapon
 			throwTailToken = Scheduler::After(Constants::kThrowReleaseVisualHoldDuration, [this, player, weapon]() {
 				throwTailActive = false;
 
+				// Con las manos vacías el motor desenvaina los puños; sus eventos llegan unos fotogramas después.
+				Events::GraphSettleWatcher::NoteDrawExpected();
+				Diag::NoteSent("UnequipObject", "cola de Lanzar");
 				RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 
 				// Solo desbloquea movimiento y AnimationDriven si Llamada o Atrape no los han tomado.
@@ -1001,7 +1020,8 @@ namespace Weapon
 			OnPhysicalArrival();
 		};
 
-		catchSync = std::make_shared<Return::CatchSync>(catchLeadSeconds);
+		// Llegada a la anotación del Atrape de la cámara activa.
+		catchSync = std::make_shared<Return::CatchSync>(catchLeadSeconds[ActorUtils::IsPlayerInFirstPerson() ? 1 : 0]);
 		Return::BeginReturn(player, replicaHandle, a_wasStuck, catchSync, std::move(callbacks));
 	}
 
@@ -1053,13 +1073,19 @@ namespace Weapon
 			if (!callAnimationActive && !catchAnimationActive) {
 				Animation::SetAnimationDriven(*player, false);
 				Input::SetMovementLocked(false);
-				player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
+				Diag::NoteSent("attackStop", "recuperar con la cola de Lanzar pendiente");
+				Events::GraphSettleWatcher::NoteAttackStopSent(true);
+				if (!player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent)) {
+					Events::GraphSettleWatcher::NoteAttackStopSent(false);
+				}
 			}
 		} else if (player && weapon) {
+			Diag::NoteSent("EquipObject encolado (AddTask)", "recuperar");
 			// Diferido un tick: tras una pantalla de carga, síncrono no equipa.
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
 				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
 				player->SetGraphVariableBool("SkipEquipAnimation", true);
+				Diag::NoteSent("EquipObject", "recuperar");
 				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 
 				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.

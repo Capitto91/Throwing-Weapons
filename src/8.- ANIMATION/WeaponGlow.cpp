@@ -307,7 +307,8 @@ namespace Animation
 		}
 	}
 
-	// Posición del nodo "Gold" (cabeza) bajo a_root + offset; sin él, la de a_root.
+	// Posición del nodo "Gold" (cabeza) bajo a_root + offset; sin él (el modelo del arma aún sin cargar,
+	// p. ej. justo tras reequipar), la de a_root.
 	RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root)
 	{
 		if (!a_root) {
@@ -318,13 +319,6 @@ namespace Animation
 			return goldNode->world.translate + goldNode->world.rotate * Constants::kGlowAnchorLocalOffset;
 		}
 
-		// Sin hijos es normal (el arma aún sin 3D, p. ej. el fotograma tras reequipar); con hijos, el modelo no tiene el nodo.
-		static std::atomic<bool> warned{ false };
-		auto*                    rootNode = a_root->AsNode();
-		if (rootNode && !rootNode->GetChildren().empty() && !warned.exchange(true)) {
-			logs::warn("Animation::WeaponGlow: nodo \"{}\" no encontrado -- usando la posición de a_root de reserva.",
-				Constants::kWeaponHammerHeadNodeName);
-		}
 		return a_root->world.translate;
 	}
 

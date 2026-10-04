@@ -9,6 +9,11 @@ namespace Collision
 {
 	namespace
 	{
+		// Impactos descartados que Raycast puede saltar seguidos, y avance tras cada uno para reanudar el rayo
+		// fuera de lo que golpeó (un rayo que empieza dentro de una forma no la vuelve a tocar).
+		constexpr int   kRaycastMaxSkippedHits = 8;
+		constexpr float kRaycastSkipDistance = 1.0f;
+
 		// Capas que cuentan como impacto sólido; el resto (p. ej. ActorZone) se ignora.
 		bool IsSolidLayer(RE::COL_LAYER a_layer)
 		{
@@ -39,46 +44,57 @@ namespace Collision
 
 	HitResult Raycast(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to, RE::TESObjectREFR* a_ignore1, RE::TESObjectREFR* a_ignore2, RE::COL_LAYER a_rayLayer)
 	{
-		auto* tes = RE::TES::GetSingleton();
-		if (!tes) {
+		auto*       tes = RE::TES::GetSingleton();
+		const float length = (a_to - a_from).Length();
+		if (!tes || length <= 0.0f) {
 			return {};
 		}
 
-		const float scale = RE::bhkWorld::GetWorldScale();
+		const float        scale = RE::bhkWorld::GetWorldScale();
+		const RE::NiPoint3 direction = (a_to - a_from) / length;
 
-		RE::bhkPickData pickData;
-		pickData.rayInput.from = RE::hkVector4(a_from * scale);
-		pickData.rayInput.to = RE::hkVector4(a_to * scale);
-		pickData.rayInput.filterInfo.SetCollisionLayer(a_rayLayer);
+		// Pick solo da el impacto más cercano: si se descarta (a_ignore1/a_ignore2 o capa no sólida), el rayo
+		// sigue desde justo después de él.
+		RE::NiPoint3 from = a_from;
+		for (int attempt = 0; attempt < kRaycastMaxSkippedHits; ++attempt) {
+			RE::bhkPickData pickData;
+			pickData.rayInput.from = RE::hkVector4(from * scale);
+			pickData.rayInput.to = RE::hkVector4(a_to * scale);
+			pickData.rayInput.filterInfo.SetCollisionLayer(a_rayLayer);
 
-		tes->Pick(pickData);
+			tes->Pick(pickData);
 
-		if (!pickData.rayOutput.HasHit()) {
-			return {};
+			if (!pickData.rayOutput.HasHit()) {
+				return {};
+			}
+
+			auto* target = pickData.rayOutput.rootCollidable ?
+			                   RE::TESHavokUtilities::FindCollidableRef(*pickData.rayOutput.rootCollidable) :
+			                   nullptr;
+
+			const auto layer = pickData.rayOutput.rootCollidable ?
+			                       pickData.rayOutput.rootCollidable->broadPhaseHandle.collisionFilterInfo.GetCollisionLayer() :
+			                       RE::COL_LAYER::kUnidentified;
+
+			const RE::NiPoint3 point = from + (a_to - from) * pickData.rayOutput.hitFraction;
+
+			const bool selfOrShooter = target && (target == a_ignore1 || target == a_ignore2);
+			if (!selfOrShooter && IsSolidLayer(layer)) {
+				// La normal ya es unitaria, sin escala de mundo; la fracción, sobre el rayo original.
+				alignas(16) float normal[4]{};
+				_mm_store_ps(normal, pickData.rayOutput.normal.quad);
+
+				const float fraction = (point - a_from).Length() / length;
+				return HitResult{ true, point, target, layer, fraction, RE::NiPoint3{ normal[0], normal[1], normal[2] } };
+			}
+
+			from = point + direction * kRaycastSkipDistance;
+			if ((from - a_from).Length() >= length) {
+				return {};
+			}
 		}
 
-		auto* target = pickData.rayOutput.rootCollidable ?
-		                   RE::TESHavokUtilities::FindCollidableRef(*pickData.rayOutput.rootCollidable) :
-		                   nullptr;
-
-		const auto layer = pickData.rayOutput.rootCollidable ?
-		                        pickData.rayOutput.rootCollidable->broadPhaseHandle.collisionFilterInfo.GetCollisionLayer() :
-		                        RE::COL_LAYER::kUnidentified;
-
-		const RE::NiPoint3 point = a_from + (a_to - a_from) * pickData.rayOutput.hitFraction;
-
-		const bool selfOrShooter = target && (target == a_ignore1 || target == a_ignore2);
-		const bool accepted = !selfOrShooter && IsSolidLayer(layer);
-
-		if (!accepted) {
-			return {};
-		}
-
-		// La normal ya es unitaria, sin escala de mundo.
-		alignas(16) float normal[4]{};
-		_mm_store_ps(normal, pickData.rayOutput.normal.quad);
-
-		return HitResult{ true, point, target, layer, pickData.rayOutput.hitFraction, RE::NiPoint3{ normal[0], normal[1], normal[2] } };
+		return {};
 	}
 
 	HitResult RaycastSolid(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to, RE::TESObjectREFR* a_ignore1, RE::TESObjectREFR* a_ignore2)
@@ -92,7 +108,7 @@ namespace Collision
 
 	HitResult SweepRaycast(const RE::NiPoint3& a_from, const RE::NiPoint3& a_to, float a_radius, RE::TESObjectREFR* a_ignore1, RE::TESObjectREFR* a_ignore2)
 	{
-		const auto segment = a_to - a_from;
+		const auto  segment = a_to - a_from;
 		const float length = segment.Length();
 		if (length <= 0.0f) {
 			return RaycastSolid(a_from, a_to, a_ignore1, a_ignore2);

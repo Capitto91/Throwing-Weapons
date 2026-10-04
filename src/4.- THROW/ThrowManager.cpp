@@ -5,6 +5,8 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
+#include "11.- SKYRIM/ActorUtils.h"
+#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "6.- PHYSICS/CollisionManager.h"
@@ -39,11 +41,20 @@ namespace Throw
 			return camera && camera->cameraRoot ? camera->cameraRoot->world.translate : RE::NiPoint3{};
 		}
 
+		// Dirección de la retícula. En primera persona cameraRoot va unos 4,5° más inclinado hacia abajo que la
+		// mirada (medido en el juego), así que se usa el ángulo del jugador, que es lo que sigue la retícula.
 		RE::NiPoint3 GetCameraForward()
 		{
 			auto* camera = RE::PlayerCamera::GetSingleton();
 			if (!camera || !camera->cameraRoot) {
 				return { 0.0f, 1.0f, 0.0f };
+			}
+
+			if (auto* player = RE::PlayerCharacter::GetSingleton(); player && ActorUtils::IsPlayerInFirstPerson()) {
+				// Rumbo 0 hacia +Y, positivo hacia +X; inclinación positiva hacia abajo.
+				const float pitch = player->GetAngleX();
+				const float heading = player->GetAngleZ();
+				return { std::sin(heading) * std::cos(pitch), std::cos(heading) * std::cos(pitch), -std::sin(pitch) };
 			}
 
 			return camera->cameraRoot->world.rotate.GetVectorY();
@@ -58,6 +69,7 @@ namespace Throw
 
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
+			Diag::DumpAim(a_shooter, a_origin, cameraPos, forward, aimPoint, hit.hit);
 
 			const RE::NiPoint3 toAimPoint = aimPoint - a_origin;
 			const float        length = toAimPoint.Length();

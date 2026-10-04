@@ -5,17 +5,19 @@
 #include "13.- EXTERNAL/OpenAnimationReplacer/OpenAnimationReplacerAPI-Functions.h"
 #include "3.- WEAPON/LightningDash.h"
 #include "3.- WEAPON/WeaponManager.h"
+#include "11.- SKYRIM/FirstPersonDiag.h"
 
 namespace Events::OARFunctions
 {
 	namespace
 	{
-		// Mínimo que pide OAR: nombre, descripción, versión requerida y RunImpl.
-		// OAR llama a RunImpl desde un hilo de animación: el aviso a WeaponManager se encola al hilo principal.
+		// Mínimo que pide OAR (nombre, descripción, versión, RunImpl). FirstPerson: variante con sufijo 1P que llaman los
+		// submods de _1stperson. OAR llama a RunImpl desde un hilo de animación: el aviso se encola al hilo principal.
+		template <bool FirstPerson>
 		class ThrowReleaseFunction final : public Functions::CustomFunction
 		{
 		public:
-			constexpr static inline std::string_view FUNCTION_NAME = "ThorMjolnirThrowRelease"sv;
+			constexpr static inline std::string_view FUNCTION_NAME = FirstPerson ? "ThorMjolnirThrowRelease1P"sv : "ThorMjolnirThrowRelease"sv;
 
 			RE::BSString GetName() const override { return FUNCTION_NAME.data(); }
 			RE::BSString GetDescription() const override { return "Dispara WeaponManager::OnThrowReleaseAnimationEvent (ThorMjolnir)."sv.data(); }
@@ -24,15 +26,19 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent(); });
+				SKSE::GetTaskInterface()->AddTask([] {
+					Diag::DumpHands(FirstPerson ? "OAR Throw 1P" : "OAR Throw");
+					Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
+				});
 				return true;
 			}
 		};
 
+		template <bool FirstPerson>
 		class CallReleaseFunction final : public Functions::CustomFunction
 		{
 		public:
-			constexpr static inline std::string_view FUNCTION_NAME = "ThorMjolnirCallRelease"sv;
+			constexpr static inline std::string_view FUNCTION_NAME = FirstPerson ? "ThorMjolnirCallRelease1P"sv : "ThorMjolnirCallRelease"sv;
 
 			RE::BSString GetName() const override { return FUNCTION_NAME.data(); }
 			RE::BSString GetDescription() const override { return "Dispara WeaponManager::OnCallReleaseAnimationEvent (ThorMjolnir)."sv.data(); }
@@ -41,15 +47,19 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent(); });
+				SKSE::GetTaskInterface()->AddTask([] {
+					Diag::DumpHands(FirstPerson ? "OAR Call 1P" : "OAR Call");
+					Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
+				});
 				return true;
 			}
 		};
 
+		template <bool FirstPerson>
 		class CatchReleaseFunction final : public Functions::CustomFunction
 		{
 		public:
-			constexpr static inline std::string_view FUNCTION_NAME = "ThorMjolnirCatchRelease"sv;
+			constexpr static inline std::string_view FUNCTION_NAME = FirstPerson ? "ThorMjolnirCatchRelease1P"sv : "ThorMjolnirCatchRelease"sv;
 
 			RE::BSString GetName() const override { return FUNCTION_NAME.data(); }
 			RE::BSString GetDescription() const override { return "Dispara WeaponManager::OnCatchReleaseAnimationEvent (ThorMjolnir)."sv.data(); }
@@ -58,15 +68,19 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				SKSE::GetTaskInterface()->AddTask([] { Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true); });
+				SKSE::GetTaskInterface()->AddTask([] {
+					Diag::DumpHands(FirstPerson ? "OAR Catch 1P" : "OAR Catch");
+					Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true);
+				});
 				return true;
 			}
 		};
 
+		template <bool FirstPerson>
 		class SlamImpactFunction final : public Functions::CustomFunction
 		{
 		public:
-			constexpr static inline std::string_view FUNCTION_NAME = "ThorMjolnirSlamImpact"sv;
+			constexpr static inline std::string_view FUNCTION_NAME = FirstPerson ? "ThorMjolnirSlamImpact1P"sv : "ThorMjolnirSlamImpact"sv;
 
 			RE::BSString GetName() const override { return FUNCTION_NAME.data(); }
 			RE::BSString GetDescription() const override { return "Dispara LightningDash::OnSlamImpactAnimationEvent (ThorMjolnir)."sv.data(); }
@@ -75,7 +89,10 @@ namespace Events::OARFunctions
 		protected:
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
-				SKSE::GetTaskInterface()->AddTask([] { Weapon::LightningDash::OnSlamImpactAnimationEvent(true); });
+				SKSE::GetTaskInterface()->AddTask([] {
+					Diag::DumpHands(FirstPerson ? "OAR Slam 1P" : "OAR Slam");
+					Weapon::LightningDash::OnSlamImpactAnimationEvent(true);
+				});
 				return true;
 			}
 		};
@@ -109,9 +126,13 @@ namespace Events::OARFunctions
 			return;
 		}
 
-		Register<ThrowReleaseFunction>();
-		Register<CallReleaseFunction>();
-		Register<CatchReleaseFunction>();
-		Register<SlamImpactFunction>();
+		Register<ThrowReleaseFunction<false>>();
+		Register<ThrowReleaseFunction<true>>();
+		Register<CallReleaseFunction<false>>();
+		Register<CallReleaseFunction<true>>();
+		Register<CatchReleaseFunction<false>>();
+		Register<CatchReleaseFunction<true>>();
+		Register<SlamImpactFunction<false>>();
+		Register<SlamImpactFunction<true>>();
 	}
 }

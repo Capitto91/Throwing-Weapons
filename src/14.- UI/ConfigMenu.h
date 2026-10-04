@@ -1,4 +1,4 @@
-// Sección "Throwable Mjolnir" en SKSE Menu Framework: edita Settings y guarda el INI.
+// Sección "Throwable Kyne's Thunder" en SKSE Menu Framework: edita Settings y guarda el INI.
 // Sin el framework instalado no hace nada.
 
 #pragma once

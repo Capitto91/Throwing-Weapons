@@ -19,7 +19,7 @@ namespace UI::ConfigMenu
 	{
 		namespace ImGui = ImGuiMCP;
 
-		constexpr const char* kSectionName = "Throwable Mjolnir";
+		constexpr const char* kSectionName = "Throwable Kyne's Thunder";
 
 		// Cambios aplicados pero sin guardar en el INI.
 		std::atomic<bool> g_unsaved{ false };

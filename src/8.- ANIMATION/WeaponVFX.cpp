@@ -1,4 +1,5 @@
-// Chispas de movimiento -- ver WeaponVFX.h.
+// Chispas de movimiento -- ver WeaponVFX.h. Creación, movimiento y retirada del efecto adaptados de
+// AttackTrail de Precision (ersh1, github.com/ersh1/Precision; licencia en README.md, Créditos).
 
 #include "8.- ANIMATION/WeaponVFX.h"
 

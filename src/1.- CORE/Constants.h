@@ -219,10 +219,13 @@ namespace Constants
 	// Tiempo mínimo antes de repetir el mismo aviso (el motor puede comprobar el lanzamiento más de una vez por pulsación).
 	inline constexpr float kLightningDashMessageRepeatSeconds = 1.0f;
 
-	// VisualEffect del poder, CAP_ThorMjolnir_VisualEffect_LightningDash (arte LightningStormCastBodyFX + shader
-	// CAP_ThorMjolnir_ShockStormFXShader): su arte y su shader van sobre el jugador durante el desplazamiento,
-	// y los persistentes que quedaran en una partida se retiran al cargar. FormID local del ESL.
+	// VisualEffect del dash viejo, CAP_ThorMjolnir_VisualEffect_LightningDash (arte LightningStormCastBodyFX + shader
+	// CAP_ThorMjolnir_ShockStormFXShader): sus efectos persistentes en una partida se retiran al cargar. FormID local del ESL.
 	inline constexpr RE::FormID kLightningDashVisualEffectLocalFormID = 0x013;
+
+	// Hechizo del aspecto del desplazamiento, CAP_ThorMjolnir_Spell_LightningDash_VFX (efecto _MagicEffect_LightningDash_VFX,
+	// 0x01E: Hit Shader 0x014 + Hit Effect Art LightningStormCastBodyFX, 5 s). Se lanza al empezar y se disipa al llegar.
+	inline constexpr RE::FormID kLightningDashVFXSpellLocalFormID = 0x023;
 
 	// Modificador de imagen al empezar el desplazamiento (CAP_ThorMjolnir_ImageSPaceMod_LightningDash), FormID local del ESL.
 	inline constexpr RE::FormID kLightningDashImageSpaceModLocalFormID = 0x017;
@@ -251,6 +254,9 @@ namespace Constants
 	// el suelo en el golpe. Valor inicial; LightningDash lo vuelve a medir en cada golpe (mediana de las últimas).
 	inline constexpr float kSlamAnimationLeadTime = 0.666667f;  // Slam.hkx: fotograma 20 a 30 fps
 
+	// Lo mismo para el clip del golpe en primera persona (anotación a 1,133 s de 1,667 s).
+	inline constexpr float kSlamAnimationLeadTimeFirstPerson = 1.133333f;
+
 	// Rango válido de una medida (fracción del nominal) y medidas recientes cuya mediana fija la bajada (impar).
 	inline constexpr float       kSlamLeadMeasureMinFactor = 0.5f;
 	inline constexpr float       kSlamLeadMeasureMaxFactor = 2.0f;
@@ -261,11 +267,16 @@ namespace Constants
 
 	// Resto del clip tras la anotación (duración del clip menos kSlamAnimationLeadTime) antes de enviar attackStop:
 	// el submod solo procesa sus anotaciones, así que el clip no devuelve solo el grafo a reposo.
-	inline constexpr std::chrono::milliseconds kSlamAnimationTailDuration{ 567 };  // Slam.hkx: 1.233 s - 0.667 s
+	inline constexpr std::chrono::milliseconds kSlamAnimationTailDuration{ 567 };             // Slam.hkx: 1.233 s - 0.667 s
+	inline constexpr std::chrono::milliseconds kSlamAnimationTailDurationFirstPerson{ 533 };  // 1ª persona: 1.667 s - 1.133 s
 
 	// Red de seguridad: si en este tiempo no se cierra el ataque en curso y el grafo no acepta el attackStart
 	// del golpe (reintentado cada tick con el jugador suspendido), baja sin animación.
 	inline constexpr float kSlamStartTimeoutSeconds = 1.0f;
+
+	// Red de seguridad: espera máxima, suspendido en la llegada, a que acabe un desenvainado antes de recuperar el arma
+	// para el golpe en salto. Cubre el más largo medido (1,43 s, maza de SIGMA en primera persona).
+	inline constexpr float kSlamGraphSettleTimeoutSeconds = 2.0f;
 
 	// -- Temblor al desclavar (punto 11) --
 	// Duración mínima del temblor; BeginReturn puede alargarlo.
@@ -305,6 +316,9 @@ namespace Constants
 	// Valor inicial: WeaponManager lo vuelve a medir en cada Atrape y usa la última medida.
 	inline constexpr float kCatchAnimationLeadTime = 0.51f;
 
+	// Lo mismo para el clip del Atrape en primera persona (anotación a 0,133 s de 0,533 s).
+	inline constexpr float kCatchAnimationLeadTimeFirstPerson = 0.133333f;
+
 	// Rango válido de una medida de kCatchAnimationLeadTime (fracción del nominal); fuera de él
 	// (tirón durante el gesto, o pausa sin FrameHook) se descarta.
 	inline constexpr float kCatchLeadMeasureMinFactor = 0.5f;
@@ -337,6 +351,14 @@ namespace Constants
 	// Cola de Call.hkx y Catch.hkx tras su anotación antes de enviar attackStop.
 	inline constexpr std::chrono::milliseconds kCallAnimationTailDuration{ 250 };
 	inline constexpr std::chrono::milliseconds kCatchAnimationTailDuration{ 500 };
+
+	// Lo mismo para los clips de primera persona. Atrape: resto del clip tras la anotación (0.533 s - 0.133 s).
+	inline constexpr std::chrono::milliseconds kCallAnimationTailDurationFirstPerson{ 250 };
+	inline constexpr std::chrono::milliseconds kCatchAnimationTailDurationFirstPerson{ 400 };
+
+	// La Llamada debe cerrar (attackStop) antes de que pueda arrancar el Atrape; si no, el grafo repite la Llamada.
+	static_assert(kCallAnimationTailDuration.count() / 1000.0f < kMinCatchAnimationDelay);
+	static_assert(kCallAnimationTailDurationFirstPerson.count() / 1000.0f < kMinCatchAnimationDelay);
 
 	// Espera extra al final del Atrape antes de apagar las chispas (el grafo sigue mezclando).
 	inline constexpr std::chrono::milliseconds kCatchVfxSettleDelay{ 400 };

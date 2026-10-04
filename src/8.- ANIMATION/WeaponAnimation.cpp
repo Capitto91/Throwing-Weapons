@@ -179,20 +179,28 @@ namespace Animation
 
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden)
 	{
-		// kHidden en el BSFadeNode hijo de "WEAPON" (en el hueso no oculta nada).
-		auto* weaponNode = a_actor.GetNodeByName("WEAPON");
-		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
-		if (!asNode || asNode->GetChildren().empty()) {
-			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"WEAPON\" no encontrado o sin hijos.");
-			return false;
-		}
+		// kHidden en el BSFadeNode hijo de "WEAPON" (en el hueso no oculta nada), en los dos esqueletos:
+		// el arma cuelga de ambos y solo se ve el de la cámara activa.
+		bool applied = false;
+		for (const bool firstPerson : { false, true }) {
+			auto* root = a_actor.Get3D(firstPerson);
+			auto* weaponNode = root ? root->GetObjectByName("WEAPON") : nullptr;
+			auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
+			if (!asNode) {
+				continue;
+			}
 
-		for (auto& child : asNode->GetChildren()) {
-			if (child) {
-				child->GetFlags().set(a_hidden, RE::NiAVObject::Flag::kHidden);
+			for (auto& child : asNode->GetChildren()) {
+				if (child) {
+					child->GetFlags().set(a_hidden, RE::NiAVObject::Flag::kHidden);
+					applied = true;
+				}
 			}
 		}
 
-		return true;
+		if (!applied) {
+			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"WEAPON\" no encontrado o sin hijos.");
+		}
+		return applied;
 	}
 }

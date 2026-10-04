@@ -1,5 +1,5 @@
-// Estela -- ver WeaponTrail.h. Portado de AttackTrail::Update de Precision
-// (Ershin, MIT, github.com/ersh1/Precision); segmentos en línea recta entre las dos últimas muestras.
+// Estela -- ver WeaponTrail.h. Portado de AttackTrail::Update de Precision (ersh1, github.com/ersh1/Precision;
+// licencia en README.md, Créditos); segmentos en línea recta entre las dos últimas muestras.
 
 #include "8.- ANIMATION/WeaponTrail.h"
 

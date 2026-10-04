@@ -5,6 +5,9 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
+#include "10.- EVENTS/GraphSettleWatcher.h"
+#include "11.- SKYRIM/ActorUtils.h"
+#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "2.- INPUT/InputManager.h"
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
@@ -13,6 +16,7 @@
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -36,13 +40,15 @@ namespace Weapon::LightningDash
 			bool         landed{ false };
 			bool         impactDone{ false };
 			RE::NiPoint3 ground{};
-			double       startTime{ 0.0 };  // FrameHook::Now del attackStart
+			double       startTime{ 0.0 };     // FrameHook::Now del attackStart
+			bool         firstPerson{ false };  // cámara al aceptarse el attackStart: clip, cola y medidas
 		};
 		SlamState g_slam;
 
-		// Tiempo hasta la anotación del golpe: mediana de g_slamLeadSamples (nominal al cargar).
-		float              g_slamLeadSeconds = Constants::kSlamAnimationLeadTime;
-		std::vector<float> g_slamLeadSamples;
+		// Tiempo hasta la anotación del golpe por cámara ([0] tercera, [1] primera persona): mediana de
+		// g_slamLeadSamples (nominal al cargar).
+		std::array<float, 2>              g_slamLeadSeconds{ Constants::kSlamAnimationLeadTime, Constants::kSlamAnimationLeadTimeFirstPerson };
+		std::array<std::vector<float>, 2> g_slamLeadSamples;
 
 		// Formularios del ESL resueltos una vez.
 		template <class T>
@@ -89,6 +95,27 @@ namespace Weapon::LightningDash
 			return form;
 		}
 
+		RE::SpellItem* GetVFXSpell()
+		{
+			static RE::SpellItem* form = LookupWithWarning<RE::SpellItem>(Constants::kLightningDashVFXSpellLocalFormID, Constants::kSoundPluginName, "el hechizo del aspecto del dash");
+			return form;
+		}
+
+		// Retira el hechizo del aspecto del dash (el motor apaga su shader y su arte) y devuelve el cambio de cámara.
+		// Lo llaman la llegada del desplazamiento y Finish (cancelación).
+		void StopDashVFX()
+		{
+			Input::SetCameraSwitchLocked(false);
+
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* spell = GetVFXSpell();
+			auto* magicTarget = player ? player->AsMagicTarget() : nullptr;
+			if (spell && magicTarget) {
+				auto caster = player->GetHandle();
+				(void)magicTarget->DispelEffect(spell, caster);
+			}
+		}
+
 		RE::TESImageSpaceModifier* GetImageSpaceModifier()
 		{
 			static RE::TESImageSpaceModifier* form = LookupWithWarning<RE::TESImageSpaceModifier>(Constants::kLightningDashImageSpaceModLocalFormID, Constants::kSoundPluginName, "el modificador de imagen");
@@ -107,9 +134,9 @@ namespace Weapon::LightningDash
 			return form;
 		}
 
-		// Efectos al empezar: explosiones de polvo y descarga donde está el jugador, modificador de imagen, y el arte
-		// y el shader del VisualEffect sobre el jugador durante a_duration segundos (el motor los retira solo).
-		void ApplyStartEffects(RE::PlayerCharacter& a_player, float a_duration)
+		// Efectos al empezar: explosiones de polvo y descarga donde está el jugador, modificador de imagen, y el hechizo
+		// del aspecto del dash (shader y arte como efecto mágico), que StopDashVFX retira al llegar.
+		void ApplyStartEffects(RE::PlayerCharacter& a_player)
 		{
 			for (auto* explosion : { GetDustExplosion(), GetShockExplosion() }) {
 				if (explosion) {
@@ -121,15 +148,20 @@ namespace Weapon::LightningDash
 				(void)RE::ImageSpaceModifierInstanceForm::Trigger(imageSpaceModifier, 1.0f, nullptr);
 			}
 
-			auto* visualEffect = GetVisualEffect();
-			if (!visualEffect || a_duration <= 0.0f) {
-				return;
+			auto* spell = GetVFXSpell();
+			auto* caster = spell ? a_player.GetMagicCaster(RE::MagicSystem::CastingSource::kInstant) : nullptr;
+			if (caster) {
+				caster->CastSpellImmediate(spell, false, &a_player, 1.0f, false, 0.0f, nullptr);
 			}
-			if (visualEffect->data.artObject) {
-				(void)a_player.ApplyArtObject(visualEffect->data.artObject, a_duration);
-			}
-			if (visualEffect->data.effectShader) {
-				(void)a_player.ApplyEffectShader(visualEffect->data.effectShader, a_duration);
+
+			const auto* effect = spell && !spell->effects.empty() && spell->effects[0] ? spell->effects[0]->baseEffect : nullptr;
+			if (effect) {
+				logs::info("[diag] dash: hechizo del aspecto lanzado");
+				for (int i = 0; i <= 20; ++i) {
+					(void)Scheduler::After(std::chrono::milliseconds{ i * 250 }, [art = effect->data.hitEffectArt, shader = effect->data.effectShader, i]() {
+						Diag::DumpDashEffects(art, shader, i * 0.25f);
+					});
+				}
 			}
 		}
 
@@ -201,6 +233,9 @@ namespace Weapon::LightningDash
 		{
 			Physics::CancelTickLoop(g_tickToken);
 			g_tickToken.reset();
+			if (g_active) {
+				StopDashVFX();
+			}
 			if (g_slam.active) {
 				g_slam = {};
 				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -217,8 +252,10 @@ namespace Weapon::LightningDash
 		// por si no llega.
 		float OnSlamAnimationStarted(std::uint32_t a_generation)
 		{
+			Diag::NoteSent("attackStart aceptado", "golpe en salto");
 			g_slam.animationPlaying = true;
 			g_slam.startTime = FrameHook::Now();
+			g_slam.firstPerson = ActorUtils::IsPlayerInFirstPerson();
 
 			(void)Scheduler::After(Constants::kSlamReleaseFallbackWindow, [a_generation]() {
 				if (g_slam.active && !g_slam.impactDone && g_generation == a_generation) {
@@ -226,7 +263,7 @@ namespace Weapon::LightningDash
 					OnSlamImpactAnimationEvent(false);
 				}
 			});
-			return g_slamLeadSeconds;
+			return g_slamLeadSeconds[g_slam.firstPerson ? 1 : 0];
 		}
 
 		// Sin ataque en curso. Dentro de otro (p. ej. Throw.hkx sin terminar), attackStart se rechaza o encadena el
@@ -234,6 +271,58 @@ namespace Weapon::LightningDash
 		bool IsAttackIdle(RE::Actor& a_actor)
 		{
 			return a_actor.AsActorState()->GetAttackState() == RE::ATTACK_STATE_ENUM::kNone;
+		}
+
+		// Grafo listo para el golpe: sin ataque, sin desenvainado y sin un attackStop nuestro por procesar. Si no, el
+		// attackStart se acepta pero el final del desenvainado (WeapEquip_Out) o ese attackStop cortan el golpe.
+		bool IsReadyForSlam(RE::Actor& a_actor)
+		{
+			return IsAttackIdle(a_actor) && Events::GraphSettleWatcher::IsSettled();
+		}
+
+		// Suspende al jugador donde está hasta que no haya desenvainado en curso (o kSlamGraphSettleTimeoutSeconds) y
+		// entonces ejecuta a_then fuera del tick. Recuperar el arma durante un desenvainado lo alarga al de la maza.
+		void HoldUntilGraphSettled(std::uint32_t a_generation, std::function<void()> a_then)
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player) {
+				Finish();
+				return;
+			}
+
+			if (Events::GraphSettleWatcher::IsSettled()) {
+				a_then();
+				return;
+			}
+
+			Diag::NoteSent("esperando a que acabe el desenvainado", "golpe en salto");
+			const auto hold = player->GetPosition();
+			g_tickToken = Physics::StartTickLoop(player->GetHandle(), [hold, a_generation, then = std::move(a_then), waited = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+				auto* actor = a_refr.As<RE::Actor>();
+				if (!actor || actor->IsDead()) {
+					Finish();
+					return false;
+				}
+
+				PlaceWithoutCollision(*actor, hold);
+				waited += a_deltaSeconds;
+				const bool settled = Events::GraphSettleWatcher::IsSettled();
+				if (!settled && waited < Constants::kSlamGraphSettleTimeoutSeconds) {
+					return true;
+				}
+				if (!settled) {
+					logs::warn("LightningDash: el desenvainado no terminó en {:.2f} s (red de seguridad); se recupera el arma igualmente.", waited);
+					Events::GraphSettleWatcher::Reset();
+				}
+
+				// Recuperar equipa el arma: fuera del tick.
+				(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [a_generation, then = std::move(then)]() {
+					if (g_active && g_generation == a_generation) {
+						then();
+					}
+				});
+				return false;
+			});
 		}
 
 		// Golpe en salto desde la posición actual hasta a_ground: Global + attackStart (OAR pone el clip) y bajada
@@ -262,9 +351,10 @@ namespace Weapon::LightningDash
 			float      descentTime = height / Constants::kLightningDashSpeed;
 			if (hasTrigger) {
 				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
-				if (IsAttackIdle(*player) && player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
+				if (IsReadyForSlam(*player) && player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 					descentTime = OnSlamAnimationStarted(a_generation);
 				} else {
+					Diag::NoteSent(IsReadyForSlam(*player) ? "attackStart rechazado, reintentando" : "grafo sin asentar, esperando", "golpe en salto");
 					waitingForAnimation = true;
 				}
 			} else {
@@ -282,11 +372,12 @@ namespace Weapon::LightningDash
 				if (waitingForAnimation) {
 					PlaceWithoutCollision(*actor, top);
 					waited += a_deltaSeconds;
-					if (IsAttackIdle(*actor) && actor->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
+					if (IsReadyForSlam(*actor) && actor->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 						waitingForAnimation = false;
 						descentTime = OnSlamAnimationStarted(a_generation);
 					} else if (waited >= Constants::kSlamStartTimeoutSeconds) {
 						waitingForAnimation = false;
+						Events::GraphSettleWatcher::Reset();
 						Animation::SetSlamTrigger(*actor, false);
 						logs::warn("LightningDash: el grafo no aceptó '{}' en {:.2f} s, golpe en salto sin animación.", Constants::kLightAttackAnimationEvent, waited);
 						descentTime = height / Constants::kLightningDashSpeed;
@@ -380,10 +471,14 @@ namespace Weapon::LightningDash
 			a_player.SetHeading(std::atan2(toDestination.x, toDestination.y));
 		}
 
-		Input::SetMovementLocked(true);
+		Diag::StartTrace("Lightning Dash", 6.0f);
+		Events::GraphSettleWatcher::Track(a_player);
 
-		const float distance = toDestination.Length();
-		ApplyStartEffects(a_player, distance / Constants::kLightningDashSpeed);
+		// Sin cambio de cámara hasta la llegada: si cambia con el hechizo del aspecto activo, su shader tarda en apagarse.
+		Input::SetMovementLocked(true);
+		Input::SetCameraSwitchLocked(true);
+
+		ApplyStartEffects(a_player);
 
 		// Estela anclada al pecho (desplazamiento fijo desde los pies, medido al empezar), en el plano vertical del viaje.
 		// Va siempre, sin consultar [VFX] Trail; se apaga al terminar el bucle.
@@ -429,6 +524,7 @@ namespace Weapon::LightningDash
 					return;
 				}
 
+				StopDashVFX();
 				if (!slamGround) {
 					Finish();
 					if (onArrived) {
@@ -437,13 +533,15 @@ namespace Weapon::LightningDash
 					return;
 				}
 
-				// Golpe en salto: el arma vuelve a la mano y empieza el golpe, sin soltar el control del jugador.
+				// Golpe en salto: con el grafo asentado, el arma vuelve a la mano y empieza el golpe, sin soltar el control.
 				Physics::CancelTickLoop(g_tickToken);
 				g_tickToken.reset();
-				if (onArrived) {
-					onArrived();
-				}
-				BeginSlam(*slamGround, generation);
+				HoldUntilGraphSettled(generation, [slamGround, onArrived, generation]() {
+					if (onArrived) {
+						onArrived();
+					}
+					BeginSlam(*slamGround, generation);
+				});
 			});
 			return false;
 		});
@@ -458,20 +556,22 @@ namespace Weapon::LightningDash
 
 		// Tiempo del clip hasta su anotación, para la bajada del siguiente golpe (mediana, como en el Atrape).
 		if (a_fromAnnotation && g_slam.animationPlaying) {
-			const float measured = static_cast<float>(FrameHook::Now() - g_slam.startTime);
-			const float nominal = Constants::kSlamAnimationLeadTime;
+			const std::size_t view = g_slam.firstPerson ? 1 : 0;
+			const float       measured = static_cast<float>(FrameHook::Now() - g_slam.startTime);
+			const float       nominal = g_slam.firstPerson ? Constants::kSlamAnimationLeadTimeFirstPerson : Constants::kSlamAnimationLeadTime;
 			if (measured >= nominal * Constants::kSlamLeadMeasureMinFactor && measured <= nominal * Constants::kSlamLeadMeasureMaxFactor) {
-				g_slamLeadSamples.push_back(measured);
-				if (g_slamLeadSamples.size() > Constants::kSlamLeadSampleCount) {
-					g_slamLeadSamples.erase(g_slamLeadSamples.begin());
+				auto& samples = g_slamLeadSamples[view];
+				samples.push_back(measured);
+				if (samples.size() > Constants::kSlamLeadSampleCount) {
+					samples.erase(samples.begin());
 				}
 
-				std::vector<float> sorted = g_slamLeadSamples;
+				std::vector<float> sorted = samples;
 				std::ranges::sort(sorted);
 				const std::size_t middle = sorted.size() / 2;
-				g_slamLeadSeconds = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
+				g_slamLeadSeconds[view] = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
 			} else {
-				logs::warn("LightningDash: medida del golpe en salto fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, g_slamLeadSeconds);
+				logs::warn("LightningDash: medida del golpe en salto fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, g_slamLeadSeconds[view]);
 			}
 		}
 
@@ -502,11 +602,13 @@ namespace Weapon::LightningDash
 
 		// attackStop pasada la cola del clip: el submod solo procesa sus anotaciones y el grafo no vuelve solo a reposo.
 		const std::uint32_t generation = g_generation;
-		(void)Scheduler::After(Constants::kSlamAnimationTailDuration, [generation]() {
+		const auto          tail = g_slam.firstPerson ? Constants::kSlamAnimationTailDurationFirstPerson : Constants::kSlamAnimationTailDuration;
+		(void)Scheduler::After(tail, [generation]() {
 			if (!g_active || g_generation != generation) {
 				return;
 			}
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+				Diag::NoteSent("attackStop", "fin del golpe en salto");
 				player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 			}
 			Finish();
