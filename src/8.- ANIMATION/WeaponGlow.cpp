@@ -3,12 +3,12 @@
 #include "8.- ANIMATION/WeaponGlow.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <cmath>
 #include <numbers>
-#include <thread>
 
 namespace Animation
 {
@@ -277,7 +277,6 @@ namespace Animation
 				TickGlowFade(a_refr, a_deltaSeconds);
 				return true;
 			});
-
 		}
 
 		// Espera a que cargue el 3D y arranca el bucle.
@@ -302,12 +301,9 @@ namespace Animation
 				return;
 			}
 
-			std::thread([a_handle, getPos = std::move(a_getTargetPosition), a_attemptsLeft, a_generation]() mutable {
-				std::this_thread::sleep_for(Constants::kTickInterval);
-				SKSE::GetTaskInterface()->AddTask([a_handle, getPos = std::move(getPos), a_attemptsLeft, a_generation]() mutable {
-					WaitFor3DThenStartTicking(a_handle, std::move(getPos), a_attemptsLeft - 1, a_generation);
-				});
-			}).detach();
+			(void)Scheduler::After(Constants::kTickInterval, [a_handle, getPos = std::move(a_getTargetPosition), a_attemptsLeft, a_generation]() mutable {
+				WaitFor3DThenStartTicking(a_handle, std::move(getPos), a_attemptsLeft - 1, a_generation);
+			});
 		}
 	}
 
@@ -322,8 +318,13 @@ namespace Animation
 			return goldNode->world.translate + goldNode->world.rotate * Constants::kGlowAnchorLocalOffset;
 		}
 
-		logs::warn("Animation::WeaponGlow: nodo \"{}\" no encontrado -- usando la posición de a_root de reserva.",
-			Constants::kWeaponHammerHeadNodeName);
+		// Sin hijos es normal (el arma aún sin 3D, p. ej. el fotograma tras reequipar); con hijos, el modelo no tiene el nodo.
+		static std::atomic<bool> warned{ false };
+		auto*                    rootNode = a_root->AsNode();
+		if (rootNode && !rootNode->GetChildren().empty() && !warned.exchange(true)) {
+			logs::warn("Animation::WeaponGlow: nodo \"{}\" no encontrado -- usando la posición de a_root de reserva.",
+				Constants::kWeaponHammerHeadNodeName);
+		}
 		return a_root->world.translate;
 	}
 
@@ -441,26 +442,23 @@ namespace Animation
 		g_phaseElapsed = 0.0f;
 
 		const auto generation = ++g_generation;
-		std::thread([generation]() {
-			std::this_thread::sleep_for(Constants::kGlowFadeDuration);
-			SKSE::GetTaskInterface()->AddTask([generation]() {
-				if (g_generation.load() != generation) {
-					return;
-				}
+		(void)Scheduler::After(Constants::kGlowFadeDuration, [generation]() {
+			if (g_generation.load() != generation) {
+				return;
+			}
 
-				Physics::CancelTickLoop(g_tickToken);
-				g_tickToken = {};
+			Physics::CancelTickLoop(g_tickToken);
+			g_tickToken = {};
 
-				g_shaderProperty.reset();
-				g_ringGlowShaderProperty.reset();
-				g_ringGlowNode.reset();
-				DetachGlowLight();
+			g_shaderProperty.reset();
+			g_ringGlowShaderProperty.reset();
+			g_ringGlowNode.reset();
+			DetachGlowLight();
 
-				if (g_activeHandle) {
-					Physics::DestroyReplica(g_activeHandle);
-					g_activeHandle = {};
-				}
-			});
-		}).detach();
+			if (g_activeHandle) {
+				Physics::DestroyReplica(g_activeHandle);
+				g_activeHandle = {};
+			}
+		});
 	}
 }

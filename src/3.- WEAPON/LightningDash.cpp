@@ -271,12 +271,6 @@ namespace Weapon::LightningDash
 				logs::warn("LightningDash: Global '{}' no encontrado, golpe en salto sin animación.", Constants::kSlamTriggerGlobalEditorID);
 			}
 
-			if (waitingForAnimation) {
-				logs::info("LightningDash: golpe en salto desde {:.0f} u de altura, esperando a que termine el ataque en curso y el grafo acepte el golpe.", height);
-			} else {
-				logs::info("LightningDash: golpe en salto desde {:.0f} u de altura, bajada en {:.2f} s.", height, descentTime);
-			}
-
 			g_tickToken = Physics::StartTickLoop(player->GetHandle(), [top, height, ground = a_ground, descentTime, waitingForAnimation, a_generation, waited = 0.0f, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 				auto* actor = a_refr.As<RE::Actor>();
 				if (!actor || actor->IsDead()) {
@@ -291,7 +285,6 @@ namespace Weapon::LightningDash
 					if (IsAttackIdle(*actor) && actor->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 						waitingForAnimation = false;
 						descentTime = OnSlamAnimationStarted(a_generation);
-						logs::info("LightningDash: ataque del golpe aceptado tras {:.2f} s, bajada en {:.2f} s.", waited, descentTime);
 					} else if (waited >= Constants::kSlamStartTimeoutSeconds) {
 						waitingForAnimation = false;
 						Animation::SetSlamTrigger(*actor, false);
@@ -390,9 +383,6 @@ namespace Weapon::LightningDash
 		Input::SetMovementLocked(true);
 
 		const float distance = toDestination.Length();
-		logs::info("LightningDash: desplazamiento de {:.0f} u hacia ({:.0f}, {:.0f}, {:.0f}).",
-			distance, a_destination.x, a_destination.y, a_destination.z);
-
 		ApplyStartEffects(a_player, distance / Constants::kLightningDashSpeed);
 
 		// Estela anclada al pecho (desplazamiento fijo desde los pies, medido al empezar), en el plano vertical del viaje.

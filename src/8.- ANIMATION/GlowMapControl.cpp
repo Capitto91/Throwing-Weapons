@@ -70,30 +70,8 @@ namespace Animation::GlowMapControl
 			return false;
 		}
 
-		// Diagnóstico único: vuelca al log el material de cada malla si no hay glow map.
+		// Aviso único si el modelo equipado no tiene ninguna malla con glow map.
 		bool g_missingReported = false;
-
-		void DumpMaterials(RE::NiAVObject* a_object)
-		{
-			if (!a_object) {
-				return;
-			}
-
-			if (auto* geometry = a_object->AsGeometry()) {
-				auto* shader = geometry->GetGeometryRuntimeData().shaderProperty.get();
-				auto* lighting = shader ? netimmerse_cast<RE::BSLightingShaderProperty*>(shader) : nullptr;
-				auto* material = lighting ? lighting->GetBaseMaterial() : nullptr;
-				logs::info("GlowMapControl:   malla '{}' -- BSLightingShaderProperty {} -- feature {}.",
-					geometry->name.c_str(), lighting != nullptr, material ? static_cast<int>(material->GetFeature()) : -1);
-				return;
-			}
-
-			if (auto* node = a_object->AsNode()) {
-				for (auto& child : node->GetChildren()) {
-					DumpMaterials(child.get());
-				}
-			}
-		}
 
 		// Escribe a_factor × original en cada malla con glow map bajo a_object.
 		// Devuelve cuántas ha encontrado.
@@ -109,9 +87,7 @@ namespace Animation::GlowMapControl
 				auto* material = lighting ? lighting->GetBaseMaterial() : nullptr;
 				if (material && material->GetFeature() == RE::BSShaderMaterial::Feature::kGlowMap) {
 					const std::string name = geometry->name.c_str();
-					const auto [it, inserted] = g_originalMults.try_emplace(name, lighting->emissiveMult);
-					if (inserted) {
-					}
+					const auto        it = g_originalMults.try_emplace(name, lighting->emissiveMult).first;
 					lighting->emissiveMult = it->second * a_factor;
 					return 1;
 				}
@@ -162,8 +138,7 @@ namespace Animation::GlowMapControl
 
 				if (ApplyToTree(model, a_factor) == 0 && model && !firstPerson && !g_missingReported) {
 					g_missingReported = true;
-					logs::warn("GlowMapControl: ninguna malla con glow map en el modelo equipado '{}' (tercera persona). Mallas encontradas:", model->name.c_str());
-					DumpMaterials(model);
+					logs::warn("GlowMapControl: ninguna malla con glow map en el modelo equipado '{}' (tercera persona).", model->name.c_str());
 				}
 			}
 		}

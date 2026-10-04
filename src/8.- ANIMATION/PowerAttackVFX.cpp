@@ -118,7 +118,7 @@ namespace Animation::PowerAttackVFX
 		RE::BSAnimationGraphManagerPtr graphManager;
 		a_actor.GetAnimationGraphManager(graphManager);
 		if (!graphManager) {
-			logs::warn("PowerAttackVFX::EnsureRegistered: '{}' sin grafo de animación todavía.", a_actor.GetName());
+			// Sin grafo todavía (p. ej. la intro de una partida nueva): se reintenta al equipar el arma.
 			return;
 		}
 

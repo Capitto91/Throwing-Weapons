@@ -355,24 +355,20 @@ namespace Constants
 	inline constexpr float kCallReleaseSoundVolume = 3.0f;
 
 	// -- Chispas de movimiento (WeaponVFX) --
-	// Activator continuo (ThorMjolnirSparks.nif), FormID local del ESL.
-	inline constexpr RE::FormID kMovementVfxActivatorLocalFormID = 0x025;
+	// NIF de chispas sin NiControllerManager (controladores en bucle), relativo a meshes/; lo crea BSTempEffectParticle.
+	inline constexpr const char* kMovementVfxEffectPath = "Effects/ThorMjolnirSparksFX.nif";
 
-	// Secuencia del NiControllerManager que se activa en los dos .nif de chispas.
-	inline constexpr const char* kMovementVfxSequenceName = "partA";
+	// Nodo de kMovementVfxEffectPath movido cada tick: padre del sistema de partículas y objeto del emisor.
+	inline constexpr std::string_view kMovementVfxAnchorNodeName{ "SuperSpraySparks02-Emitter" };
 
-	// Activator "de un solo uso" (ThorMjolnirSparksOff.nif) que apaga las chispas solo.
-	inline constexpr RE::FormID kMovementVfxOffActivatorLocalFormID = 0x026;
+	// Vida del efecto en segundos; se reinicia cada tick, así que solo vence si su bucle deja de correr.
+	inline constexpr float kMovementVfxEffectLifetime = 2.0f;
 
-	// Solape mínimo entre el VFX saliente y el que lo releva antes de destruir el primero.
-	inline constexpr std::chrono::milliseconds kMovementVfxSwapOverlapDuration{ 500 };
+	// Tope del apagado en segundos de juego: si quedan partículas vivas pasado este tiempo, se retira igual.
+	// Mayor que la vida máxima de una partícula del NIF (Life Span + Life Span Variation del emisor).
+	inline constexpr float kMovementVfxFadeOutSafetySeconds = 6.0f;
 
-	// Tiempo máximo antes de destruir el VFX saliente aunque el nuevo no confirme que se ve.
-	inline constexpr std::chrono::milliseconds kMovementVfxSwapSafetyTimeout{ 1500 };
-
-	// Vida del "de un solo uso" antes de borrarlo (cubre su ciclo completo).
-	inline constexpr std::chrono::milliseconds kMovementVfxFadeOutSafetyMargin{ 2900 };
-
+	// Escala del efecto de chispas.
 	inline constexpr float kMovementVfxScale = 1.0f;
 
 	// -- Estela de rayo (WeaponTrail) --
@@ -409,16 +405,13 @@ namespace Constants
 
 	// -- Destello con luz (WeaponGlow) --
 
-	// NIF del destello, relativo a meshes/.
-	inline constexpr const char* kGlowEffectPath = "Effects/ThorMjolnirLight.nif";
-
 	// Nodo de la cabeza del martillo en Mjolnir.nif; el destello sigue su posición.
 	inline constexpr std::string_view kWeaponHammerHeadNodeName{ "Gold" };
 
 	// Offset del destello en el espacio local de "Gold".
 	inline constexpr RE::NiPoint3 kGlowAnchorLocalOffset{ 0.0f, 15.0f, 0.0f };
 
-	// Activator del destello (kGlowEffectPath), FormID local del ESL.
+	// Activator del destello (ThorMjolnirLight.nif), FormID local del ESL.
 	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0x027;
 
 	// Duración del fundido de encendido/apagado del destello (mismas cifras en ms y s).
@@ -442,9 +435,6 @@ namespace Constants
 
 	// Luz del destello (TESObjectLIGH), FormID local del ESL.
 	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x028;
-
-	// Nombre de nodo reservado para la luz.
-	inline constexpr std::string_view kWeaponGlowLightNodeName{ "CAP_ThorMjolnir_GlowLight" };
 
 	// -- Brillo de manos (HandGlow) --
 	// Art object (copia de lightningstormhandeffects.nif) aplicado en las manos; FormID local del ESL.
