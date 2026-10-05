@@ -12,7 +12,6 @@
 #include "3.- WEAPON/LightningDash.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "7.- COMBAT/DamageManager.h"
-#include "8.- ANIMATION/AttackAnimType.h"
 #include "8.- ANIMATION/GlowMapControl.h"
 #include "8.- ANIMATION/PowerAttackVFX.h"
 
@@ -155,18 +154,13 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
-				// Devuelve el tipo de arma original, también durante una carga.
+				// Al equipar el arma arrojadiza, efectos de ataque fuerte y brillo, también durante una carga.
 				{
 					auto* equipForm = RE::TESForm::LookupByID(a_event->baseObject);
 					auto* equipWeapon = equipForm ? equipForm->As<RE::TESObjectWEAP>() : nullptr;
-					if (equipWeapon && equipWeapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
-						if (a_event->equipped) {
-							Animation::AttackAnimType::EnsureRegistered(*player);
-							Animation::PowerAttackVFX::EnsureRegistered(*player);
-							Animation::GlowMapControl::EnsureRunning();
-						} else {
-							Animation::AttackAnimType::Restore(equipWeapon);
-						}
+					if (a_event->equipped && equipWeapon && equipWeapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
+						Animation::PowerAttackVFX::EnsureRegistered(*player);
+						Animation::GlowMapControl::EnsureRunning();
 					}
 				}
 
@@ -249,7 +243,6 @@ namespace Events
 				if (a_event && !a_event->opening && a_event->menuName == RE::LoadingMenu::MENU_NAME) {
 					Weapon::WeaponManager::GetSingleton()->OnLoadingScreenClosed();
 					if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-						Animation::AttackAnimType::EnsureRegistered(*player);
 						Animation::PowerAttackVFX::EnsureRegistered(*player);
 					}
 					// Con coc desde el menú principal no llega kNewGame ni kPostLoadGame.
@@ -324,7 +317,6 @@ namespace Events
 				// Quita los efectos persistentes que su VisualEffect dejó guardados en la partida.
 				Weapon::LightningDash::RemoveLegacyEffects();
 				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-					Animation::AttackAnimType::EnsureRegistered(*player);
 					Animation::PowerAttackVFX::EnsureRegistered(*player);
 				}
 				Animation::GlowMapControl::EnsureRunning();

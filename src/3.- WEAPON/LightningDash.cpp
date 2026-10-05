@@ -280,8 +280,15 @@ namespace Weapon::LightningDash
 			return IsAttackIdle(a_actor) && Events::GraphSettleWatcher::IsSettled();
 		}
 
-		// Suspende al jugador donde está hasta que no haya desenvainado en curso (o kSlamGraphSettleTimeoutSeconds) y
-		// entonces ejecuta a_then fuera del tick. Recuperar el arma durante un desenvainado lo alarga al de la maza.
+		// Listo para recuperar el arma: sin desenvainado en curso (si no, el reequipado lo alarga al de la maza) y sin el
+		// modelo oculto del arma lanzada todavía en la mano (si no, quedarían dos modelos).
+		bool IsReadyForRecall(RE::Actor& a_player)
+		{
+			return Events::GraphSettleWatcher::IsSettled() && !Animation::HasOrphanWeaponModel(a_player);
+		}
+
+		// Suspende al jugador donde está hasta IsReadyForRecall (o kSlamGraphSettleTimeoutSeconds, y entonces retira el
+		// modelo huérfano si sigue) y ejecuta a_then fuera del tick.
 		void HoldUntilGraphSettled(std::uint32_t a_generation, std::function<void()> a_then)
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
@@ -290,7 +297,7 @@ namespace Weapon::LightningDash
 				return;
 			}
 
-			if (Events::GraphSettleWatcher::IsSettled()) {
+			if (IsReadyForRecall(*player)) {
 				a_then();
 				return;
 			}
@@ -306,18 +313,21 @@ namespace Weapon::LightningDash
 
 				PlaceWithoutCollision(*actor, hold);
 				waited += a_deltaSeconds;
-				const bool settled = Events::GraphSettleWatcher::IsSettled();
-				if (!settled && waited < Constants::kSlamGraphSettleTimeoutSeconds) {
+				const bool ready = IsReadyForRecall(*actor);
+				if (!ready && waited < Constants::kSlamGraphSettleTimeoutSeconds) {
 					return true;
 				}
-				if (!settled) {
-					logs::warn("LightningDash: el desenvainado no terminó en {:.2f} s (red de seguridad); se recupera el arma igualmente.", waited);
+				if (!ready) {
+					logs::warn("LightningDash: el grafo no se asentó en {:.2f} s (red de seguridad); se recupera el arma igualmente.", waited);
 					Events::GraphSettleWatcher::Reset();
 				}
 
-				// Recuperar equipa el arma: fuera del tick.
+				// Recuperar equipa el arma y desenganchar toca el 3D: fuera del tick.
 				(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [a_generation, then = std::move(then)]() {
 					if (g_active && g_generation == a_generation) {
+						if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+							Animation::DetachOrphanWeaponModels(*player);
+						}
 						then();
 					}
 				});

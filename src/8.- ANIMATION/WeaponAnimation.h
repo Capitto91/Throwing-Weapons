@@ -48,4 +48,12 @@ namespace Animation
 	// Oculta o muestra la malla del arma equipada sin desequiparla, en los esqueletos de 1ª y 3ª persona. false si aún no tiene 3D.
 	// La usa WeaponManager::ThrowWeapon al soltar el arma.
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
+
+	// Con la mano derecha vacía, algún hueso "WEAPON" conserva un modelo oculto por SetEquippedWeaponHidden que el motor
+	// aún no ha retirado tras el desequipado. Lo consultan la recuperación y Lightning Dash antes de reequipar.
+	[[nodiscard]] bool HasOrphanWeaponModel(RE::Actor& a_actor);
+
+	// Desengancha esos modelos huérfanos (solo con la mano derecha vacía): si se reequipa encima quedan dos y el motor
+	// acaba vaciando la mano. Último recurso de la recuperación si el motor no los retira a tiempo.
+	void DetachOrphanWeaponModels(RE::Actor& a_actor);
 }

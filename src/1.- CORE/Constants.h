@@ -44,12 +44,6 @@ namespace Constants
 	// Valor de iRightHandType para "arma de una mano".
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
 
-	// Tipo de animación del arma desenvainada (AttackAnimType): maza, para los ataques de maza.
-	inline constexpr RE::WEAPON_TYPE kDrawnAnimationWeaponType = RE::WEAPON_TYPE::kOneHandMace;
-
-	// Reintentos del paso a maza mientras el modelo no ha llegado a la mano (máx. 1 s).
-	inline constexpr std::chrono::milliseconds kDrawnTypePromoteRetryInterval{ 50 };
-	inline constexpr int                       kDrawnTypePromoteMaxAttempts = 20;
 
 	// Eventos vanilla de inicio (weaponSwing) y fin (attackStop) del golpe para PowerAttackVFX.
 	inline constexpr std::string_view kPowerAttackVfxStartEvent = "weaponSwing";
@@ -148,6 +142,10 @@ namespace Constants
 
 	// Tiempo que la graph variable "SkipEquipAnimation" se deja activa al reequipar.
 	inline constexpr std::chrono::milliseconds kSkipEquipAnimationWindow{ 500 };
+
+	// Red de seguridad: espera máxima, al recuperar el arma, a que el motor retire el modelo oculto del arma lanzada
+	// (retrasos medidos: 0,5-0,9 s tras el desequipado). Pasado este tiempo se desengancha a mano antes de equipar.
+	inline constexpr float kOrphanWeaponModelTimeoutSeconds = 1.0f;
 
 	// -- Giro en vuelo (punto 10) --
 	// Nodo hijo del NIF del arma que gira; debe coincidir con el nombre en NifSkope.

@@ -102,7 +102,7 @@ namespace Weapon
 		}
 
 		// Se ignora la pulsación mientras siga pendiente el cierre del ciclo anterior.
-		if (throwTailActive || callAnimationActive || catchAnimationActive) {
+		if (throwTailActive || callAnimationActive || catchAnimationActive || reequipPending) {
 			return;
 		}
 
@@ -206,6 +206,8 @@ namespace Weapon
 		catchEndSoundPlayed = false;
 		callAnimationActive = false;
 		throwPressArmed = false;
+		reequipPending = false;
+		++reequipGeneration;
 
 		// Desbloquea movimiento, cambio de cámara y AnimationDriven por si se cargó en kThrowing o en un dash.
 		Input::SetMovementLocked(false);
@@ -438,6 +440,16 @@ namespace Weapon
 
 		// Golpe en salto: solo con el arma en vuelo y la llegada a menos de kLightningDashSlamMaxHeight del suelo.
 		const auto slamGround = state == State::kThrown ? LightningDash::FindSlamGround(*player, destination, replica.get()) : std::nullopt;
+
+		// En vuelo, el arma se queda en ese punto y desaparece hasta la llegada: sin seguir su curso ni chocar entretanto.
+		// La llegada (o una pantalla de carga) la recupera y destruye la réplica.
+		if (state == State::kThrown && replica) {
+			Physics::CancelTickLoop(weaponState.GetActiveTickToken());
+			weaponState.SetActiveTickToken({});
+			Animation::FadeOutMovementVFX();
+			Animation::StopWeaponGlow();
+			replica->Disable();
+		}
 
 		LightningDash::StartCooldown(*player);
 		LightningDash::Begin(*player, destination, slamGround, [this]() {
@@ -1081,22 +1093,58 @@ namespace Weapon
 			}
 		} else if (player && weapon) {
 			Diag::NoteSent("EquipObject encolado (AddTask)", "recuperar");
+			reequipPending = true;
 			// Diferido un tick: tras una pantalla de carga, síncrono no equipa.
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
-				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
-				player->SetGraphVariableBool("SkipEquipAnimation", true);
-				Diag::NoteSent("EquipObject", "recuperar");
-				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
-
-				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
-				Scheduler::Cancel(skipEquipAnimationToken);
-				skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
-					player->SetGraphVariableBool("SkipEquipAnimation", false);
-				});
+				EquipRecoveredWeapon(player, weapon);
 			});
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
 		TransitionState(State::kInHand, false);
+	}
+
+	void WeaponManager::EquipRecoveredWeapon(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_weapon)
+	{
+		const std::uint32_t generation = ++reequipGeneration;
+
+		auto equip = [this, a_player, a_weapon, generation]() {
+			if (generation != reequipGeneration) {
+				return;
+			}
+			reequipPending = false;
+
+			// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
+			a_player->SetGraphVariableBool("SkipEquipAnimation", true);
+			Diag::NoteSent("EquipObject", "recuperar");
+			RE::ActorEquipManager::GetSingleton()->EquipObject(a_player, a_weapon, nullptr, 1, nullptr, false, true, true, true);
+
+			// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
+			Scheduler::Cancel(skipEquipAnimationToken);
+			skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [a_player]() {
+				a_player->SetGraphVariableBool("SkipEquipAnimation", false);
+			});
+		};
+
+		if (!Animation::HasOrphanWeaponModel(*a_player)) {
+			equip();
+			return;
+		}
+
+		// Equipar encima del modelo huérfano dejaría dos en la mano; se espera a que el motor lo retire.
+		Diag::NoteSent("esperando a que el motor retire el modelo huérfano", "recuperar");
+		(void)Physics::StartTickLoop(a_player->GetHandle(), [a_player, equip, waited = 0.0f](RE::TESObjectREFR&, float a_deltaSeconds) mutable {
+			waited += a_deltaSeconds;
+			if (Animation::HasOrphanWeaponModel(*a_player) && waited < Constants::kOrphanWeaponModelTimeoutSeconds) {
+				return true;
+			}
+
+			// Equipar y desenganchar tocan el 3D: fuera del tick.
+			(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [a_player, equip]() {
+				Animation::DetachOrphanWeaponModels(*a_player);
+				equip();
+			});
+			return false;
+		});
 	}
 }
