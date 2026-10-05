@@ -26,10 +26,9 @@ namespace Weapon::LightningDash
 	// Atraviesa a_replica. Lo consulta WeaponManager::OnLightningDashCast con el arma en vuelo.
 	[[nodiscard]] std::optional<RE::NiPoint3> FindSlamGround(RE::Actor& a_player, const RE::NiPoint3& a_destination, RE::TESObjectREFR* a_replica);
 
-	// Desplaza a a_player hasta a_destination a Constants::kLightningDashSpeed atravesando obstáculos y
-	// llama a a_onArrived (fuera del bucle de tick) al llegar, no si se cancela. Con a_slamGround, tras a_onArrived
-	// encadena el golpe en salto hasta ese suelo. Lo llama WeaponManager::OnLightningDashCast.
-	void Begin(RE::PlayerCharacter& a_player, const RE::NiPoint3& a_destination, std::optional<RE::NiPoint3> a_slamGround, std::function<void()> a_onArrived);
+	// Desplaza a a_player hasta a_destination atravesando obstáculos y al llegar llama a a_onArrived (fuera del tick); con
+	// a_slamGround encadena el golpe en salto (a_weapon da su iRightHandType). Lo llama WeaponManager::OnLightningDashCast.
+	void Begin(RE::PlayerCharacter& a_player, RE::TESBoundObject* a_weapon, const RE::NiPoint3& a_destination, std::optional<RE::NiPoint3> a_slamGround, std::function<void()> a_onArrived);
 
 	// Anotación OAR.MjolnirSlam del golpe en salto (o su red de seguridad, a_fromAnnotation=false): termina la bajada,
 	// explosión de impacto (solo con la anotación) y attackStop pasada la cola del clip. La encola OARFunctions.

@@ -5,7 +5,6 @@
 #include "13.- EXTERNAL/OpenAnimationReplacer/OpenAnimationReplacerAPI-Functions.h"
 #include "3.- WEAPON/LightningDash.h"
 #include "3.- WEAPON/WeaponManager.h"
-#include "11.- SKYRIM/FirstPersonDiag.h"
 
 namespace Events::OARFunctions
 {
@@ -27,7 +26,6 @@ namespace Events::OARFunctions
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
 				SKSE::GetTaskInterface()->AddTask([] {
-					Diag::DumpHands(FirstPerson ? "OAR Throw 1P" : "OAR Throw");
 					Weapon::WeaponManager::GetSingleton()->OnThrowReleaseAnimationEvent();
 				});
 				return true;
@@ -48,7 +46,6 @@ namespace Events::OARFunctions
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
 				SKSE::GetTaskInterface()->AddTask([] {
-					Diag::DumpHands(FirstPerson ? "OAR Call 1P" : "OAR Call");
 					Weapon::WeaponManager::GetSingleton()->OnCallReleaseAnimationEvent();
 				});
 				return true;
@@ -69,7 +66,6 @@ namespace Events::OARFunctions
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
 				SKSE::GetTaskInterface()->AddTask([] {
-					Diag::DumpHands(FirstPerson ? "OAR Catch 1P" : "OAR Catch");
 					Weapon::WeaponManager::GetSingleton()->OnCatchReleaseAnimationEvent(true);
 				});
 				return true;
@@ -90,7 +86,6 @@ namespace Events::OARFunctions
 			bool RunImpl(RE::TESObjectREFR*, RE::hkbClipGenerator*, void*, Functions::Trigger*) const override
 			{
 				SKSE::GetTaskInterface()->AddTask([] {
-					Diag::DumpHands(FirstPerson ? "OAR Slam 1P" : "OAR Slam");
 					Weapon::LightningDash::OnSlamImpactAnimationEvent(true);
 				});
 				return true;

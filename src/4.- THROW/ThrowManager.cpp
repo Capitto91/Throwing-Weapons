@@ -6,7 +6,6 @@
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
-#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "6.- PHYSICS/CollisionManager.h"
@@ -69,7 +68,6 @@ namespace Throw
 
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
-			Diag::DumpAim(a_shooter, a_origin, cameraPos, forward, aimPoint, hit.hit);
 
 			const RE::NiPoint3 toAimPoint = aimPoint - a_origin;
 			const float        length = toAimPoint.Length();

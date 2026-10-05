@@ -2,7 +2,6 @@
 
 #include "3.- WEAPON/WeaponState.h"
 
-#include "11.- SKYRIM/FirstPersonDiag.h"
 
 namespace Weapon
 {
@@ -36,8 +35,6 @@ namespace Weapon
 		}
 
 		logs::info("Estado del arma: {} -> {}", ToString(state), ToString(a_state));
-		Diag::DumpHands(std::format("estado {} -> {}", ToString(state), ToString(a_state)));
-		Diag::Record(std::format("Estado del arma: {} -> {}", ToString(state), ToString(a_state)));
 		state = a_state;
 	}
 }

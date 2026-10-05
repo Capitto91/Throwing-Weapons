@@ -204,44 +204,21 @@ namespace Animation
 		return applied;
 	}
 
-	namespace
+	std::int32_t GetRightHandTypeFor(const RE::TESBoundObject* a_weapon)
 	{
-		// Hijos ocultos de los huesos "WEAPON" de los dos esqueletos, con su hueso; vacío si la mano derecha tiene algo.
-		std::vector<std::pair<RE::NiNode*, RE::NiPointer<RE::NiAVObject>>> FindOrphanWeaponModels(RE::Actor& a_actor)
-		{
-			std::vector<std::pair<RE::NiNode*, RE::NiPointer<RE::NiAVObject>>> orphans;
-			if (a_actor.GetEquippedObject(false)) {
-				return orphans;
-			}
-
-			for (const bool firstPerson : { false, true }) {
-				auto* root = a_actor.Get3D(firstPerson);
-				auto* weaponNode = root ? root->GetObjectByName("WEAPON") : nullptr;
-				auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
-				if (!asNode) {
-					continue;
-				}
-
-				for (auto& child : asNode->GetChildren()) {
-					if (child && child->GetFlags().any(RE::NiAVObject::Flag::kHidden)) {
-						orphans.emplace_back(asNode, child);
-					}
-				}
-			}
-			return orphans;
+		const auto* weapon = a_weapon ? a_weapon->As<RE::TESObjectWEAP>() : nullptr;
+		if (!weapon) {
+			return Constants::kRightHandTypeOneHanded;
 		}
-	}
 
-	bool HasOrphanWeaponModel(RE::Actor& a_actor)
-	{
-		return !FindOrphanWeaponModels(a_actor).empty();
-	}
-
-	void DetachOrphanWeaponModels(RE::Actor& a_actor)
-	{
-		for (auto& [weaponNode, child] : FindOrphanWeaponModels(a_actor)) {
-			logs::warn("Animation::DetachOrphanWeaponModels: el motor no retiró '{}' tras el desequipado; se desengancha a mano.", child->name.c_str());
-			weaponNode->DetachChild(child.get());
+		switch (const auto type = weapon->GetWeaponType()) {
+		case RE::WEAPON_TYPE::kOneHandSword:
+		case RE::WEAPON_TYPE::kOneHandDagger:
+		case RE::WEAPON_TYPE::kOneHandAxe:
+		case RE::WEAPON_TYPE::kOneHandMace:
+			return static_cast<std::int32_t>(type);
+		default:
+			return Constants::kRightHandTypeOneHanded;
 		}
 	}
 }

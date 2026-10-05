@@ -4,7 +4,6 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
-#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <atomic>
@@ -46,8 +45,6 @@ namespace FrameHook
 				try {
 					Scheduler::RunFrame(delta);
 					Physics::RunFrame(delta);
-					Diag::PollCamera();
-					Diag::PollWeaponAttach();
 				} catch (const std::exception& e) {
 					logs::error("FrameHook: excepción en los bucles por fotograma: {}", e.what());
 				} catch (...) {

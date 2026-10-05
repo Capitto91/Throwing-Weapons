@@ -146,17 +146,7 @@ namespace Weapon
 		// Con a_reattachVfxToHand, las chispas pasan a seguir la mano (Atrape animado).
 		void ReequipAndReset(bool a_reattachVfxToHand = false);
 
-		// Equipa a_weapon sin animación. Si en la mano queda el modelo oculto del arma lanzada, espera a que el motor
-		// lo retire (o lo retira pasado kOrphanWeaponModelTimeoutSeconds). Lo llama ReequipAndReset.
-		void EquipRecoveredWeapon(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_weapon);
-
 		WeaponState weaponState;
-
-		// true desde que la recuperación encola el equipado hasta que se hace; se ignoran pulsaciones de lanzar.
-		bool reequipPending{ false };
-
-		// Invalida las esperas de EquipRecoveredWeapon de una recuperación anterior.
-		std::uint32_t reequipGeneration{ 0 };
 
 		// Si el arma estaba clavada al llamar, para BeginReturn.
 		bool wasStuckBeforeCalling{ false };

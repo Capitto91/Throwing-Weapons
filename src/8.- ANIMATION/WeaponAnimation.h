@@ -49,11 +49,7 @@ namespace Animation
 	// La usa WeaponManager::ThrowWeapon al soltar el arma.
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden);
 
-	// Con la mano derecha vacía, algún hueso "WEAPON" conserva un modelo oculto por SetEquippedWeaponHidden que el motor
-	// aún no ha retirado tras el desequipado. Lo consultan la recuperación y Lightning Dash antes de reequipar.
-	[[nodiscard]] bool HasOrphanWeaponModel(RE::Actor& a_actor);
-
-	// Desengancha esos modelos huérfanos (solo con la mano derecha vacía): si se reequipa encima quedan dos y el motor
-	// acaba vaciando la mano. Último recurso de la recuperación si el motor no los retira a tiempo.
-	void DetachOrphanWeaponModels(RE::Actor& a_actor);
+	// Valor de iRightHandType para a_weapon: su tipo si es de una mano (espada 1 a maza 4, la misma numeración del
+	// grafo); si no, Constants::kRightHandTypeOneHanded. Lo usan Llamada, Atrape y el golpe en salto.
+	[[nodiscard]] std::int32_t GetRightHandTypeFor(const RE::TESBoundObject* a_weapon);
 }

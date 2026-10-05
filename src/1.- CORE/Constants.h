@@ -41,7 +41,7 @@ namespace Constants
 	// Graph variable vanilla con el tipo de arma de la mano derecha; se escribe para el gesto sin equipar nada.
 	inline constexpr const char* kRightHandTypeGraphVariable = "iRightHandType";
 
-	// Valor de iRightHandType para "arma de una mano".
+	// Respaldo de iRightHandType ("una mano", hacha) si no se conoce el tipo del arma (Animation::GetRightHandTypeFor).
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
 
 
@@ -143,10 +143,6 @@ namespace Constants
 	// Tiempo que la graph variable "SkipEquipAnimation" se deja activa al reequipar.
 	inline constexpr std::chrono::milliseconds kSkipEquipAnimationWindow{ 500 };
 
-	// Red de seguridad: espera máxima, al recuperar el arma, a que el motor retire el modelo oculto del arma lanzada
-	// (retrasos medidos: 0,5-0,9 s tras el desequipado). Pasado este tiempo se desengancha a mano antes de equipar.
-	inline constexpr float kOrphanWeaponModelTimeoutSeconds = 1.0f;
-
 	// -- Giro en vuelo (punto 10) --
 	// Nodo hijo del NIF del arma que gira; debe coincidir con el nombre en NifSkope.
 	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
@@ -161,7 +157,7 @@ namespace Constants
 	// Antelación con la que empieza el enderezado antes de llegar a la mano.
 	inline constexpr float kSpinStraightenLeadTime = 0.2f;  // s
 
-// -- Clavado en un actor (punto 6) --
+	// -- Clavado en un actor (punto 6) --
 	// Habilidad de parálisis (Ability, Constant Effect) concedida mientras el arma está clavada.
 	// CAP_ThorMjolnir_Ability_ThrowingParalysis, FormID local del ESL.
 	inline constexpr RE::FormID kEmbeddedParalysisSpellLocalFormID = 0x019;

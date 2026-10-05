@@ -8,7 +8,6 @@
 #include "10.- EVENTS/AttackInterruptWatcher.h"
 #include "10.- EVENTS/GraphSettleWatcher.h"
 #include "11.- SKYRIM/ActorUtils.h"
-#include "11.- SKYRIM/FirstPersonDiag.h"
 #include "12.- AUDIO/CatchSound.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "2.- INPUT/InputManager.h"
@@ -102,7 +101,7 @@ namespace Weapon
 		}
 
 		// Se ignora la pulsación mientras siga pendiente el cierre del ciclo anterior.
-		if (throwTailActive || callAnimationActive || catchAnimationActive || reequipPending) {
+		if (throwTailActive || callAnimationActive || catchAnimationActive) {
 			return;
 		}
 
@@ -206,8 +205,6 @@ namespace Weapon
 		catchEndSoundPlayed = false;
 		callAnimationActive = false;
 		throwPressArmed = false;
-		reequipPending = false;
-		++reequipGeneration;
 
 		// Desbloquea movimiento, cambio de cámara y AnimationDriven por si se cargó en kThrowing o en un dash.
 		Input::SetMovementLocked(false);
@@ -452,7 +449,7 @@ namespace Weapon
 		}
 
 		LightningDash::StartCooldown(*player);
-		LightningDash::Begin(*player, destination, slamGround, [this]() {
+		LightningDash::Begin(*player, weaponState.GetActiveWeapon(), destination, slamGround, [this]() {
 			// Si volvió sola entretanto (agua, inmune o tiempo máximo), el regreso ya la trae a la mano.
 			const auto current = weaponState.GetState();
 			if (current == State::kThrown || current == State::kStuck) {
@@ -584,8 +581,6 @@ namespace Weapon
 		Events::GraphSettleWatcher::Track(*player);
 
 		// Si el grafo rechaza el evento, la animación no se verá (conflicto con otro behavior).
-		Diag::StartTrace("Lanzar", 6.0f);
-		Diag::NoteSent("attackStart", "Lanzar");
 		if (!player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 			logs::warn("WeaponManager: el grafo de animación rechazó '{}' para Lanzar; el arma saldrá por la red de seguridad.", Constants::kLightAttackAnimationEvent);
 		}
@@ -632,7 +627,6 @@ namespace Weapon
 			(void)Scheduler::After(Constants::kAttackInterruptPostEventDelay, fire);
 		});
 
-		Diag::NoteSent("attackStop", "interrumpir ataque");
 		player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent);
 
 		(void)Scheduler::After(Constants::kAttackInterruptFallbackDelay, fire);
@@ -686,8 +680,8 @@ namespace Weapon
 		Input::SetMovementLocked(true);
 		Animation::SetAnimationDriven(*player, true);
 
-		// iRightHandType a "una mano" para que la rama de combate reproduzca Call.hkx.
-		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
+		// iRightHandType al tipo del arma lanzada para que la rama de combate reproduzca Call.hkx.
+		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Animation::GetRightHandTypeFor(weaponState.GetActiveWeapon()));
 
 		Animation::SetCallTrigger(*player, true);
 
@@ -774,8 +768,8 @@ namespace Weapon
 		Input::SetMovementLocked(true);
 		Animation::SetAnimationDriven(*player, true);
 
-		// iRightHandType a "una mano"; el arma real aún no está equipada.
-		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Constants::kRightHandTypeOneHanded);
+		// iRightHandType al tipo del arma lanzada; el arma real aún no está equipada.
+		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Animation::GetRightHandTypeFor(weaponState.GetActiveWeapon()));
 
 		Animation::SetCatchTrigger(*player, true);
 
@@ -930,7 +924,6 @@ namespace Weapon
 
 				// Con las manos vacías el motor desenvaina los puños; sus eventos llegan unos fotogramas después.
 				Events::GraphSettleWatcher::NoteDrawExpected();
-				Diag::NoteSent("UnequipObject", "cola de Lanzar");
 				RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
 
 				// Solo desbloquea movimiento y AnimationDriven si Llamada o Atrape no los han tomado.
@@ -1078,73 +1071,33 @@ namespace Weapon
 		auto* weapon = weaponState.GetActiveWeapon();
 
 		if (player && weapon && throwTailWasPending) {
-			// Sin desequipar todavía: se vuelve a mostrar en vez de reequiparla encima (que desequipa y equipa, y con el
-			// estado ya en mano retiraría Lightning Dash), y se hace la limpieza del desequipado diferido. El desequipado
-			// también cerraba el ataque de Throw.hkx: sin él lo cierra attackStop, como al final de Llamada y Atrape.
+			// Sin desequipar todavía: se vuelve a mostrar en vez de reequiparla encima (retiraría Lightning Dash) y se hace la
+			// limpieza del desequipado diferido; el ataque de Throw.hkx, que cerraba el desequipado, lo cierra attackStop.
 			Animation::SetEquippedWeaponHidden(*player, false);
 			if (!callAnimationActive && !catchAnimationActive) {
 				Animation::SetAnimationDriven(*player, false);
 				Input::SetMovementLocked(false);
-				Diag::NoteSent("attackStop", "recuperar con la cola de Lanzar pendiente");
 				Events::GraphSettleWatcher::NoteAttackStopSent(true);
 				if (!player->NotifyAnimationGraph(Constants::kAttackStopAnimationEvent)) {
 					Events::GraphSettleWatcher::NoteAttackStopSent(false);
 				}
 			}
 		} else if (player && weapon) {
-			Diag::NoteSent("EquipObject encolado (AddTask)", "recuperar");
-			reequipPending = true;
 			// Diferido un tick: tras una pantalla de carga, síncrono no equipa.
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
-				EquipRecoveredWeapon(player, weapon);
+				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
+				player->SetGraphVariableBool("SkipEquipAnimation", true);
+				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+
+				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
+				Scheduler::Cancel(skipEquipAnimationToken);
+				skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
+					player->SetGraphVariableBool("SkipEquipAnimation", false);
+				});
 			});
 		}
 
 		weaponState.SetActiveWeapon(nullptr);
 		TransitionState(State::kInHand, false);
-	}
-
-	void WeaponManager::EquipRecoveredWeapon(RE::PlayerCharacter* a_player, RE::TESBoundObject* a_weapon)
-	{
-		const std::uint32_t generation = ++reequipGeneration;
-
-		auto equip = [this, a_player, a_weapon, generation]() {
-			if (generation != reequipGeneration) {
-				return;
-			}
-			reequipPending = false;
-
-			// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
-			a_player->SetGraphVariableBool("SkipEquipAnimation", true);
-			Diag::NoteSent("EquipObject", "recuperar");
-			RE::ActorEquipManager::GetSingleton()->EquipObject(a_player, a_weapon, nullptr, 1, nullptr, false, true, true, true);
-
-			// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
-			Scheduler::Cancel(skipEquipAnimationToken);
-			skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [a_player]() {
-				a_player->SetGraphVariableBool("SkipEquipAnimation", false);
-			});
-		};
-
-		if (!Animation::HasOrphanWeaponModel(*a_player)) {
-			equip();
-			return;
-		}
-
-		// Equipar encima del modelo huérfano dejaría dos en la mano; se espera a que el motor lo retire.
-		Diag::NoteSent("esperando a que el motor retire el modelo huérfano", "recuperar");
-		(void)Physics::StartTickLoop(a_player->GetHandle(), [a_player, equip, waited = 0.0f](RE::TESObjectREFR&, float a_deltaSeconds) mutable {
-			waited += a_deltaSeconds;
-			if (Animation::HasOrphanWeaponModel(*a_player) && waited < Constants::kOrphanWeaponModelTimeoutSeconds) {
-				return true;
-			}
-
-			// Equipar y desenganchar tocan el 3D: fuera del tick.
-			(void)Scheduler::After(std::chrono::milliseconds{ 0 }, [a_player, equip]() {
-				Animation::DetachOrphanWeaponModels(*a_player);
-				equip();
-			});
-			return false;
-		});
 	}
 }
