@@ -4,7 +4,10 @@
 
 namespace ActorUtils
 {
-	// true si a_actor lleva en la mano derecha un arma con Constants::kThrowableWeaponKeyword.
+	// true si a_form es un arma con la keyword del arma arrojadiza (Forms::throwableWeaponKeyword).
+	bool IsThrowableWeapon(const RE::TESForm* a_form);
+
+	// true si a_actor lleva el arma arrojadiza en la mano derecha.
 	bool IsThrowableWeaponEquipped(RE::Actor* a_actor);
 
 	// Nombre del nodo del 3D de a_actor más cercano a a_worldPoint (vacío sin 3D).

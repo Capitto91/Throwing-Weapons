@@ -3,6 +3,7 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
@@ -127,49 +128,35 @@ namespace Animation
 
 	namespace
 	{
-		// Global buscado por EditorID la primera vez y cacheado.
-		RE::TESGlobal* LookupTriggerGlobal(const char* a_editorID)
+		// Pone a_global a 1 o 0. false si no existe (Forms ya lo avisó al cargar).
+		bool SetTriggerGlobal(RE::TESGlobal* a_global, bool a_active)
 		{
-			auto* global = RE::TESForm::LookupByEditorID<RE::TESGlobal>(a_editorID);
-			if (!global) {
-				logs::warn("Animation: no se encontró el Global '{}' (revisa que exista en la Creation Kit/xEdit, con ese EditorID exacto).", a_editorID);
+			if (!a_global) {
+				return false;
 			}
-			return global;
+			a_global->value = a_active ? 1.0f : 0.0f;
+			return true;
 		}
 	}
 
 	void SetThrowTrigger(RE::Actor&, bool a_active)
 	{
-		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kThrowTriggerGlobalEditorID);
-		if (global) {
-			global->value = a_active ? 1.0f : 0.0f;
-		}
+		SetTriggerGlobal(Forms::throwTriggerGlobal, a_active);
 	}
 
 	void SetCallTrigger(RE::Actor&, bool a_active)
 	{
-		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kCallTriggerGlobalEditorID);
-		if (global) {
-			global->value = a_active ? 1.0f : 0.0f;
-		}
+		SetTriggerGlobal(Forms::callTriggerGlobal, a_active);
 	}
 
 	void SetCatchTrigger(RE::Actor&, bool a_active)
 	{
-		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kCatchTriggerGlobalEditorID);
-		if (global) {
-			global->value = a_active ? 1.0f : 0.0f;
-		}
+		SetTriggerGlobal(Forms::catchTriggerGlobal, a_active);
 	}
 
 	bool SetSlamTrigger(RE::Actor&, bool a_active)
 	{
-		static RE::TESGlobal* global = LookupTriggerGlobal(Constants::kSlamTriggerGlobalEditorID);
-		if (!global) {
-			return false;
-		}
-		global->value = a_active ? 1.0f : 0.0f;
-		return true;
+		return SetTriggerGlobal(Forms::slamTriggerGlobal, a_active);
 	}
 
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)

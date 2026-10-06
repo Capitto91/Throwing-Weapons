@@ -29,16 +29,16 @@ namespace Animation
 	// durante a_duration. Lo llama Return::BeginReturn si el arma estaba clavada.
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds, float a_duration);
 
-	// Activa o desactiva el Global de Lanzar (Constants::kThrowTriggerGlobalEditorID) que lee OAR.
+	// Activa o desactiva el Global de Lanzar (Forms::throwTriggerGlobal) que lee OAR.
 	void SetThrowTrigger(RE::Actor& a_actor, bool a_active);
 
-	// Igual para Llamada (Constants::kCallTriggerGlobalEditorID).
+	// Igual para Llamada (Forms::callTriggerGlobal).
 	void SetCallTrigger(RE::Actor& a_actor, bool a_active);
 
-	// Igual para Atrape (Constants::kCatchTriggerGlobalEditorID).
+	// Igual para Atrape (Forms::catchTriggerGlobal).
 	void SetCatchTrigger(RE::Actor& a_actor, bool a_active);
 
-	// Igual para el golpe en salto de Lightning Dash (Constants::kSlamTriggerGlobalEditorID).
+	// Igual para el golpe en salto de Lightning Dash (Forms::slamTriggerGlobal).
 	// false si el Global no existe (LightningDash baja entonces sin animación).
 	bool SetSlamTrigger(RE::Actor& a_actor, bool a_active);
 

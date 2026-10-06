@@ -3,8 +3,10 @@
 #include "10.- EVENTS/EventManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/Requirements.h"
 #include "10.- EVENTS/OARFunctions.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "11.- SKYRIM/TDMBridge.h"
 #include "12.- AUDIO/SoundResolver.h"
 #include "14.- UI/ConfigMenu.h"
@@ -154,24 +156,18 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
+				if (!ActorUtils::IsThrowableWeapon(RE::TESForm::LookupByID(a_event->baseObject))) {
+					return RE::BSEventNotifyControl::kContinue;
+				}
+
 				// Al equipar el arma arrojadiza, efectos de ataque fuerte y brillo, también durante una carga.
-				{
-					auto* equipForm = RE::TESForm::LookupByID(a_event->baseObject);
-					auto* equipWeapon = equipForm ? equipForm->As<RE::TESObjectWEAP>() : nullptr;
-					if (a_event->equipped && equipWeapon && equipWeapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
-						Animation::PowerAttackVFX::EnsureRegistered(*player);
-						Animation::GlowMapControl::EnsureRunning();
-					}
+				if (a_event->equipped) {
+					Animation::PowerAttackVFX::EnsureRegistered(*player);
+					Animation::GlowMapControl::EnsureRunning();
 				}
 
 				// Durante una pantalla de carga se ignora; kPostLoadGame ya concede el poder.
 				if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) {
-					return RE::BSEventNotifyControl::kContinue;
-				}
-
-				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
-				auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
-				if (!weapon || !weapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
@@ -205,7 +201,7 @@ namespace Events
 			RE::BSEventNotifyControl ProcessEvent(const RE::TESSpellCastEvent* a_event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
-				auto* spell = Weapon::LightningDash::GetSpell();
+				auto* spell = Forms::lightningDashSpell;
 				if (!a_event || !player || !spell || a_event->object.get() != player || a_event->spell != spell->GetFormID()) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
@@ -292,6 +288,8 @@ namespace Events
 				Input::InputManager::GetSingleton()->Init();
 				break;
 			case SKSE::MessagingInterface::kDataLoaded:
+				// Formularios del plugin, antes que todo lo que los usa (sinks y Requirements::CheckPluginFile).
+				Forms::Load();
 				// Sinks del motor, con los datos del juego ya cargados.
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
 				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());

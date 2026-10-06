@@ -3,6 +3,7 @@
 #include "1.- CORE/Requirements.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 
 #include <filesystem>
 #include <optional>
@@ -111,14 +112,15 @@ namespace Requirements
 			return;
 		}
 
-		const auto pluginName = Constants::kSoundPluginName;
+		const auto pluginName = Constants::kPluginName;
 		if (!dataHandler->LookupModByName(pluginName)) {
 			logs::error("[FALTA] {} no está activo en el orden de carga.", pluginName);
 			return;
 		}
 
-		// Un formulario propio conocido: si el .esp está pero no se resuelve, el juego no admite su rango de FormID.
-		if (!dataHandler->LookupForm<RE::TESObjectACTI>(Constants::kWeaponGlowActivatorLocalFormID, pluginName)) {
+		// Un formulario propio conocido (ya resuelto por Forms): si el .esp está pero no se resuelve, el juego no admite
+		// su rango de FormID.
+		if (!Forms::weaponGlowActivator) {
 			logs::error(
 				"[ERROR] {} está activo pero sus formularios no se resuelven: hace falta Skyrim {} o posterior, "
 				"o \"Backported Extended ESL Support\" en versiones anteriores.",

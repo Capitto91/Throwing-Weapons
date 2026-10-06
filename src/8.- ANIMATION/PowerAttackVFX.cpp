@@ -5,6 +5,7 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
@@ -18,14 +19,6 @@ namespace Animation::PowerAttackVFX
 		bool                   g_active{ false };
 		bool                   g_ownsGlow{ false };
 		Scheduler::CancelToken g_safetyToken;
-
-		bool HasThrowableWeaponInHand(RE::Actor& a_actor)
-		{
-			// false = mano derecha / mano principal.
-			auto* rightHand = a_actor.GetEquippedObject(false);
-			auto* weapon = rightHand ? rightHand->As<RE::TESObjectWEAP>() : nullptr;
-			return weapon && weapon->HasKeywordString(Constants::kThrowableWeaponKeyword);
-		}
 
 		void ClearState()
 		{
@@ -71,7 +64,7 @@ namespace Animation::PowerAttackVFX
 
 			if (!Settings::GetPowerAttackEffects() ||
 				Weapon::WeaponManager::GetSingleton()->GetState() != Weapon::State::kInHand ||
-				!HasThrowableWeaponInHand(*player)) {
+				!ActorUtils::IsThrowableWeaponEquipped(player)) {
 				return;
 			}
 

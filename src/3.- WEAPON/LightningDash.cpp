@@ -3,6 +3,7 @@
 #include "3.- WEAPON/LightningDash.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/GraphSettleWatcher.h"
@@ -39,7 +40,7 @@ namespace Weapon::LightningDash
 			bool         landed{ false };
 			bool         impactDone{ false };
 			RE::NiPoint3 ground{};
-			double       startTime{ 0.0 };     // FrameHook::Now del attackStart
+			double       startTime{ 0.0 };      // FrameHook::Now del attackStart
 			bool         firstPerson{ false };  // cámara al aceptarse el attackStart: clip, cola y medidas
 		};
 		SlamState g_slam;
@@ -52,57 +53,6 @@ namespace Weapon::LightningDash
 		std::array<float, 2>              g_slamLeadSeconds{ Constants::kSlamAnimationLeadTime, Constants::kSlamAnimationLeadTimeFirstPerson };
 		std::array<std::vector<float>, 2> g_slamLeadSamples;
 
-		// Formularios del ESL resueltos una vez.
-		template <class T>
-		T* LookupForm(RE::FormID a_localFormID, std::string_view a_pluginName)
-		{
-			auto* dataHandler = RE::TESDataHandler::GetSingleton();
-			return dataHandler ? dataHandler->LookupForm<T>(a_localFormID, a_pluginName) : nullptr;
-		}
-
-		RE::SpellItem* GetCooldownSpell()
-		{
-			static RE::SpellItem* spell = LookupForm<RE::SpellItem>(Constants::kLightningDashCooldownSpellLocalFormID, Constants::kSoundPluginName);
-			if (!spell) {
-				logs::warn("LightningDash: no se encontró el hechizo de cooldown (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kLightningDashCooldownSpellLocalFormID, Constants::kSoundPluginName);
-			}
-			return spell;
-		}
-
-		RE::EffectSetting* GetCooldownEffect()
-		{
-			static RE::EffectSetting* effect = LookupForm<RE::EffectSetting>(Constants::kLightningDashCooldownEffectLocalFormID, Constants::kSoundPluginName);
-			if (!effect) {
-				logs::warn("LightningDash: no se encontró el efecto de cooldown (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kLightningDashCooldownEffectLocalFormID, Constants::kSoundPluginName);
-			}
-			return effect;
-		}
-
-		// Busca un formulario y avisa en el log si no está. Para inicializar las cachés de abajo una sola vez.
-		template <class T>
-		T* LookupWithWarning(RE::FormID a_formID, std::string_view a_pluginName, std::string_view a_description)
-		{
-			auto* form = LookupForm<T>(a_formID, a_pluginName);
-			if (!form) {
-				logs::warn("LightningDash: no se encontró {} (FormID 0x{:06X}) en \"{}\".", a_description, a_formID, a_pluginName);
-			}
-			return form;
-		}
-
-		RE::BGSReferenceEffect* GetVisualEffect()
-		{
-			static RE::BGSReferenceEffect* form = LookupWithWarning<RE::BGSReferenceEffect>(Constants::kLightningDashVisualEffectLocalFormID, Constants::kSoundPluginName, "el VisualEffect");
-			return form;
-		}
-
-		RE::SpellItem* GetVFXSpell()
-		{
-			static RE::SpellItem* form = LookupWithWarning<RE::SpellItem>(Constants::kLightningDashVFXSpellLocalFormID, Constants::kSoundPluginName, "el hechizo del aspecto del dash");
-			return form;
-		}
-
 		// Retira el hechizo del aspecto del dash (el motor apaga su shader y su arte) y devuelve el cambio de cámara.
 		// Lo llaman la llegada del desplazamiento y Finish (cancelación).
 		void StopDashVFX()
@@ -110,7 +60,7 @@ namespace Weapon::LightningDash
 			Input::SetCameraSwitchLocked(false);
 
 			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* spell = GetVFXSpell();
+			auto* spell = Forms::lightningDashVfxSpell;
 			auto* magicTarget = player ? player->AsMagicTarget() : nullptr;
 			if (spell && magicTarget) {
 				auto caster = player->GetHandle();
@@ -118,39 +68,21 @@ namespace Weapon::LightningDash
 			}
 		}
 
-		RE::TESImageSpaceModifier* GetImageSpaceModifier()
-		{
-			static RE::TESImageSpaceModifier* form = LookupWithWarning<RE::TESImageSpaceModifier>(Constants::kLightningDashImageSpaceModLocalFormID, Constants::kSoundPluginName, "el modificador de imagen");
-			return form;
-		}
-
-		RE::BGSExplosion* GetDustExplosion()
-		{
-			static RE::BGSExplosion* form = LookupWithWarning<RE::BGSExplosion>(Constants::kLightningDashDustExplosionFormID, Constants::kLightningDashVanillaPluginName, "la explosión de polvo");
-			return form;
-		}
-
-		RE::BGSExplosion* GetShockExplosion()
-		{
-			static RE::BGSExplosion* form = LookupWithWarning<RE::BGSExplosion>(Constants::kLightningDashShockExplosionFormID, Constants::kLightningDashVanillaPluginName, "la explosión eléctrica");
-			return form;
-		}
-
 		// Efectos al empezar: explosiones de polvo y descarga donde está el jugador, modificador de imagen, y el hechizo
 		// del aspecto del dash (shader y arte como efecto mágico), que StopDashVFX retira al llegar.
 		void ApplyStartEffects(RE::PlayerCharacter& a_player)
 		{
-			for (auto* explosion : { GetDustExplosion(), GetShockExplosion() }) {
+			for (auto* explosion : { Forms::lightningDashDustExplosion, Forms::lightningDashShockExplosion }) {
 				if (explosion) {
 					(void)a_player.PlaceObjectAtMe(explosion, false);
 				}
 			}
 
-			if (auto* imageSpaceModifier = GetImageSpaceModifier()) {
+			if (auto* imageSpaceModifier = Forms::lightningDashImageSpaceModifier) {
 				(void)RE::ImageSpaceModifierInstanceForm::Trigger(imageSpaceModifier, 1.0f, nullptr);
 			}
 
-			auto* spell = GetVFXSpell();
+			auto* spell = Forms::lightningDashVfxSpell;
 			auto* caster = spell ? a_player.GetMagicCaster(RE::MagicSystem::CastingSource::kInstant) : nullptr;
 			if (caster) {
 				caster->CastSpellImmediate(spell, false, &a_player, 1.0f, false, 0.0f, nullptr);
@@ -345,7 +277,7 @@ namespace Weapon::LightningDash
 					waitingForAnimation = true;
 				}
 			} else {
-				logs::warn("LightningDash: Global '{}' no encontrado, golpe en salto sin animación.", Constants::kSlamTriggerGlobalEditorID);
+				logs::warn("LightningDash: sin el Global del golpe en salto (FormID local 0x{:03X}), golpe en salto sin animación.", Constants::kSlamTriggerGlobalLocalFormID);
 			}
 
 			g_tickToken = Physics::StartTickLoop(player->GetHandle(), [top, height, ground = a_ground, descentTime, waitingForAnimation, a_generation, waited = 0.0f, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
@@ -393,30 +325,16 @@ namespace Weapon::LightningDash
 		}
 	}
 
-	RE::SpellItem* GetSpell()
-	{
-		// Aviso una sola vez: CastHook lo consulta en cada lanzamiento de cualquier actor.
-		static RE::SpellItem* spell = [] {
-			auto* found = LookupForm<RE::SpellItem>(Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName);
-			if (!found) {
-				logs::warn("LightningDash: no se encontró el hechizo (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kLightningDashSpellLocalFormID, Constants::kSoundPluginName);
-			}
-			return found;
-		}();
-		return spell;
-	}
-
 	bool IsOnCooldown(RE::Actor& a_actor)
 	{
-		auto* effect = GetCooldownEffect();
+		auto* effect = Forms::lightningDashCooldownEffect;
 		auto* magicTarget = a_actor.AsMagicTarget();
 		return effect && magicTarget && magicTarget->HasMagicEffect(effect);
 	}
 
 	void StartCooldown(RE::Actor& a_actor)
 	{
-		auto* spell = GetCooldownSpell();
+		auto* spell = Forms::lightningDashCooldownSpell;
 		auto* caster = spell ? a_actor.GetMagicCaster(RE::MagicSystem::CastingSource::kInstant) : nullptr;
 		if (caster) {
 			caster->CastSpellImmediate(spell, false, &a_actor, 1.0f, false, 0.0f, nullptr);
@@ -619,7 +537,7 @@ namespace Weapon::LightningDash
 			return;
 		}
 
-		auto* visualEffect = GetVisualEffect();
+		auto* visualEffect = Forms::lightningDashLegacyVisualEffect;
 		if (!visualEffect) {
 			return;
 		}

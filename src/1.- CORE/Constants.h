@@ -9,17 +9,21 @@
 
 namespace Constants
 {
-	// EditorID de la Keyword que identifica al arma arrojadiza.
-	inline constexpr std::string_view kThrowableWeaponKeyword{ "WAF_ThrowableWeapon" };
+	// Plugins donde Forms busca cada FormID local: el .esp del mod y el juego base.
+	inline constexpr std::string_view kPluginName = "ThorMjolnirOAR.esp";
+	inline constexpr std::string_view kSkyrimPluginName = "Skyrim.esm";
+
+	// Keyword que identifica al arma arrojadiza (WAF_ThrowableWeapon), FormID local del ESL.
+	inline constexpr RE::FormID kThrowableWeaponKeywordLocalFormID = 0x018;
 
 	// Ruta del INI, relativa a la carpeta del juego.
 	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 
 	// -- Lanzar (Open Animation Replacer) --
 
-	// Global que hace que el submod de OAR sustituya el ataque ligero por Throw.hkx.
-	// Lo activa WeaponManager antes de kLightAttackAnimationEvent y lo apaga con la liberación.
-	inline constexpr const char* kThrowTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_ThrowTrigger";
+	// Global (CAP_GlobalVariable_ThorMjolnir_ThrowTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Throw.hkx. Lo activa WeaponManager antes de kLightAttackAnimationEvent y lo apaga con la liberación.
+	inline constexpr RE::FormID kThrowTriggerGlobalLocalFormID = 0x01F;
 
 	// Graph variable vanilla activada durante Lanzar y Llamada junto al bloqueo de movimiento.
 	inline constexpr const char* kAnimationDrivenGraphVariable = "bAnimationDriven";
@@ -30,20 +34,20 @@ namespace Constants
 	// Evento vanilla que devuelve el grafo a reposo tras Llamada y Atrape.
 	inline constexpr const char* kAttackStopAnimationEvent = "attackStop";
 
-// Red de seguridad: el arma se lanza pasado este margen si no llega la anotación de Throw.hkx.
+	// Red de seguridad: el arma se lanza pasado este margen si no llega la anotación de Throw.hkx.
 	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
 
 	// -- Llamada (Open Animation Replacer) --
 
-	// Global que hace que el submod de OAR sustituya el ataque ligero por Call.hkx.
-	inline constexpr const char* kCallTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_CallTrigger";
+	// Global (CAP_GlobalVariable_ThorMjolnir_CallTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Call.hkx.
+	inline constexpr RE::FormID kCallTriggerGlobalLocalFormID = 0x020;
 
 	// Graph variable vanilla con el tipo de arma de la mano derecha; se escribe para el gesto sin equipar nada.
 	inline constexpr const char* kRightHandTypeGraphVariable = "iRightHandType";
 
 	// Respaldo de iRightHandType ("una mano", hacha) si no se conoce el tipo del arma (Animation::GetRightHandTypeFor).
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
-
 
 	// Eventos vanilla de inicio (weaponSwing) y fin (attackStop) del golpe para PowerAttackVFX.
 	inline constexpr std::string_view kPowerAttackVfxStartEvent = "weaponSwing";
@@ -61,12 +65,12 @@ namespace Constants
 	// Mínimo del pulso como fracción de la intensidad.
 	inline constexpr float kGlowMapPulseMinFactor = 0.15f;
 
-	// Keywords vanilla de raza de cada tipo de criatura.
-	inline constexpr const char* kGlowMapDragonKeyword = "ActorTypeDragon";
-	inline constexpr const char* kGlowMapUndeadKeyword = "ActorTypeUndead";
-	inline constexpr const char* kGlowMapDaedraKeyword = "ActorTypeDaedra";
+	// Keywords vanilla de raza de cada tipo de criatura (ActorTypeDragon/Undead/Daedra), FormID de Skyrim.esm.
+	inline constexpr RE::FormID kGlowMapDragonKeywordFormID = 0x035D59;
+	inline constexpr RE::FormID kGlowMapUndeadKeywordFormID = 0x013796;
+	inline constexpr RE::FormID kGlowMapDaedraKeywordFormID = 0x013797;
 
-// Red de seguridad: el regreso empieza pasado este margen si no llega la anotación de Call.hkx.
+	// Red de seguridad: el regreso empieza pasado este margen si no llega la anotación de Call.hkx.
 	inline constexpr std::chrono::milliseconds kCallReleaseFallbackWindow{ 1500 };
 
 	// Chasquido de dedos de Llamada (ruta relativa a Data).
@@ -74,10 +78,11 @@ namespace Constants
 
 	// -- Atrape (Open Animation Replacer) --
 
-	// Global que hace que el submod de OAR sustituya el ataque ligero por Catch.hkx.
-	inline constexpr const char* kCatchTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_CatchTrigger";
+	// Global (CAP_GlobalVariable_ThorMjolnir_CatchTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Catch.hkx.
+	inline constexpr RE::FormID kCatchTriggerGlobalLocalFormID = 0x021;
 
-// Red de seguridad: el reequipado ocurre pasado este margen si no llega la anotación de Catch.hkx.
+	// Red de seguridad: el reequipado ocurre pasado este margen si no llega la anotación de Catch.hkx.
 	inline constexpr std::chrono::milliseconds kCatchReleaseFallbackWindow{ 1500 };
 
 	// Tras soltar el arma se oculta y el desequipado real espera este margen, para no cortar Throw.hkx.
@@ -203,7 +208,6 @@ namespace Constants
 	inline constexpr float kLightningDashSurfaceStandoff = 60.0f;
 	inline constexpr float kLightningDashActorGap = 60.0f;
 
-
 	// Avisos en pantalla: arma en la mano, ya volviendo, demasiado lejos y cooldown activo.
 	inline constexpr const char* kLightningDashInHandMessage = "Kyne's Thunder must be thrown first.";
 	inline constexpr const char* kLightningDashReturningMessage = "Kyne's Thunder is already returning.";
@@ -224,18 +228,18 @@ namespace Constants
 	// Modificador de imagen al empezar el desplazamiento (CAP_ThorMjolnir_ImageSPaceMod_LightningDash), FormID local del ESL.
 	inline constexpr RE::FormID kLightningDashImageSpaceModLocalFormID = 0x017;
 
-	// Explosiones vanilla sin daño colocadas donde está el jugador al empezar: polvo (FXdustDropSmExplosion)
-	// y descarga (ExplosionShockMass01, empuja objetos sueltos).
-	inline constexpr RE::FormID       kLightningDashDustExplosionFormID = 0x01A13C;
-	inline constexpr RE::FormID       kLightningDashShockExplosionFormID = 0x0D13E8;
-	inline constexpr std::string_view kLightningDashVanillaPluginName = "Skyrim.esm";
+	// Explosiones vanilla sin daño colocadas donde está el jugador al empezar (FormID de Skyrim.esm): polvo
+	// (FXdustDropSmExplosion) y descarga (ExplosionShockMass01, empuja objetos sueltos).
+	inline constexpr RE::FormID kLightningDashDustExplosionFormID = 0x01A13C;
+	inline constexpr RE::FormID kLightningDashShockExplosionFormID = 0x0D13E8;
 
 	// Hueso del esqueleto vanilla donde se ancla la estela del jugador durante el desplazamiento.
 	inline constexpr const char* kLightningDashTrailNodeName = "NPC Spine2 [Spn2]";
 
 	// -- Golpe en salto de Lightning Dash (arma en vuelo y llegada a poca altura) --
-	// Global que hace que el submod Slam de OAR sustituya el ataque ligero por el golpe en salto.
-	inline constexpr const char* kSlamTriggerGlobalEditorID = "CAP_GlobalVariable_ThorMjolnir_SlamTrigger";
+	// Global (CAP_GlobalVariable_ThorMjolnir_SlamTrigger, FormID local del ESL) que hace que el submod Slam de OAR
+	// sustituya el ataque ligero por el golpe en salto.
+	inline constexpr RE::FormID kSlamTriggerGlobalLocalFormID = 0x01C;
 
 	// BGSExplosion del golpe en salto (CAP_ThorMjolnir_Explosion_MjolnirSlam, ThorMjolnirExplosion.nif), FormID local del ESL.
 	inline constexpr RE::FormID kSlamExplosionLocalFormID = 0x01D;
@@ -288,9 +292,6 @@ namespace Constants
 
 	// Eje local (unitario) del temblor.
 	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
-
-	// Nombre del .esp del mod, para LookupForm con FormID local.
-	inline constexpr std::string_view kSoundPluginName = "ThorMjolnirOAR.esp";
 
 	// -- Sonidos (12.- AUDIO) --
 	// Silbido del lanzamiento (ruta relativa a Data).

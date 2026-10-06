@@ -2,37 +2,13 @@
 
 #include "8.- ANIMATION/WeaponImpactVFX.h"
 
-#include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/Settings.h"
 
 namespace Animation
 {
 	namespace
 	{
-		// BGSExplosion del ESL por FormID local; avisa si no está. Para inicializar las cachés de abajo una sola vez.
-		RE::BGSExplosion* LookupExplosion(RE::FormID a_localFormID)
-		{
-			auto* dataHandler = RE::TESDataHandler::GetSingleton();
-			auto* form = dataHandler ? dataHandler->LookupForm<RE::BGSExplosion>(a_localFormID, Constants::kSoundPluginName) : nullptr;
-			if (!form) {
-				logs::warn("Animation::WeaponImpactVFX: no se encontró el BGSExplosion (FormID local 0x{:03X}) en \"{}\".",
-					a_localFormID, Constants::kSoundPluginName);
-			}
-			return form;
-		}
-
-		RE::BGSExplosion* GetImpactExplosionForm()
-		{
-			static RE::BGSExplosion* form = LookupExplosion(Constants::kImpactExplosionLocalFormID);
-			return form;
-		}
-
-		RE::BGSExplosion* GetSlamExplosionForm()
-		{
-			static RE::BGSExplosion* form = LookupExplosion(Constants::kSlamExplosionLocalFormID);
-			return form;
-		}
-
 		// Coloca a_form en a_position; con a_owner, propietario de la explosión antes de que el motor busque
 		// a quién alcanza (en su primera actualización).
 		void PlaceExplosion(RE::TESObjectREFR& a_spawnAt, RE::BGSExplosion* a_form, const RE::NiPoint3& a_position, RE::Actor* a_owner)
@@ -66,11 +42,11 @@ namespace Animation
 			return;
 		}
 
-		PlaceExplosion(a_spawnAt, GetImpactExplosionForm(), a_position, nullptr);
+		PlaceExplosion(a_spawnAt, Forms::impactExplosion, a_position, nullptr);
 	}
 
 	void SpawnSlamVFX(RE::Actor& a_owner, const RE::NiPoint3& a_position)
 	{
-		PlaceExplosion(a_owner, GetSlamExplosionForm(), a_position, &a_owner);
+		PlaceExplosion(a_owner, Forms::slamExplosion, a_position, &a_owner);
 	}
 }

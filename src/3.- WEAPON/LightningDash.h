@@ -8,10 +8,6 @@
 
 namespace Weapon::LightningDash
 {
-	// Hechizo del poder (Constants::kLightningDashSpellLocalFormID), resuelto una vez.
-	// Lo usan WeaponManager (conceder/retirar) y el sink de TESSpellCastEvent de EventManager.
-	[[nodiscard]] RE::SpellItem* GetSpell();
-
 	// true si el efecto de cooldown sigue activo en a_actor.
 	[[nodiscard]] bool IsOnCooldown(RE::Actor& a_actor);
 

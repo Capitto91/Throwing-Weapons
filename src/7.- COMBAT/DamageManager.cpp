@@ -3,6 +3,7 @@
 #include "7.- COMBAT/DamageManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/GameOffsets.h"
 #include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
@@ -110,32 +111,6 @@ namespace Combat
 			RE::free(hitData);
 		}
 
-		RE::BGSHazard* LookupHazardForm(RE::FormID a_localFormID)
-		{
-			RE::BGSHazard* form = nullptr;
-			if (auto* dataHandler = RE::TESDataHandler::GetSingleton()) {
-				form = dataHandler->LookupForm<RE::BGSHazard>(a_localFormID, Constants::kSoundPluginName);
-			}
-			if (!form) {
-				logs::warn("Combat::LookupHazardForm: no se encontró el BGSHazard (FormID local 0x{:03X}) en \"{}\".",
-					a_localFormID, Constants::kSoundPluginName);
-			}
-			return form;
-		}
-
-		// Hazards resueltos una vez por sesión.
-		RE::BGSHazard* GetActorHazardForm()
-		{
-			static RE::BGSHazard* cache = LookupHazardForm(Constants::kEmbeddedHazardLocalFormID);
-			return cache;
-		}
-
-		RE::BGSHazard* GetSurfaceHazardForm()
-		{
-			static RE::BGSHazard* cache = LookupHazardForm(Constants::kSurfaceHazardLocalFormID);
-			return cache;
-		}
-
 		// Hazard del impacto actual y generación para descartar una colocación diferida obsoleta.
 		RE::ObjectRefHandle g_activeHazard;
 		std::uint32_t       g_hazardGeneration = 0;
@@ -172,35 +147,6 @@ namespace Combat
 			g_activeHazard = ref->CreateRefHandle();
 			return ref.get();
 		}
-
-		// Busca un formulario del plugin por FormID local; nullptr si no existe o es de otro tipo.
-		template <class T>
-		T* LookupPluginForm(RE::FormID a_localFormID)
-		{
-			auto* dataHandler = RE::TESDataHandler::GetSingleton();
-			return dataHandler ? dataHandler->LookupForm<T>(a_localFormID, Constants::kSoundPluginName) : nullptr;
-		}
-
-		// Formularios buscados una vez; el aviso de log se repite mientras falten.
-		RE::SpellItem* GetEmbeddedParalysisSpell()
-		{
-			static RE::SpellItem* spell = LookupPluginForm<RE::SpellItem>(Constants::kEmbeddedParalysisSpellLocalFormID);
-			if (!spell) {
-				logs::warn("Combat::GetEmbeddedParalysisSpell: no se encontró el hechizo (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kEmbeddedParalysisSpellLocalFormID, Constants::kSoundPluginName);
-			}
-			return spell;
-		}
-
-		RE::EffectSetting* GetEmbeddedParalysisEffect()
-		{
-			static RE::EffectSetting* effect = LookupPluginForm<RE::EffectSetting>(Constants::kEmbeddedParalysisEffectLocalFormID);
-			if (!effect) {
-				logs::warn("Combat::GetEmbeddedParalysisEffect: no se encontró el efecto (FormID local 0x{:03X}) en \"{}\".",
-					Constants::kEmbeddedParalysisEffectLocalFormID, Constants::kSoundPluginName);
-			}
-			return effect;
-		}
 	}
 
 	void Init()
@@ -233,12 +179,12 @@ namespace Combat
 		// La inmunidad la decide la condición del efecto en la Creation Kit.
 		a_onStuck(RE::ActorHandle(a_target), RE::NiPoint3{});
 
-		if (auto* spell = GetEmbeddedParalysisSpell()) {
+		if (auto* spell = Forms::paralysisSpell) {
 			a_target->AddSpell(spell);
 		}
 
 		// Efecto de parálisis, para comprobar si quedó activo (AddSpell siempre tiene éxito).
-		auto* paralysisEffect = GetEmbeddedParalysisEffect();
+		auto* paralysisEffect = Forms::paralysisEffect;
 
 		// Desplazamiento en el espacio local del hueso más cercano; cada tick se reaplica con su transformación.
 		// Sin hueso, el nodo raíz.
@@ -317,7 +263,7 @@ namespace Combat
 			return;
 		}
 
-		if (auto* ref = PlaceHazard(GetActorHazardForm(), a_attacker, a_target, a_generation)) {
+		if (auto* ref = PlaceHazard(Forms::actorHazard, a_attacker, a_target, a_generation)) {
 			const auto pos = ref->GetPosition();
 		}
 	}
@@ -329,7 +275,7 @@ namespace Combat
 			return;
 		}
 
-		auto* ref = PlaceHazard(GetSurfaceHazardForm(), a_attacker, a_anchor, a_generation);
+		auto* ref = PlaceHazard(Forms::surfaceHazard, a_attacker, a_anchor, a_generation);
 		if (!ref) {
 			return;
 		}
@@ -341,12 +287,11 @@ namespace Combat
 		} else {
 			n.Unitize();
 		}
-		const float nz = n.z > 1.0f ? 1.0f : (n.z < -1.0f ? -1.0f : n.z);
+		const float        nz = n.z > 1.0f ? 1.0f : (n.z < -1.0f ? -1.0f : n.z);
 		const RE::NiPoint3 angle{ std::acos(nz), 0.0f, std::atan2(n.x, n.y) };
 
 		ref->SetPosition(a_point);
 		ref->SetAngle(angle);
-
 	}
 
 	void RemoveImpactHazard()
@@ -378,7 +323,7 @@ namespace Combat
 			return;
 		}
 
-		if (auto* spell = GetEmbeddedParalysisSpell()) {
+		if (auto* spell = Forms::paralysisSpell) {
 			a_target->RemoveSpell(spell);
 		}
 	}
@@ -388,7 +333,6 @@ namespace Combat
 		if (!a_attacker || !a_target) {
 			return;
 		}
-
 
 		// El golpe se aplica siempre, aunque el multiplicador sea 0.
 		ApplyWeaponHit(a_attacker, a_target, Settings::GetReturnHitMult(), a_hitPosition);

@@ -2,7 +2,7 @@
 
 #include "1.- CORE/CastHook.h"
 
-#include "3.- WEAPON/LightningDash.h"
+#include "1.- CORE/Forms.h"
 #include "3.- WEAPON/WeaponManager.h"
 
 #include <exception>
@@ -21,7 +21,7 @@ namespace CastHook
 			static bool thunk(RE::ActorMagicCaster* a_this, RE::MagicItem* a_spell, bool a_dualCast, float* a_effectStrength, RE::MagicSystem::CannotCastReason* a_reason, bool a_useBaseValueForCost)
 			{
 				const bool allowed = func(a_this, a_spell, a_dualCast, a_effectStrength, a_reason, a_useBaseValueForCost);
-				if (!allowed || !a_spell || a_spell != Weapon::LightningDash::GetSpell()) {
+				if (!allowed || !a_spell || a_spell != Forms::lightningDashSpell) {
 					return allowed;
 				}
 

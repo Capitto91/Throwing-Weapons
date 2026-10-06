@@ -3,6 +3,7 @@
 #include "3.- WEAPON/WeaponManager.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/AttackInterruptWatcher.h"
@@ -294,7 +295,7 @@ namespace Weapon
 				return;
 			}
 
-			auto* spell = LightningDash::GetSpell();
+			auto* spell = Forms::lightningDashSpell;
 			if (!spell) {
 				return;
 			}

@@ -2,7 +2,7 @@
 
 #include "11.- SKYRIM/ActorUtils.h"
 
-#include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 
 #include <limits>
 
@@ -31,17 +31,16 @@ namespace ActorUtils
 		}
 	}
 
+	bool IsThrowableWeapon(const RE::TESForm* a_form)
+	{
+		const auto* weapon = a_form ? a_form->As<RE::TESObjectWEAP>() : nullptr;
+		return weapon && Forms::throwableWeaponKeyword && weapon->HasKeyword(Forms::throwableWeaponKeyword);
+	}
+
 	bool IsThrowableWeaponEquipped(RE::Actor* a_actor)
 	{
-		if (!a_actor) {
-			return false;
-		}
-
 		// false = mano derecha / mano principal.
-		const auto* rightHand = a_actor->GetEquippedObject(false);
-		const auto* weapon = rightHand ? rightHand->As<RE::TESObjectWEAP>() : nullptr;
-
-		return weapon && weapon->HasKeywordString(Constants::kThrowableWeaponKeyword);
+		return a_actor && IsThrowableWeapon(a_actor->GetEquippedObject(false));
 	}
 
 	RE::BSFixedString FindNearestBoneName(RE::Actor* a_actor, const RE::NiPoint3& a_worldPoint)

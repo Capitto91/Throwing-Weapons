@@ -3,6 +3,7 @@
 #include "8.- ANIMATION/WeaponGlow.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
 #include "6.- PHYSICS/PhysicsManager.h"
@@ -16,24 +17,6 @@ namespace Animation
 	{
 		// Intentos de espera a que cargue el 3D (~800 ms).
 		constexpr int kMax3DWaitAttempts = 50;
-
-		// Formulario resuelto una vez por sesión.
-		RE::TESBoundObject* GetGlowActivatorForm()
-		{
-			static RE::TESBoundObject* cache = nullptr;
-			static bool                lookupDone = false;
-			if (!lookupDone) {
-				lookupDone = true;
-				if (auto* dataHandler = RE::TESDataHandler::GetSingleton()) {
-					cache = dataHandler->LookupForm<RE::TESObjectACTI>(Constants::kWeaponGlowActivatorLocalFormID, Constants::kSoundPluginName);
-				}
-				if (!cache) {
-					logs::warn("Animation::WeaponGlow: no se encontró el Activator (FormID local 0x{:03X}) en \"{}\".",
-						Constants::kWeaponGlowActivatorLocalFormID, Constants::kSoundPluginName);
-				}
-			}
-			return cache;
-		}
 
 		// Único destello activo del plugin.
 		RE::ObjectRefHandle g_activeHandle;
@@ -81,28 +64,10 @@ namespace Animation
 			}
 		}
 
-		// Formulario resuelto una vez por sesión.
-		RE::TESObjectLIGH* GetGlowLightForm()
-		{
-			static RE::TESObjectLIGH* cache = nullptr;
-			static bool               lookupDone = false;
-			if (!lookupDone) {
-				lookupDone = true;
-				if (auto* dataHandler = RE::TESDataHandler::GetSingleton()) {
-					cache = dataHandler->LookupForm<RE::TESObjectLIGH>(Constants::kWeaponGlowLightLocalFormID, Constants::kSoundPluginName);
-				}
-				if (!cache) {
-					logs::warn("Animation::WeaponGlow: no se encontró el TESObjectLIGH (FormID local 0x{:03X}) en \"{}\".",
-						Constants::kWeaponGlowLightLocalFormID, Constants::kSoundPluginName);
-				}
-			}
-			return cache;
-		}
-
 		// Crea la luz del formulario y la engancha a a_root.
 		void AttachGlowLight(RE::TESObjectREFR* a_ref, RE::NiAVObject* a_root)
 		{
-			auto* lightForm = GetGlowLightForm();
+			auto* lightForm = Forms::weaponGlowLight;
 			auto* rootNode = a_root ? a_root->AsNode() : nullptr;
 			if (!lightForm || !rootNode || !a_ref) {
 				return;
@@ -346,7 +311,7 @@ namespace Animation
 			g_activeHandle = {};
 		}
 
-		auto* form = GetGlowActivatorForm();
+		auto* form = Forms::weaponGlowActivator;
 		if (!form) {
 			return false;
 		}

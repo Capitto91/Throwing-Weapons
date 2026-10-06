@@ -88,6 +88,53 @@ namespace UI::ConfigMenu
 			ImGui::SetItemTooltip("%s", a_text);
 		}
 
+		// Controles ligados a un ajuste de Settings: muestran su valor, lo aplican al momento al cambiarlo y marcan
+		// cambios sin guardar. Con a_help, "(?)" con esa ayuda al lado.
+		void SettingCheckbox(const char* a_label, bool (*a_get)(), void (*a_set)(bool), const char* a_help = nullptr)
+		{
+			bool value = a_get();
+			if (ImGui::Checkbox(a_label, &value)) {
+				a_set(value);
+				MarkChanged();
+			}
+			if (a_help) {
+				HelpMarker(a_help);
+			}
+		}
+
+		void SettingSlider(const char* a_label, float (*a_get)(), void (*a_set)(float), float a_min, float a_max, const char* a_format, const char* a_help)
+		{
+			float value = a_get();
+			if (ImGui::SliderFloat(a_label, &value, a_min, a_max, a_format, ImGui::ImGuiSliderFlags_AlwaysClamp)) {
+				a_set(value);
+				MarkChanged();
+			}
+			HelpMarker(a_help);
+		}
+
+		// Multiplicador mostrado como porcentaje (0.75 -> 75%).
+		void SettingPercentSlider(const char* a_label, float (*a_get)(), void (*a_set)(float), float a_min, float a_max, const char* a_help)
+		{
+			float percent = a_get() * 100.0f;
+			if (ImGui::SliderFloat(a_label, &percent, a_min * 100.0f, a_max * 100.0f, "%.0f%%", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
+				a_set(percent / 100.0f);
+				MarkChanged();
+			}
+			HelpMarker(a_help);
+		}
+
+		// Desplegable de un ajuste enumerado; a_items va en el orden de los valores de E.
+		template <class E, std::size_t N>
+		void SettingCombo(const char* a_label, E (*a_get)(), void (*a_set)(E), const char* const (&a_items)[N], const char* a_help)
+		{
+			int value = static_cast<int>(a_get());
+			if (ImGui::Combo(a_label, &value, a_items, static_cast<int>(N))) {
+				a_set(static_cast<E>(value));
+				MarkChanged();
+			}
+			HelpMarker(a_help);
+		}
+
 		// Guardar / restaurar, común a todas las páginas.
 		void RenderFooter()
 		{
@@ -142,198 +189,92 @@ namespace UI::ConfigMenu
 		{
 			ImGui::SeparatorText("Trajectory");
 
-			float speed = Settings::GetThrowSpeed();
-			if (ImGui::SliderFloat("Speed", &speed, Settings::kThrowSpeedMin, Settings::kThrowSpeedMax, "%.0f units/s", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-				Settings::SetThrowSpeed(speed);
-				MarkChanged();
-			}
-			HelpMarker("Initial speed of the thrown weapon. Default: 5000.");
-
-			float gravity = Settings::GetThrowGravityMult();
-			if (ImGui::SliderFloat("Gravity", &gravity, Settings::kThrowGravityMultMin, Settings::kThrowGravityMultMax, "%.2f", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-				Settings::SetThrowGravityMult(gravity);
-				MarkChanged();
-			}
-			HelpMarker("How strongly gravity pulls the weapon down, as a fraction of the world's gravity. 0.35 = same as vanilla arrows (default). 0 = no drop at all.");
+			SettingSlider("Speed", Settings::GetThrowSpeed, Settings::SetThrowSpeed, Settings::kThrowSpeedMin, Settings::kThrowSpeedMax, "%.0f units/s",
+				"Initial speed of the thrown weapon. Default: 5000.");
+			SettingSlider("Gravity", Settings::GetThrowGravityMult, Settings::SetThrowGravityMult, Settings::kThrowGravityMultMin, Settings::kThrowGravityMultMax, "%.2f",
+				"How strongly gravity pulls the weapon down, as a fraction of the world's gravity. 0.35 = same as vanilla arrows (default). 0 = no drop at all.");
 
 			RenderFooter();
-		}
-
-		// Multiplicador mostrado como porcentaje (0.75 -> 75%).
-		bool PercentSlider(const char* a_label, float a_mult, float& a_out)
-		{
-			float percent = a_mult * 100.0f;
-			if (ImGui::SliderFloat(a_label, &percent, Settings::kHitMultMin * 100.0f, Settings::kHitMultMax * 100.0f, "%.0f%%", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-				a_out = percent / 100.0f;
-				return true;
-			}
-			return false;
 		}
 
 		void __stdcall RenderDamage()
 		{
 			ImGui::SeparatorText("Hit damage");
 
-			float value = 0.0f;
-			if (PercentSlider("Throw hit", Settings::GetThrowHitMult(), value)) {
-				Settings::SetThrowHitMult(value);
-				MarkChanged();
-			}
-			HelpMarker("Damage of the initial hit, as a percentage of the weapon's real melee damage (perks, target armor, sneak and criticals included). Default: 75%.");
-
-			if (PercentSlider("Return hit", Settings::GetReturnHitMult(), value)) {
-				Settings::SetReturnHitMult(value);
-				MarkChanged();
-			}
-			HelpMarker("Damage of each hit while the weapon flies back to your hand, as a percentage of the weapon's real melee damage. Default: 25%.");
+			SettingPercentSlider("Throw hit", Settings::GetThrowHitMult, Settings::SetThrowHitMult, Settings::kHitMultMin, Settings::kHitMultMax,
+				"Damage of the initial hit, as a percentage of the weapon's real melee damage (perks, target armor, sneak and criticals included). Default: 75%.");
+			SettingPercentSlider("Return hit", Settings::GetReturnHitMult, Settings::SetReturnHitMult, Settings::kHitMultMin, Settings::kHitMultMax,
+				"Damage of each hit while the weapon flies back to your hand, as a percentage of the weapon's real melee damage. Default: 25%.");
 
 			ImGui::SeparatorText("Effects");
 
-			bool stagger = Settings::GetReturnStagger();
-			if (ImGui::Checkbox("Return hits stagger", &stagger)) {
-				Settings::SetReturnStagger(stagger);
-				MarkChanged();
-			}
-			HelpMarker("Enemies hit by the weapon on its way back are staggered.");
-
-			bool hazardActor = Settings::GetHazardOnActor();
-			if (ImGui::Checkbox("Electric discharge on enemies", &hazardActor)) {
-				Settings::SetHazardOnActor(hazardActor);
-				MarkChanged();
-			}
-			HelpMarker("Leaves an electric discharge when the weapon sticks into an enemy.");
-
-			bool hazardSurface = Settings::GetHazardOnSurface();
-			if (ImGui::Checkbox("Electric discharge on surfaces", &hazardSurface)) {
-				Settings::SetHazardOnSurface(hazardSurface);
-				MarkChanged();
-			}
-			HelpMarker("Leaves an electric discharge when the weapon sticks into a wall, the ground, etc.");
-
-			bool explosion = Settings::GetImpactExplosion();
-			if (ImGui::Checkbox("Impact explosion", &explosion)) {
-				Settings::SetImpactExplosion(explosion);
-				MarkChanged();
-			}
-			HelpMarker("Plays the lightning explosion on every impact of the throw, against enemies or surfaces.");
+			SettingCheckbox("Return hits stagger", Settings::GetReturnStagger, Settings::SetReturnStagger,
+				"Enemies hit by the weapon on its way back are staggered.");
+			SettingCheckbox("Electric discharge on enemies", Settings::GetHazardOnActor, Settings::SetHazardOnActor,
+				"Leaves an electric discharge when the weapon sticks into an enemy.");
+			SettingCheckbox("Electric discharge on surfaces", Settings::GetHazardOnSurface, Settings::SetHazardOnSurface,
+				"Leaves an electric discharge when the weapon sticks into a wall, the ground, etc.");
+			SettingCheckbox("Impact explosion", Settings::GetImpactExplosion, Settings::SetImpactExplosion,
+				"Plays the lightning explosion on every impact of the throw, against enemies or surfaces.");
 
 			RenderFooter();
 		}
-	}
 
-	void __stdcall RenderVfx()
-	{
-		ImGui::SeparatorText("Visual effects");
-		ImGui::TextWrapped("Purely visual.");
-		ImGui::Spacing();
+		void __stdcall RenderVfx()
+		{
+			ImGui::SeparatorText("Visual effects");
+			ImGui::TextWrapped("Purely visual.");
+			ImGui::Spacing();
 
-		bool trail = Settings::GetTrail();
-		if (ImGui::Checkbox("Trail", &trail)) {
-			Settings::SetTrail(trail);
-			MarkChanged();
-		}
-		HelpMarker("Lightning trail behind the weapon while it flies.");
+			SettingCheckbox("Trail", Settings::GetTrail, Settings::SetTrail,
+				"Lightning trail behind the weapon while it flies.");
+			SettingCheckbox("Particles", Settings::GetParticles, Settings::SetParticles,
+				"Sparks around the weapon while it moves (throw, flight, recall).");
+			SettingCheckbox("Weapon light", Settings::GetWeaponLight, Settings::SetWeaponLight,
+				"Glow around the hammer head");
+			SettingCheckbox("Hand effect", Settings::GetHandEffect, Settings::SetHandEffect,
+				"Brief glow on your hands when you throw.");
+			SettingCheckbox("Power attack VFX", Settings::GetPowerAttackEffects, Settings::SetPowerAttackEffects,
+				"Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above.");
 
-		bool particles = Settings::GetParticles();
-		if (ImGui::Checkbox("Particles", &particles)) {
-			Settings::SetParticles(particles);
-			MarkChanged();
-		}
-		HelpMarker("Sparks around the weapon while it moves (throw, flight, recall).");
+			// Glow de la textura del martillo (GlowMapControl), aplicado en vivo.
+			ImGui::SeparatorText("Weapon glow");
 
-		bool weaponLight = Settings::GetWeaponLight();
-		if (ImGui::Checkbox("Weapon light", &weaponLight)) {
-			Settings::SetWeaponLight(weaponLight);
-			MarkChanged();
-		}
-		HelpMarker("Glow around the hammer head");
+			static constexpr const char* kGlowModeItems[] = { "Off", "Constant", "Pulse" };
+			SettingCombo("Glow", Settings::GetGlowMode, Settings::SetGlowMode, kGlowModeItems,
+				"Glow of the hammer's own texture.");
 
-		bool handEffect = Settings::GetHandEffect();
-		if (ImGui::Checkbox("Hand effect", &handEffect)) {
-			Settings::SetHandEffect(handEffect);
-			MarkChanged();
-		}
-		HelpMarker("Brief glow on your hands when you throw.");
+			const bool glowOn = Settings::GetGlowMode() != Settings::GlowMode::kOff;
+			ImGui::BeginDisabled(!glowOn);
 
-		bool powerAttack = Settings::GetPowerAttackEffects();
-		if (ImGui::Checkbox("Power attack VFX", &powerAttack)) {
-			Settings::SetPowerAttackEffects(powerAttack);
-			MarkChanged();
-		}
-		HelpMarker("Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above.");
+			static constexpr const char* kGlowConditionItems[] = { "Always", "Near creatures" };
+			SettingCombo("When", Settings::GetGlowCondition, Settings::SetGlowCondition, kGlowConditionItems,
+				"Always, or only while a living creature of the checked types is within the radius. The glow fades in and out.");
 
-		// Glow de la textura del martillo (GlowMapControl), aplicado en vivo.
-		ImGui::SeparatorText("Weapon glow");
+			if (Settings::GetGlowCondition() == Settings::GlowCondition::kNearCreatures) {
+				ImGui::Indent();
 
-		static constexpr const char* kGlowModeItems[] = { "Off", "Constant", "Pulse" };
-		int glowMode = static_cast<int>(Settings::GetGlowMode());
-		if (ImGui::Combo("Glow", &glowMode, kGlowModeItems, 3)) {
-			Settings::SetGlowMode(static_cast<Settings::GlowMode>(glowMode));
-			MarkChanged();
-		}
-		HelpMarker("Glow of the hammer's own texture.");
+				SettingCheckbox("Dragons", Settings::GetGlowNearDragons, Settings::SetGlowNearDragons);
+				SettingCheckbox("Undead", Settings::GetGlowNearUndead, Settings::SetGlowNearUndead);
+				SettingCheckbox("Daedra", Settings::GetGlowNearDaedra, Settings::SetGlowNearDaedra);
+				SettingSlider("Radius", Settings::GetGlowRadius, Settings::SetGlowRadius, Settings::kGlowRadiusMin, Settings::kGlowRadiusMax, "%.0f units",
+					"Detection distance. Default: 2000 (about 28 meters).");
 
-		const bool glowOn = Settings::GetGlowMode() != Settings::GlowMode::kOff;
-		ImGui::BeginDisabled(!glowOn);
-
-		static constexpr const char* kGlowConditionItems[] = { "Always", "Near creatures" };
-		int glowCondition = static_cast<int>(Settings::GetGlowCondition());
-		if (ImGui::Combo("When", &glowCondition, kGlowConditionItems, 2)) {
-			Settings::SetGlowCondition(static_cast<Settings::GlowCondition>(glowCondition));
-			MarkChanged();
-		}
-		HelpMarker("Always, or only while a living creature of the checked types is within the radius. The glow fades in and out.");
-
-		if (Settings::GetGlowCondition() == Settings::GlowCondition::kNearCreatures) {
-			ImGui::Indent();
-
-			bool dragons = Settings::GetGlowNearDragons();
-			if (ImGui::Checkbox("Dragons", &dragons)) {
-				Settings::SetGlowNearDragons(dragons);
-				MarkChanged();
+				ImGui::Unindent();
 			}
 
-			bool undead = Settings::GetGlowNearUndead();
-			if (ImGui::Checkbox("Undead", &undead)) {
-				Settings::SetGlowNearUndead(undead);
-				MarkChanged();
+			SettingPercentSlider("Intensity", Settings::GetGlowIntensity, Settings::SetGlowIntensity, Settings::kGlowIntensityMin, Settings::kGlowIntensityMax,
+				"Brightness relative to the original mesh. Default: 100%. In Pulse mode, this is the peak.");
+
+			if (Settings::GetGlowMode() == Settings::GlowMode::kPulse) {
+				SettingSlider("Pulse speed", Settings::GetGlowPulseSpeed, Settings::SetGlowPulseSpeed, Settings::kGlowPulseSpeedMin, Settings::kGlowPulseSpeedMax, "%.1f per second",
+					"Pulses per second. Default: 1.");
 			}
 
-			bool daedra = Settings::GetGlowNearDaedra();
-			if (ImGui::Checkbox("Daedra", &daedra)) {
-				Settings::SetGlowNearDaedra(daedra);
-				MarkChanged();
-			}
+			ImGui::EndDisabled();
 
-			float radius = Settings::GetGlowRadius();
-			if (ImGui::SliderFloat("Radius", &radius, Settings::kGlowRadiusMin, Settings::kGlowRadiusMax, "%.0f units", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-				Settings::SetGlowRadius(radius);
-				MarkChanged();
-			}
-			HelpMarker("Detection distance. Default: 2000 (about 28 meters).");
-
-			ImGui::Unindent();
+			RenderFooter();
 		}
-
-		float intensity = Settings::GetGlowIntensity() * 100.0f;
-		if (ImGui::SliderFloat("Intensity", &intensity, Settings::kGlowIntensityMin * 100.0f, Settings::kGlowIntensityMax * 100.0f, "%.0f%%", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-			Settings::SetGlowIntensity(intensity / 100.0f);
-			MarkChanged();
-		}
-		HelpMarker("Brightness relative to the original mesh. Default: 100%. In Pulse mode, this is the peak.");
-
-		if (Settings::GetGlowMode() == Settings::GlowMode::kPulse) {
-			float pulseSpeed = Settings::GetGlowPulseSpeed();
-			if (ImGui::SliderFloat("Pulse speed", &pulseSpeed, Settings::kGlowPulseSpeedMin, Settings::kGlowPulseSpeedMax, "%.1f per second", ImGui::ImGuiSliderFlags_AlwaysClamp)) {
-				Settings::SetGlowPulseSpeed(pulseSpeed);
-				MarkChanged();
-			}
-			HelpMarker("Pulses per second. Default: 1.");
-		}
-
-		ImGui::EndDisabled();
-
-		RenderFooter();
 	}
 
 	void Register()

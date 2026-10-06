@@ -3,8 +3,10 @@
 #include "8.- ANIMATION/GlowMapControl.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/Forms.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
@@ -59,9 +61,11 @@ namespace Animation::GlowMapControl
 					continue;
 				}
 
-				if ((dragons && race->HasKeywordString(Constants::kGlowMapDragonKeyword)) ||
-					(undead && race->HasKeywordString(Constants::kGlowMapUndeadKeyword)) ||
-					(daedra && race->HasKeywordString(Constants::kGlowMapDaedraKeyword))) {
+				// Una keyword que no se encontró al cargar (nullptr) no cuenta.
+				const auto hasType = [race](const RE::BGSKeyword* a_keyword) { return a_keyword && race->HasKeyword(a_keyword); };
+				if ((dragons && hasType(Forms::actorTypeDragon)) ||
+					(undead && hasType(Forms::actorTypeUndead)) ||
+					(daedra && hasType(Forms::actorTypeDaedra))) {
 					if (actor->GetPosition().GetDistance(playerPos) <= radius) {
 						return true;
 					}
@@ -125,7 +129,7 @@ namespace Animation::GlowMapControl
 		{
 			auto* rightHand = a_player.GetEquippedObject(false);
 			auto* weapon = rightHand ? rightHand->As<RE::TESObjectWEAP>() : nullptr;
-			if (!weapon || !weapon->HasKeywordString(Constants::kThrowableWeaponKeyword)) {
+			if (!ActorUtils::IsThrowableWeapon(weapon)) {
 				return;
 			}
 
