@@ -16,6 +16,11 @@ namespace Return
 	class CatchSync;
 }
 
+namespace Animation
+{
+	enum class Gesture;
+}
+
 namespace Weapon
 {
 	class WeaponManager
@@ -145,6 +150,17 @@ namespace Weapon
 		// Con a_reattachVfxToHand, las chispas pasan a seguir la mano (Atrape animado).
 		void ReequipAndReset(bool a_reattachVfxToHand = false);
 
+		// Arranca el clip de a_gesture: bloquea el movimiento (que no escale a power attack direccional), AnimationDriven,
+		// iRightHandType del arma lanzada (Llamada y Atrape), su Global y attackStart. false si el grafo lo rechaza (lo avisa).
+		bool StartGestureClip(RE::PlayerCharacter& a_player, Animation::Gesture a_gesture);
+
+		// Cierra el clip de a_gesture: apaga su Global y AnimationDriven (Llamada devuelve además iRightHandType a 0),
+		// envía attackStop si a_sendAttackStop y desbloquea el movimiento. Al final de su cola o tras una pantalla de carga.
+		void CloseGestureClip(Animation::Gesture a_gesture, bool a_sendAttackStop);
+
+		// Libera al actor clavado (parálisis) y quita la descarga del impacto.
+		void ReleaseStuckTarget();
+
 		WeaponState weaponState;
 
 		// Si el arma estaba clavada al llamar, para BeginReturn.
@@ -169,20 +185,16 @@ namespace Weapon
 		// Instante del último cambio del grafo por nuestra cuenta, para respetar kMinAttackStartInterval.
 		std::chrono::steady_clock::time_point lastAttackAnimationEventTime;
 
-		// true desde BeginCatchAnimation hasta FinishCatchAnimation.
-		bool catchAnimationActive{ false };
-
-		// true desde el reequipado del Atrape hasta FinishCatchAnimation (evita repetirlo).
-		bool catchReequipDone{ false };
-
-		// true cuando la réplica llega físicamente a la mano. Se reinicia en cada regreso.
-		bool catchPhysicallyArrived{ false };
-
-		// true si el reequipado esperó a la llegada física; lo completa OnPhysicalArrival.
-		bool catchReequipPending{ false };
-
-		// true tras el sonido final del atrape, para no repetirlo si llegan la anotación y la red de seguridad.
-		bool catchEndSoundPlayed{ false };
+		// Gesto de Atrape en curso; catchState = {} lo reinicia entero (al terminar o cortarlo).
+		struct CatchState
+		{
+			bool active{ false };             // desde BeginCatchAnimation hasta FinishCatchAnimation
+			bool reequipDone{ false };        // desde el reequipado hasta FinishCatchAnimation (evita repetirlo)
+			bool physicallyArrived{ false };  // la réplica llegó a la mano; se reinicia en cada regreso
+			bool reequipPending{ false };     // el reequipado espera a la llegada física (OnPhysicalArrival)
+			bool endSoundPlayed{ false };     // sonido final ya sonado (llegan la anotación y la red de seguridad)
+		};
+		CatchState catchState;
 
 		// Sincronía del regreso en curso con Catch.hkx; se crea en BeginReturn.
 		std::shared_ptr<Return::CatchSync> catchSync;

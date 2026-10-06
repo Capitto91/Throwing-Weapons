@@ -18,8 +18,8 @@ namespace ActorUtils
 	// siguen las chispas.
 	[[nodiscard]] RE::NiPoint3 GetWeaponBonePosition(RE::Actor& a_actor);
 
-	// Equipa o desequipa a_object en el acto (sin cola y forzado). Desde un evento del motor, llamarlo diferido
-	// un tick (AddTask): síncrono, a veces falla en silencio.
+	// Equipa o desequipa a_object en el acto (sin cola). Equipar no lo bloquea: a_forceEquip impediría quitárselo, como el
+	// abPreventRemoval de Papyrus. Desde un evento del motor, llamarlo diferido un tick (AddTask): síncrono, a veces falla.
 	void EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object);
 	void UnequipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object);
 

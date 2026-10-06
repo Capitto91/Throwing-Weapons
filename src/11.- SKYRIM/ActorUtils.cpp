@@ -57,7 +57,7 @@ namespace ActorUtils
 
 	void EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
 	{
-		RE::ActorEquipManager::GetSingleton()->EquipObject(&a_actor, a_object, nullptr, 1, nullptr, false, true, true, true);
+		RE::ActorEquipManager::GetSingleton()->EquipObject(&a_actor, a_object, nullptr, 1, nullptr, false, false, true, true);
 	}
 
 	void UnequipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
