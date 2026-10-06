@@ -94,7 +94,7 @@ namespace Animation::PowerAttackVFX
 				const std::string_view tag = a_event->tag.c_str();
 				if (tag == Constants::kPowerAttackVfxStartEvent) {
 					SKSE::GetTaskInterface()->AddTask(OnSwing);
-				} else if (tag == Constants::kPowerAttackVfxStopEvent) {
+				} else if (tag == Constants::kAttackStopAnimationEvent) {
 					SKSE::GetTaskInterface()->AddTask([] { Stop(); });
 				}
 				return RE::BSEventNotifyControl::kContinue;

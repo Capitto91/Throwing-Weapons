@@ -256,9 +256,7 @@ namespace Combat
 			return;
 		}
 
-		if (auto* ref = PlaceHazard(Forms::actorHazard, a_attacker, a_target, a_generation)) {
-			const auto pos = ref->GetPosition();
-		}
+		PlaceHazard(Forms::actorHazard, a_attacker, a_target, a_generation);
 	}
 
 	void SpawnSurfaceHazard(RE::Actor* a_attacker, RE::TESObjectREFR& a_anchor, const RE::NiPoint3& a_point, const RE::NiPoint3& a_normal, std::uint32_t a_generation)
@@ -332,9 +330,9 @@ namespace Combat
 			return;
 		}
 
-		// Tambaleo propio con las graph variables staggerMagnitude/staggerDirection y el evento staggerStart.
-		a_target->SetGraphVariableFloat("staggerMagnitude", Constants::kStaggerMagnitude);
-		a_target->SetGraphVariableFloat("staggerDirection", 0.0f);  // de frente
-		a_target->NotifyAnimationGraph("staggerStart");
+		// Tambaleo propio: magnitud y dirección en el grafo del objetivo, y el evento que lo arranca.
+		a_target->SetGraphVariableFloat(Constants::kStaggerMagnitudeGraphVariable, Constants::kStaggerMagnitude);
+		a_target->SetGraphVariableFloat(Constants::kStaggerDirectionGraphVariable, 0.0f);  // de frente
+		a_target->NotifyAnimationGraph(Constants::kStaggerStartAnimationEvent);
 	}
 }

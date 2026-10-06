@@ -72,7 +72,6 @@ namespace Animation
 
 		if (!particle) {
 			logs::warn("Animation::WeaponTrail::Start: no se pudo crear el efecto '{}'.", Constants::kTrailEffectPath);
-		} else {
 		}
 	}
 

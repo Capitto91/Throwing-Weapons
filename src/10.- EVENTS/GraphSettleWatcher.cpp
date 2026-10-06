@@ -2,6 +2,7 @@
 
 #include "10.- EVENTS/GraphSettleWatcher.h"
 
+#include "1.- CORE/Constants.h"
 #include "11.- SKYRIM/ActorUtils.h"
 
 #include <atomic>
@@ -24,11 +25,11 @@ namespace Events::GraphSettleWatcher
 				}
 
 				const std::string_view tag = a_event->tag.c_str();
-				if (tag == "BeginWeaponDraw") {
+				if (tag == Constants::kWeaponDrawStartEvent) {
 					drawPending = true;
-				} else if (tag == "WeapEquip_Out" || tag == "WeapEquip_OutMoving") {
+				} else if (tag == Constants::kWeaponDrawEndEvent || tag == Constants::kWeaponDrawEndMovingEvent) {
 					drawPending = false;
-				} else if (tag == "attackStop") {
+				} else if (tag == Constants::kAttackStopAnimationEvent) {
 					attackStopPending = false;
 				}
 				return RE::BSEventNotifyControl::kContinue;

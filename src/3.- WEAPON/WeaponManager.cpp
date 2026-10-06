@@ -986,14 +986,14 @@ namespace Weapon
 		} else if (player && weapon) {
 			// Diferido un tick: tras una pantalla de carga, síncrono no equipa.
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
-				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
-				player->SetGraphVariableBool("SkipEquipAnimation", true);
+				// Sin animación de equipar/desenvainar (mod SkipEquipAnimation).
+				player->SetGraphVariableBool(Constants::kSkipEquipAnimationGraphVariable, true);
 				ActorUtils::EquipNow(*player, weapon);
 
 				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
 				Scheduler::Cancel(skipEquipAnimationToken);
 				skipEquipAnimationToken = Scheduler::After(Constants::kSkipEquipAnimationWindow, [player]() {
-					player->SetGraphVariableBool("SkipEquipAnimation", false);
+					player->SetGraphVariableBool(Constants::kSkipEquipAnimationGraphVariable, false);
 				});
 			});
 		}

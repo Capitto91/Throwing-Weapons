@@ -9,9 +9,14 @@
 
 namespace Constants
 {
+	// -- General --
+
 	// Plugins donde Forms busca cada FormID local: el .esp del mod y el juego base.
 	inline constexpr std::string_view kPluginName = "ThorMjolnirOAR.esp";
 	inline constexpr std::string_view kSkyrimPluginName = "Skyrim.esm";
+
+	// Ruta del INI, relativa a la carpeta del juego.
+	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 
 	// Keyword que identifica al arma arrojadiza (WAF_ThrowableWeapon), FormID local del ESL.
 	inline constexpr RE::FormID kThrowableWeaponKeywordLocalFormID = 0x018;
@@ -23,17 +28,7 @@ namespace Constants
 	// equipe en ella se desequipa solo de esa mano (la izquierda queda libre).
 	inline constexpr RE::FormID kRightHandEquipSlotFormID = 0x013F42;
 
-	// Ruta del INI, relativa a la carpeta del juego.
-	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
-
-	// -- Lanzar (Open Animation Replacer) --
-
-	// Global (CAP_GlobalVariable_ThorMjolnir_ThrowTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
-	// el ataque ligero por Throw.hkx. Lo activa WeaponManager antes de kLightAttackAnimationEvent y lo apaga con la liberación.
-	inline constexpr RE::FormID kThrowTriggerGlobalLocalFormID = 0x01F;
-
-	// Graph variable vanilla activada durante Lanzar y Llamada junto al bloqueo de movimiento.
-	inline constexpr const char* kAnimationDrivenGraphVariable = "bAnimationDriven";
+	// -- Grafo de animación: eventos y variables que usa el plugin --
 
 	// Evento vanilla que OAR sustituye por Throw.hkx, Call.hkx o Catch.hkx según el Global activo.
 	inline constexpr const char* kLightAttackAnimationEvent = "attackStart";
@@ -41,14 +36,11 @@ namespace Constants
 	// Evento vanilla que devuelve el grafo a reposo tras Llamada y Atrape.
 	inline constexpr const char* kAttackStopAnimationEvent = "attackStop";
 
-	// Red de seguridad: el arma se lanza pasado este margen si no llega la anotación de Throw.hkx.
-	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
+	// Evento vanilla que sale del bloqueo sin mezcla (antes de un gesto con el bloqueo pulsado).
+	inline constexpr const char* kBlockStopInstantAnimationEvent = "blockStopInstant";
 
-	// -- Llamada (Open Animation Replacer) --
-
-	// Global (CAP_GlobalVariable_ThorMjolnir_CallTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
-	// el ataque ligero por Call.hkx.
-	inline constexpr RE::FormID kCallTriggerGlobalLocalFormID = 0x020;
+	// Graph variable vanilla activada durante Lanzar y Llamada junto al bloqueo de movimiento.
+	inline constexpr const char* kAnimationDrivenGraphVariable = "bAnimationDriven";
 
 	// Graph variable vanilla con el tipo de arma de la mano derecha; se escribe para el gesto sin equipar nada.
 	inline constexpr const char* kRightHandTypeGraphVariable = "iRightHandType";
@@ -56,44 +48,20 @@ namespace Constants
 	// Respaldo de iRightHandType ("una mano", hacha) si no se conoce el tipo del arma (Animation::GetRightHandTypeFor).
 	inline constexpr std::int32_t kRightHandTypeOneHanded = 3;
 
-	// Eventos vanilla de inicio (weaponSwing) y fin (attackStop) del golpe para PowerAttackVFX.
-	inline constexpr std::string_view kPowerAttackVfxStartEvent = "weaponSwing";
-	inline constexpr std::string_view kPowerAttackVfxStopEvent = "attackStop";
+	// Graph variable del mod SkipEquipAnimation: reequipa sin la animación de desenvainar (tercera persona).
+	inline constexpr const char* kSkipEquipAnimationGraphVariable = "SkipEquipAnimation";
 
-	// Red de seguridad de PowerAttackVFX si no llega attackStop.
-	inline constexpr std::chrono::milliseconds kPowerAttackVfxSafetyTimeout{ 3000 };
+	// Eventos vanilla del desenvainado que sigue GraphSettleWatcher: empieza y termina (quieto o en movimiento).
+	inline constexpr std::string_view kWeaponDrawStartEvent = "BeginWeaponDraw";
+	inline constexpr std::string_view kWeaponDrawEndEvent = "WeapEquip_Out";
+	inline constexpr std::string_view kWeaponDrawEndMovingEvent = "WeapEquip_OutMoving";
 
-	// Glow del martillo (GlowMapControl): duración del fundido al encenderse o apagarse.
-	inline constexpr float kGlowMapFadeSeconds = 0.5f;
+	// Tambaleo propio de los golpes del regreso: magnitud y dirección (graph variables vanilla) y evento que lo inicia.
+	inline constexpr const char* kStaggerMagnitudeGraphVariable = "staggerMagnitude";
+	inline constexpr const char* kStaggerDirectionGraphVariable = "staggerDirection";
+	inline constexpr const char* kStaggerStartAnimationEvent = "staggerStart";
 
-	// Intervalo de búsqueda de criaturas cercanas.
-	inline constexpr float kGlowMapCreatureScanIntervalSeconds = 0.5f;
-
-	// Mínimo del pulso como fracción de la intensidad.
-	inline constexpr float kGlowMapPulseMinFactor = 0.15f;
-
-	// Keywords vanilla de raza de cada tipo de criatura (ActorTypeDragon/Undead/Daedra), FormID de Skyrim.esm.
-	inline constexpr RE::FormID kGlowMapDragonKeywordFormID = 0x035D59;
-	inline constexpr RE::FormID kGlowMapUndeadKeywordFormID = 0x013796;
-	inline constexpr RE::FormID kGlowMapDaedraKeywordFormID = 0x013797;
-
-	// Red de seguridad: el regreso empieza pasado este margen si no llega la anotación de Call.hkx.
-	inline constexpr std::chrono::milliseconds kCallReleaseFallbackWindow{ 1500 };
-
-	// Chasquido de dedos de Llamada (ruta relativa a Data).
-	inline constexpr const char* kCallReleaseSoundFilePath = "Sound/FX/ThorMjolnir/ThorMjolnir_FingerSnap.wav";
-
-	// -- Atrape (Open Animation Replacer) --
-
-	// Global (CAP_GlobalVariable_ThorMjolnir_CatchTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
-	// el ataque ligero por Catch.hkx.
-	inline constexpr RE::FormID kCatchTriggerGlobalLocalFormID = 0x021;
-
-	// Red de seguridad: el reequipado ocurre pasado este margen si no llega la anotación de Catch.hkx.
-	inline constexpr std::chrono::milliseconds kCatchReleaseFallbackWindow{ 1500 };
-
-	// Tras soltar el arma se oculta y el desequipado real espera este margen, para no cortar Throw.hkx.
-	inline constexpr std::chrono::milliseconds kThrowReleaseVisualHoldDuration{ 400 };
+	// -- Bucles por fotograma y temporizadores (Physics, Scheduler) --
 
 	// Intervalo de los bucles de Physics con hilos (respaldo sin FrameHook, ~60 por segundo).
 	// kTickDeltaSeconds es además el paso de la simulación de la llegada del regreso.
@@ -103,7 +71,34 @@ namespace Constants
 	// Paso máximo de un bucle de Physics por tick, tras un tirón (s).
 	inline constexpr float kMaxTickDeltaSeconds = 0.1f;
 
+	// -- Pulsación y corte de un ataque o bloqueo en curso (WeaponManager) --
+
+	// Intervalo mínimo entre dos attackStart por pulsación (Lanzar tras Atrape, Llamada tras Lanzar).
+	inline constexpr float kMinAttackStartInterval = 1.0f;
+
+	// InterruptAttackThen: N-ésimo attackStop que marca reposo, espera tras él, red de seguridad y ventana del vigilante.
+	inline constexpr int                       kAttackInterruptReadyEventOrdinal = 2;
+	inline constexpr std::chrono::milliseconds kAttackInterruptPostEventDelay{ 50 };
+	inline constexpr std::chrono::milliseconds kAttackInterruptFallbackDelay{ 450 };
+	inline constexpr std::chrono::milliseconds kAttackInterruptWatchWindow{ 1500 };
+
+	// InterruptBlockThen: espera tras kBlockStopInstantAnimationEvent antes del gesto.
+	inline constexpr std::chrono::milliseconds kBlockInterruptSettleDelay{ 50 };
+
+	// -- Lanzar (Throw.hkx, Open Animation Replacer) --
+
+	// Global (CAP_GlobalVariable_ThorMjolnir_ThrowTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Throw.hkx. Lo activa WeaponManager antes de kLightAttackAnimationEvent y lo apaga con la liberación.
+	inline constexpr RE::FormID kThrowTriggerGlobalLocalFormID = 0x01F;
+
+	// Red de seguridad: el arma se lanza pasado este margen si no llega la anotación de Throw.hkx.
+	inline constexpr std::chrono::milliseconds kThrowReleaseFallbackWindow{ 1500 };
+
+	// Tras soltar el arma se oculta y el desequipado real espera este margen, para no cortar Throw.hkx.
+	inline constexpr std::chrono::milliseconds kThrowReleaseVisualHoldDuration{ 400 };
+
 	// -- Ida (punto 3) --
+
 	// Gravedad del mundo si no se puede leer de Havok (u/s²); velocidad y multiplicador en Settings.
 	inline constexpr float kThrowFallbackWorldGravity = -686.614f;  // u/s^2
 
@@ -119,7 +114,76 @@ namespace Constants
 	// Alcance del raycast de la mirilla para calcular la dirección del lanzamiento.
 	inline constexpr float kAimRaycastDistance = 6000.0f;
 
+	// -- Giro en vuelo (punto 10) --
+
+	// Nodo hijo del NIF del arma que gira; debe coincidir con el nombre en NifSkope.
+	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
+
+	// Velocidad angular máxima del giro y eje local (unitario).
+	inline constexpr float        kSpinAngularSpeed = 20.0f;  // ~4*pi rad/s
+	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 1.0f };
+
+	// Rampa de arranque del giro hasta kSpinAngularSpeed (<= 0 la desactiva).
+	inline constexpr float kSpinRampDuration = 0.3f;  // s
+
+	// Antelación con la que empieza el enderezado antes de llegar a la mano.
+	inline constexpr float kSpinStraightenLeadTime = 0.2f;  // s
+
+	// -- Clavado en un actor (punto 6) --
+
+	// Habilidad de parálisis (Ability, Constant Effect) concedida mientras el arma está clavada.
+	// CAP_ThorMjolnir_Ability_ThrowingParalysis, FormID local del ESL.
+	inline constexpr RE::FormID kEmbeddedParalysisSpellLocalFormID = 0x019;
+
+	// Efecto de la parálisis, para comprobar si quedó activo (inmunidad).
+	// CAP_ThorMjolnir_ParalysisAbilityEffect, FormID local del ESL.
+	inline constexpr RE::FormID kEmbeddedParalysisEffectLocalFormID = 0x01A;
+
+	// Hazard eléctrico (con Drop To Ground) colocado sobre el actor al clavarse; FormID local del ESL.
+	inline constexpr RE::FormID kEmbeddedHazardLocalFormID = 0x0C3;
+
+	// Hazard eléctrico sin Drop To Ground para impactos contra superficies, orientado por la normal.
+	inline constexpr RE::FormID kSurfaceHazardLocalFormID = 0x0C2;
+
+	// Tiempo máximo clavada en un actor; después el arma vuelve sola.
+	inline constexpr float kEmbeddedMaxDuration = 5.0f;
+
+	// Margen para confirmar que la parálisis quedó activa; si no, el objetivo es inmune.
+	inline constexpr float kImmunityCheckDelay = 0.3f;
+
+	// -- Temblor al desclavar (punto 11) --
+
+	// Duración mínima del temblor; BeginReturn puede alargarlo.
+	inline constexpr float kStickShudderDuration = 0.5f;
+
+	// Ángulo máximo de la oscilación del temblor.
+	inline constexpr float kStickShudderMaxAngle = 0.261799f;  // rad (15°)
+
+	// Fracción del ángulo máximo alcanzada al final del temblor (curva exponencial).
+	inline constexpr float kStickShudderAmplitudeRampFraction = 0.95f;
+
+	// Frecuencia del temblor al empezar y al terminar.
+	inline constexpr float kStickShudderFrequencyStart = 3.0f;  // Hz
+	inline constexpr float kStickShudderFrequencyEnd = 15.0f;   // Hz
+
+	// Eje local (unitario) del temblor.
+	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
+
+	// -- Llamada (Call.hkx, Open Animation Replacer) --
+
+	// Global (CAP_GlobalVariable_ThorMjolnir_CallTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Call.hkx.
+	inline constexpr RE::FormID kCallTriggerGlobalLocalFormID = 0x020;
+
+	// Red de seguridad: el regreso empieza pasado este margen si no llega la anotación de Call.hkx.
+	inline constexpr std::chrono::milliseconds kCallReleaseFallbackWindow{ 1500 };
+
+	// Cola de Call.hkx tras su anotación antes de enviar attackStop, en tercera y en primera persona.
+	inline constexpr std::chrono::milliseconds kCallAnimationTailDuration{ 250 };
+	inline constexpr std::chrono::milliseconds kCallAnimationTailDurationFirstPerson{ 250 };
+
 	// -- Regreso (puntos 7-8) --
+
 	// Velocidad al llegar a la mano; la aceleración se calcula por distancia (Return::ComputeReturnAcceleration).
 	inline constexpr float kReturnTargetArrivalSpeed = 5000.0f;  // u/s
 	// Duración máxima del regreso (s), sin contar el temblor.
@@ -152,49 +216,61 @@ namespace Constants
 	// Posición del punto de control a lo largo de la línea inicio-mano (1/3 desde el inicio).
 	inline constexpr float kReturnCurveAnchorFraction = 1.0f / 3.0f;
 
-	// Tiempo que la graph variable "SkipEquipAnimation" se deja activa al reequipar.
-	inline constexpr std::chrono::milliseconds kSkipEquipAnimationWindow{ 500 };
-
-	// -- Giro en vuelo (punto 10) --
-	// Nodo hijo del NIF del arma que gira; debe coincidir con el nombre en NifSkope.
-	inline constexpr std::string_view kWeaponSpinNodeName{ "Mjolnir" };
-
-	// Velocidad angular máxima del giro y eje local (unitario).
-	inline constexpr float        kSpinAngularSpeed = 20.0f;  // ~4*pi rad/s
-	inline constexpr RE::NiPoint3 kSpinAxisLocal{ 0.0f, 0.0f, 1.0f };
-
-	// Rampa de arranque del giro hasta kSpinAngularSpeed (<= 0 la desactiva).
-	inline constexpr float kSpinRampDuration = 0.3f;  // s
-
-	// Antelación con la que empieza el enderezado antes de llegar a la mano.
-	inline constexpr float kSpinStraightenLeadTime = 0.2f;  // s
-
-	// -- Clavado en un actor (punto 6) --
-	// Habilidad de parálisis (Ability, Constant Effect) concedida mientras el arma está clavada.
-	// CAP_ThorMjolnir_Ability_ThrowingParalysis, FormID local del ESL.
-	inline constexpr RE::FormID kEmbeddedParalysisSpellLocalFormID = 0x019;
-
-	// Efecto de la parálisis, para comprobar si quedó activo (inmunidad).
-	// CAP_ThorMjolnir_ParalysisAbilityEffect, FormID local del ESL.
-	inline constexpr RE::FormID kEmbeddedParalysisEffectLocalFormID = 0x01A;
-
-	// Hazard eléctrico (con Drop To Ground) colocado sobre el actor al clavarse; FormID local del ESL.
-	inline constexpr RE::FormID kEmbeddedHazardLocalFormID = 0x0C3;
-
-	// Hazard eléctrico sin Drop To Ground para impactos contra superficies, orientado por la normal.
-	inline constexpr RE::FormID kSurfaceHazardLocalFormID = 0x0C2;
-
-	// Tiempo máximo clavada en un actor; después el arma vuelve sola.
-	inline constexpr float kEmbeddedMaxDuration = 5.0f;
-
-	// Margen para confirmar que la parálisis quedó activa; si no, el objetivo es inmune.
-	inline constexpr float kImmunityCheckDelay = 0.3f;
-
 	// -- Golpes del regreso (punto 9) --
-	// Magnitud del tambaleo (graph variable staggerMagnitude).
+
+	// Magnitud del tambaleo (kStaggerMagnitudeGraphVariable).
 	inline constexpr float kStaggerMagnitude = 1.0f;
 
+	// -- Atrape (Catch.hkx, Open Animation Replacer) --
+
+	// Global (CAP_GlobalVariable_ThorMjolnir_CatchTrigger, FormID local del ESL) que hace que el submod de OAR sustituya
+	// el ataque ligero por Catch.hkx.
+	inline constexpr RE::FormID kCatchTriggerGlobalLocalFormID = 0x021;
+
+	// Red de seguridad: el reequipado ocurre pasado este margen si no llega la anotación de Catch.hkx.
+	inline constexpr std::chrono::milliseconds kCatchReleaseFallbackWindow{ 1500 };
+
+	// Tiempo desde el attackStart de Catch.hkx hasta su anotación de mano cerrada (reloj de FrameHook, medido en el juego).
+	// Valor inicial: WeaponManager lo vuelve a medir en cada Atrape y usa la última medida.
+	inline constexpr float kCatchAnimationLeadTime = 0.51f;
+
+	// Lo mismo para el clip del Atrape en primera persona (anotación a 0,133 s de 0,533 s).
+	inline constexpr float kCatchAnimationLeadTimeFirstPerson = 0.133333f;
+
+	// Rango válido de una medida de kCatchAnimationLeadTime (fracción del nominal); fuera de él
+	// (tirón durante el gesto, o pausa sin FrameHook) se descarta.
+	inline constexpr float kCatchLeadMeasureMinFactor = 0.5f;
+	inline constexpr float kCatchLeadMeasureMaxFactor = 2.0f;
+
+	// Medidas recientes de Catch.hkx cuya mediana fija la llegada del Atrape (impar: la mediana es una medida real).
+	inline constexpr std::size_t kCatchLeadSampleCount = 5;
+
+	// Red de seguridad: si Catch.hkx no empieza en este margen tras pedirlo, el arma deja de esperarlo.
+	inline constexpr std::chrono::milliseconds kCatchStartTimeout{ 1000 };
+
+	// Tiempo mínimo tras la liberación de Call.hkx antes de arrancar Catch.hkx.
+	inline constexpr float kMinCatchAnimationDelay = 0.5f;
+
+	// La Llamada debe cerrar (attackStop) antes de que pueda arrancar el Atrape; si no, el grafo repite la Llamada.
+	static_assert(kCallAnimationTailDuration.count() / 1000.0f < kMinCatchAnimationDelay);
+	static_assert(kCallAnimationTailDurationFirstPerson.count() / 1000.0f < kMinCatchAnimationDelay);
+
+	// Cola de Catch.hkx tras su anotación antes de enviar attackStop. Primera persona: resto del clip (0.533 s - 0.133 s).
+	inline constexpr std::chrono::milliseconds kCatchAnimationTailDuration{ 500 };
+	inline constexpr std::chrono::milliseconds kCatchAnimationTailDurationFirstPerson{ 400 };
+
+	// Tiempo que la graph variable kSkipEquipAnimationGraphVariable se deja activa al reequipar.
+	inline constexpr std::chrono::milliseconds kSkipEquipAnimationWindow{ 500 };
+
+	// Espera extra al final del Atrape antes de apagar las chispas (el grafo sigue mezclando).
+	inline constexpr std::chrono::milliseconds kCatchVfxSettleDelay{ 400 };
+
+	// Fuerza y duración del temblor de cámara al atrapar (RE::ShakeCamera).
+	inline constexpr float kCatchShakeStrength = 20.0f;
+	inline constexpr float kCatchShakeDuration = 0.3f;
+
 	// -- Poder Lightning Dash --
+
 	// Lesser Power concedido mientras el arma está equipada.
 	// CAP_ThorMjolnir_Spell_LightningDash, FormID local del ESL.
 	inline constexpr RE::FormID kLightningDashSpellLocalFormID = 0x00E;
@@ -244,6 +320,7 @@ namespace Constants
 	inline constexpr const char* kLightningDashTrailNodeName = "NPC Spine2 [Spn2]";
 
 	// -- Golpe en salto de Lightning Dash (arma en vuelo y llegada a poca altura) --
+
 	// Global (CAP_GlobalVariable_ThorMjolnir_SlamTrigger, FormID local del ESL) que hace que el submod Slam de OAR
 	// sustituya el ataque ligero por el golpe en salto.
 	inline constexpr RE::FormID kSlamTriggerGlobalLocalFormID = 0x01C;
@@ -283,93 +360,21 @@ namespace Constants
 	// para el golpe en salto. Cubre el más largo medido (1,43 s, maza de SIGMA en primera persona).
 	inline constexpr float kSlamGraphSettleTimeoutSeconds = 2.0f;
 
-	// -- Temblor al desclavar (punto 11) --
-	// Duración mínima del temblor; BeginReturn puede alargarlo.
-	inline constexpr float kStickShudderDuration = 0.5f;
-
-	// Ángulo máximo de la oscilación del temblor.
-	inline constexpr float kStickShudderMaxAngle = 0.261799f;  // rad (15°)
-
-	// Fracción del ángulo máximo alcanzada al final del temblor (curva exponencial).
-	inline constexpr float kStickShudderAmplitudeRampFraction = 0.95f;
-
-	// Frecuencia del temblor al empezar y al terminar.
-	inline constexpr float kStickShudderFrequencyStart = 3.0f;  // Hz
-	inline constexpr float kStickShudderFrequencyEnd = 15.0f;   // Hz
-
-	// Eje local (unitario) del temblor.
-	inline constexpr RE::NiPoint3 kStickShudderAxisLocal{ 1.0f, 0.0f, 0.0f };
-
 	// -- Sonidos (12.- AUDIO) --
-	// Silbido del lanzamiento (ruta relativa a Data).
+
+	// Silbido del lanzamiento y chasquido de dedos de Llamada (rutas relativas a Data).
 	inline constexpr const char* kThrowLaunchSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirThrow02.wav";
+	inline constexpr const char* kCallReleaseSoundFilePath = "Sound/FX/ThorMjolnir/ThorMjolnir_FingerSnap.wav";
 
 	// Sonidos del atrape: arranque anticipado y golpe final (Audio::CatchCue).
 	inline constexpr const char* kCatchStartSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirCall02_Start.wav";
 	inline constexpr const char* kCatchEndSoundFilePath = "Sound/FX/ThorMjolnir/MjolnirCall02_End.wav";
 
-	// Prioridad de GetSoundHandleByFile.
-	inline constexpr std::uint32_t kFileSoundPriority = 0;
-
 	// Antelación del sonido de arranque respecto a la llegada.
 	inline constexpr float kCatchStartSoundLeadTime = 1.066f;
 
-	// Tiempo desde el attackStart de Catch.hkx hasta su anotación de mano cerrada (reloj de FrameHook, medido en el juego).
-	// Valor inicial: WeaponManager lo vuelve a medir en cada Atrape y usa la última medida.
-	inline constexpr float kCatchAnimationLeadTime = 0.51f;
-
-	// Lo mismo para el clip del Atrape en primera persona (anotación a 0,133 s de 0,533 s).
-	inline constexpr float kCatchAnimationLeadTimeFirstPerson = 0.133333f;
-
-	// Rango válido de una medida de kCatchAnimationLeadTime (fracción del nominal); fuera de él
-	// (tirón durante el gesto, o pausa sin FrameHook) se descarta.
-	inline constexpr float kCatchLeadMeasureMinFactor = 0.5f;
-	inline constexpr float kCatchLeadMeasureMaxFactor = 2.0f;
-
-	// Medidas recientes de Catch.hkx cuya mediana fija la llegada del Atrape (impar: la mediana es una medida real).
-	inline constexpr std::size_t kCatchLeadSampleCount = 5;
-
-	// Red de seguridad: si Catch.hkx no empieza en este margen tras pedirlo, el arma deja de esperarlo.
-	inline constexpr std::chrono::milliseconds kCatchStartTimeout{ 1000 };
-
-	// Tiempo mínimo tras la liberación de Call.hkx antes de arrancar Catch.hkx.
-	inline constexpr float kMinCatchAnimationDelay = 0.5f;
-
-	// Intervalo mínimo entre dos attackStart por pulsación (Lanzar tras Atrape, Llamada tras Lanzar).
-	inline constexpr float kMinAttackStartInterval = 1.0f;
-
-	// -- Cortar un ataque en curso (InterruptAttackThen) --
-	// N-ésimo attackStop que marca reposo, espera tras él, red de seguridad y ventana del vigilante.
-	inline constexpr int                       kAttackInterruptReadyEventOrdinal = 2;
-	inline constexpr std::chrono::milliseconds kAttackInterruptPostEventDelay{ 50 };
-	inline constexpr std::chrono::milliseconds kAttackInterruptFallbackDelay{ 450 };
-	inline constexpr std::chrono::milliseconds kAttackInterruptWatchWindow{ 1500 };
-
-	// -- Cortar un bloqueo en curso --
-	// Evento vanilla que sale del bloqueo sin mezcla y espera antes del gesto.
-	inline constexpr const char*               kBlockStopInstantAnimationEvent = "blockStopInstant";
-	inline constexpr std::chrono::milliseconds kBlockInterruptSettleDelay{ 50 };
-
-	// Cola de Call.hkx y Catch.hkx tras su anotación antes de enviar attackStop.
-	inline constexpr std::chrono::milliseconds kCallAnimationTailDuration{ 250 };
-	inline constexpr std::chrono::milliseconds kCatchAnimationTailDuration{ 500 };
-
-	// Lo mismo para los clips de primera persona. Atrape: resto del clip tras la anotación (0.533 s - 0.133 s).
-	inline constexpr std::chrono::milliseconds kCallAnimationTailDurationFirstPerson{ 250 };
-	inline constexpr std::chrono::milliseconds kCatchAnimationTailDurationFirstPerson{ 400 };
-
-	// La Llamada debe cerrar (attackStop) antes de que pueda arrancar el Atrape; si no, el grafo repite la Llamada.
-	static_assert(kCallAnimationTailDuration.count() / 1000.0f < kMinCatchAnimationDelay);
-	static_assert(kCallAnimationTailDurationFirstPerson.count() / 1000.0f < kMinCatchAnimationDelay);
-
-	// Espera extra al final del Atrape antes de apagar las chispas (el grafo sigue mezclando).
-	inline constexpr std::chrono::milliseconds kCatchVfxSettleDelay{ 400 };
-
-	// Fuerza y duración del temblor de cámara al atrapar (RE::ShakeCamera).
-	inline constexpr float kCatchShakeStrength = 20.0f;
-	inline constexpr float kCatchShakeDuration = 0.3f;
-
-	// Flags de GetSoundHandleByFile.
+	// Prioridad y flags de GetSoundHandleByFile.
+	inline constexpr std::uint32_t kFileSoundPriority = 0;
 	inline constexpr std::uint32_t kSoundHandleFlags = 0x0;
 
 	// Volumen aplicado a cada sonido antes de FadeInPlay.
@@ -379,6 +384,7 @@ namespace Constants
 	inline constexpr float kCallReleaseSoundVolume = 3.0f;
 
 	// -- Chispas de movimiento (WeaponVFX) --
+
 	// NIF de chispas sin NiControllerManager (controladores en bucle), relativo a meshes/; lo crea BSTempEffectParticle.
 	inline constexpr const char* kMovementVfxEffectPath = "Effects/ThorMjolnirSparksFX.nif";
 
@@ -396,6 +402,7 @@ namespace Constants
 	inline constexpr float kMovementVfxScale = 1.0f;
 
 	// -- Estela de rayo (WeaponTrail) --
+
 	// NIF de la estela, relativo a meshes/.
 	inline constexpr const char* kTrailEffectPath = "Effects/ThorMjolnirTrail.nif";
 
@@ -461,6 +468,7 @@ namespace Constants
 	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x028;
 
 	// -- Brillo de manos (HandGlow) --
+
 	// Art object (copia de lightningstormhandeffects.nif) aplicado en las manos; FormID local del ESL.
 	inline constexpr RE::FormID kHandGlowArtObjectLocalFormID = 0x02A;
 
@@ -475,4 +483,28 @@ namespace Constants
 
 	// BGSExplosion propio colocado en cada impacto de la ida; FormID local del ESL.
 	inline constexpr RE::FormID kImpactExplosionLocalFormID = 0x029;
+
+	// -- Efectos de los power attacks (PowerAttackVFX) --
+
+	// Evento vanilla de inicio del golpe (el final es kAttackStopAnimationEvent).
+	inline constexpr std::string_view kPowerAttackVfxStartEvent = "weaponSwing";
+
+	// Red de seguridad si no llega attackStop.
+	inline constexpr std::chrono::milliseconds kPowerAttackVfxSafetyTimeout{ 3000 };
+
+	// -- Glow de la textura del martillo (GlowMapControl) --
+
+	// Duración del fundido al encenderse o apagarse.
+	inline constexpr float kGlowMapFadeSeconds = 0.5f;
+
+	// Intervalo de búsqueda de criaturas cercanas.
+	inline constexpr float kGlowMapCreatureScanIntervalSeconds = 0.5f;
+
+	// Mínimo del pulso como fracción de la intensidad.
+	inline constexpr float kGlowMapPulseMinFactor = 0.15f;
+
+	// Keywords vanilla de raza de cada tipo de criatura (ActorTypeDragon/Undead/Daedra), FormID de Skyrim.esm.
+	inline constexpr RE::FormID kGlowMapDragonKeywordFormID = 0x035D59;
+	inline constexpr RE::FormID kGlowMapUndeadKeywordFormID = 0x013796;
+	inline constexpr RE::FormID kGlowMapDaedraKeywordFormID = 0x013797;
 }

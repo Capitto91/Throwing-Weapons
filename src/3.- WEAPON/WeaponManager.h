@@ -172,7 +172,7 @@ namespace Weapon
 		// Token del desequipado diferido de ThrowWeapon; lo cancela ReequipAndReset.
 		Scheduler::CancelToken throwTailToken;
 
-		// Token del apagado diferido de "SkipEquipAnimation"; ReequipAndReset cancela el anterior.
+		// Token del apagado diferido de Constants::kSkipEquipAnimationGraphVariable; ReequipAndReset cancela el anterior.
 		Scheduler::CancelToken skipEquipAnimationToken;
 
 		// true mientras InterruptAttackThen espera; se ignoran pulsaciones nuevas.

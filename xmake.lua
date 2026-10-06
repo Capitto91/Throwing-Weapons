@@ -66,3 +66,103 @@ target("ThorMjolnir_OAR")
     -- despliega el INI por defecto junto al DLL (mismo prefixdir que usa
     -- commonlibsse-ng.plugin para el binario)
     add_installfiles("Data/SKSE/Plugins/ThorMjolnir.ini", { prefixdir = "SKSE/Plugins" })
+
+-- Comprobador de estructura, a mano con `xmake check-structure` (no va en la compilación): busca en src/
+-- código que ya tiene pieza compartida (ver "Piezas compartidas" en CLAUDE.md). Sale con error si encuentra algo.
+task("check-structure")
+    set_category("plugin")
+    on_run(function ()
+        -- find: textos literales (o patrones de Lua con pattern = true); allow: archivos donde son legítimos.
+        local rules = {
+            { find = { "LookupForm", "LookupByEditorID" }, allow = { "src/1.- CORE/Forms.cpp" },
+              hint = "formulario del .esp o de Skyrim.esm: puntero en Forms (Forms.h + Forms::Load)" },
+            { find = { "HasKeywordString" },
+              hint = "keyword en Forms + HasKeyword (el arma: ActorUtils::IsThrowableWeapon)" },
+            { find = { "\"WEAPON\"" }, allow = { "src/1.- CORE/Constants.h" },
+              hint = "Constants::kWeaponNodeName / ActorUtils::GetWeaponBone" },
+            { find = { "GraphVariable%a*%(%s*\"", "NotifyAnimationGraph%(%s*\"" }, pattern = true,
+              hint = "nombre del grafo: constante en Constants.h, con las otras del grafo" },
+            { find = { "std::thread" }, allow = { "src/1.- CORE/Scheduler.cpp", "src/6.- PHYSICS/PhysicsManager.cpp" },
+              hint = "Scheduler::After (un disparo) o Physics::StartTickLoop (cada fotograma)" },
+            { find = { "SetDelete" }, allow = { "src/6.- PHYSICS/PhysicsManager.cpp" },
+              hint = "Physics::DestroyReference" },
+            { find = { "EquipObject(", "UnequipObject(" }, allow = { "src/11.- SKYRIM/ActorUtils.cpp", "src/10.- EVENTS/EventManager.cpp" },
+              hint = "ActorUtils::EquipNow / UnequipNow" },
+            { find = { "_mm_store_ps" }, allow = { "src/9.- MATH/VectorMath.cpp" },
+              hint = "Math::ToNiPoint3" },
+            { find = { "/ 180", "/180" }, allow = { "src/9.- MATH/RotationMath.h" },
+              hint = "Math::DegreesToRadians" },
+            { find = { "AddAnimationGraphEventSink" }, allow = { "src/10.- EVENTS/AttackInterruptWatcher.cpp" },
+              hint = "ActorUtils::AddEventSinkToAllGraphs" },
+            { find = { "SKSE::log::" },
+              hint = "logs:: (alias de pch.h)" },
+            { find = { "0[xX]14%x%x%x%x%x%x%x" }, pattern = true,
+              hint = "REL::RelocationID / REL::Relocation con Address Library, nunca direcciones fijas" },
+        }
+
+        local function is_allowed(rule, file)
+            for _, allowed in ipairs(rule.allow or {}) do
+                if file == allowed then
+                    return true
+                end
+            end
+            return false
+        end
+
+        -- Quita el comentario // del final de la línea, si no está dentro de una cadena.
+        local function strip_comment(line)
+            local from = 1
+            while true do
+                local start = line:find("//", from, true)
+                if not start then
+                    return line
+                end
+                local _, quotes = line:sub(1, start - 1):gsub("\"", "")
+                if quotes % 2 == 0 then
+                    return line:sub(1, start - 1)
+                end
+                from = start + 2
+            end
+        end
+
+        local root = os.projectdir()
+        local files = table.join(os.files(path.join(root, "src/**.cpp")), os.files(path.join(root, "src/**.h")))
+        table.sort(files)
+
+        local count = 0
+        local checked = 0
+        for _, file in ipairs(files) do
+            local relative = (path.relative(file, root):gsub("\\", "/"))
+            if not relative:find("13.- EXTERNAL", 1, true) then
+                checked = checked + 1
+                local lineNumber = 0
+                for line in (io.readfile(file) .. "\n"):gmatch("(.-)\r?\n") do
+                    lineNumber = lineNumber + 1
+                    local code = strip_comment(line)
+                    for _, rule in ipairs(rules) do
+                        if not is_allowed(rule, relative) then
+                            for _, needle in ipairs(rule.find) do
+                                if code:find(needle, 1, not rule.pattern) then
+                                    count = count + 1
+                                    print("%s:%d: usar %s", relative, lineNumber, rule.hint)
+                                    print("    %s", line:trim())
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if count > 0 then
+            raise("check-structure: %d aviso(s).", count)
+        end
+        print("check-structure: sin avisos (%d archivos).", checked)
+    end)
+    set_menu {
+        usage = "xmake check-structure",
+        description = "Busca en src/ lo que ya tiene pieza compartida (ver CLAUDE.md).",
+        options = {}
+    }
+task_end()

@@ -5,7 +5,6 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
 #include "1.- CORE/Requirements.h"
-#include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/OARFunctions.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "11.- SKYRIM/TDMBridge.h"
@@ -118,15 +117,6 @@ namespace Events
 				RE::ActorEquipManager::GetSingleton()->UnequipObject(&a_player, boundObject, nullptr, 1, slot);
 			}
 			logs::info("Events::EquipWatcher: '{}' quitado de la mano derecha.", a_form->GetName());
-
-			// Comprobación un fotograma después: lo que queda en cada mano.
-			(void)Scheduler::After(std::chrono::milliseconds{ 0 }, []() {
-				if (auto* currentPlayer = RE::PlayerCharacter::GetSingleton()) {
-					const auto* left = currentPlayer->GetEquippedObject(true);
-					const auto* right = currentPlayer->GetEquippedObject(false);
-					logs::info("Events::EquipWatcher: manos tras quitarlo -- izquierda '{}', derecha '{}'.", left ? left->GetName() : "nada", right ? right->GetName() : "nada");
-				}
-			});
 		}
 
 		// Equipado del jugador. Con el ciclo en marcha, mantiene libre la mano derecha (KeepRightHandFree); al equipar o
