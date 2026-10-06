@@ -72,6 +72,7 @@ namespace Forms
 		Resolve(data, actorTypeDragon, kSkyrimPluginName, Constants::kGlowMapDragonKeywordFormID, "la keyword ActorTypeDragon");
 		Resolve(data, actorTypeUndead, kSkyrimPluginName, Constants::kGlowMapUndeadKeywordFormID, "la keyword ActorTypeUndead");
 		Resolve(data, actorTypeDaedra, kSkyrimPluginName, Constants::kGlowMapDaedraKeywordFormID, "la keyword ActorTypeDaedra");
+		Resolve(data, rightHandEquipSlot, kSkyrimPluginName, Constants::kRightHandEquipSlotFormID, "la ranura de la mano derecha");
 
 		if (g_missing == 0) {
 			logs::info("Forms::Load: {} formularios resueltos.", g_found);

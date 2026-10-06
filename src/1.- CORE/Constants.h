@@ -19,6 +19,10 @@ namespace Constants
 	// Hueso del esqueleto vanilla del que cuelga el arma de la mano derecha; la malla del arma es su hijo.
 	inline constexpr std::string_view kWeaponNodeName{ "WEAPON" };
 
+	// Ranura de equipado de la mano derecha (EQUP RightHand), FormID de Skyrim.esm. Con el ciclo en marcha, lo que se
+	// equipe en ella se desequipa solo de esa mano (la izquierda queda libre).
+	inline constexpr RE::FormID kRightHandEquipSlotFormID = 0x013F42;
+
 	// Ruta del INI, relativa a la carpeta del juego.
 	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 

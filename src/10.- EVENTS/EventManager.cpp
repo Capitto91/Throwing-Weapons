@@ -5,6 +5,7 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
 #include "1.- CORE/Requirements.h"
+#include "1.- CORE/Scheduler.h"
 #include "10.- EVENTS/OARFunctions.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "11.- SKYRIM/TDMBridge.h"
@@ -93,8 +94,43 @@ namespace Events
 			g_pendingRecovery.reset();
 		}
 
-		// Equipado del jugador. Con el arma arrojadiza fuera de la mano, desequipa cualquier otra que se equipe; al
-		// equipar o desequipar la arrojadiza, efectos de power attack y glow, y avisa a OnThrowableWeaponEquipChanged.
+		// Con el ciclo en marcha la mano derecha queda libre para los puños: si a_form, recién equipado, está en ella, se
+		// deshace en el acto (arma: de esa mano; hechizo o pergamino: DeselectSpell). La izquierda y lo demás, libres.
+		// Dentro del propio evento: hacerlo después, con un menú abierto, lo hace caer (lee su lista de objetos ya vieja).
+		void KeepRightHandFree(RE::PlayerCharacter& a_player, RE::TESForm* a_form)
+		{
+			if (!a_form) {
+				return;
+			}
+
+			const auto* left = a_player.GetEquippedObject(true);
+			const auto* right = a_player.GetEquippedObject(false);
+			logs::info("Events::EquipWatcher: '{}' equipado con el ciclo en marcha -- izquierda '{}', derecha '{}'.", a_form->GetName(), left ? left->GetName() : "nada", right ? right->GetName() : "nada");
+			if (right != a_form) {
+				return;
+			}
+
+			if (auto* spell = a_form->As<RE::SpellItem>()) {
+				a_player.DeselectSpell(spell);
+			} else if (auto* boundObject = a_form->As<RE::TESBoundObject>()) {
+				// Solo de la derecha si el mismo objeto está también en la izquierda; si no, como siempre.
+				const auto* slot = left == a_form ? Forms::rightHandEquipSlot : nullptr;
+				RE::ActorEquipManager::GetSingleton()->UnequipObject(&a_player, boundObject, nullptr, 1, slot);
+			}
+			logs::info("Events::EquipWatcher: '{}' quitado de la mano derecha.", a_form->GetName());
+
+			// Comprobación un fotograma después: lo que queda en cada mano.
+			(void)Scheduler::After(std::chrono::milliseconds{ 0 }, []() {
+				if (auto* currentPlayer = RE::PlayerCharacter::GetSingleton()) {
+					const auto* left = currentPlayer->GetEquippedObject(true);
+					const auto* right = currentPlayer->GetEquippedObject(false);
+					logs::info("Events::EquipWatcher: manos tras quitarlo -- izquierda '{}', derecha '{}'.", left ? left->GetName() : "nada", right ? right->GetName() : "nada");
+				}
+			});
+		}
+
+		// Equipado del jugador. Con el ciclo en marcha, mantiene libre la mano derecha (KeepRightHandFree); al equipar o
+		// desequipar el arma arrojadiza, efectos de power attack y glow, y avisa a OnThrowableWeaponEquipChanged.
 		class EquipWatcher final : public RE::BSTEventSink<RE::TESEquipEvent>
 		{
 		public:
@@ -107,11 +143,8 @@ namespace Events
 
 				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
 
-				// Con el ciclo en marcha no se puede equipar nada más.
 				if (a_event->equipped && Weapon::WeaponManager::GetSingleton()->GetState() != Weapon::State::kInHand) {
-					if (auto* boundObject = form ? form->As<RE::TESBoundObject>() : nullptr) {
-						RE::ActorEquipManager::GetSingleton()->UnequipObject(player, boundObject);
-					}
+					KeepRightHandFree(*player, form);
 				}
 
 				if (!ActorUtils::IsThrowableWeapon(form)) {

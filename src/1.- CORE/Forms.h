@@ -53,6 +53,9 @@ namespace Forms
 	inline RE::BGSKeyword* actorTypeUndead{ nullptr };
 	inline RE::BGSKeyword* actorTypeDaedra{ nullptr };
 
+	// Ranura de equipado de la mano derecha: con el ciclo en marcha se desequipa solo de ella (EventManager).
+	inline RE::BGSEquipSlot* rightHandEquipSlot{ nullptr };
+
 	// Busca todos los formularios y avisa en el log de cada uno que falte. Lo llama EventManager en kDataLoaded,
 	// antes que nada que los use.
 	void Load();
