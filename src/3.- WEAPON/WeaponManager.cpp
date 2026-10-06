@@ -75,6 +75,15 @@ namespace Weapon
 				release();
 			});
 		}
+
+		// Oculta o muestra a_weapon en los menús (inventario, cofres, comercio, favoritos) con la marca "no jugable" de su
+		// registro, solo en memoria: lanzada no se puede soltar, vender, guardar ni equipar. La usan ThrowWeapon y los regresos.
+		void SetHiddenFromMenus(RE::TESBoundObject* a_weapon, bool a_hidden)
+		{
+			if (auto* weapon = a_weapon ? a_weapon->As<RE::TESObjectWEAP>() : nullptr) {
+				weapon->weaponData.flags.set(a_hidden, RE::TESObjectWEAP::Data::Flag::kNonPlayable);
+			}
+		}
 	}
 
 	WeaponManager* WeaponManager::GetSingleton()
@@ -211,7 +220,8 @@ namespace Weapon
 		// Un Lightning Dash en curso se corta (devuelve el movimiento).
 		LightningDash::Cancel();
 
-		// Estado: no hay réplica que borrar al cargar, solo se olvida el handle.
+		// Estado: no hay réplica que borrar al cargar, solo se olvida el handle; el arma vuelve a los menús.
+		SetHiddenFromMenus(weaponState.GetActiveWeapon(), false);
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetActiveReplicaHandle({});
 		weaponState.SetStuckActorHandle({});
@@ -305,9 +315,13 @@ namespace Weapon
 		auto* weapon = weaponForm ? weaponForm->As<RE::TESBoundObject>() : nullptr;
 
 		if (player && weapon) {
-			// Diferido un tick: síncrono falla en silencio.
-			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
-				ActorUtils::EquipNow(*player, weapon);
+			// De vuelta en los menús (la marca puede seguir en memoria) y reequipada diferida un tick: síncrono falla en silencio.
+			SetHiddenFromMenus(weapon, false);
+			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
+				if (!ActorUtils::EquipNow(*player, weapon)) {
+					logs::warn("WeaponManager::RecoverOrReset: el arma ya no está en el inventario, no se reequipa.");
+					OnThrowableWeaponEquipChanged(false);
+				}
 			});
 		} else {
 			logs::warn("WeaponManager::RecoverOrReset: el arma guardada ya no se resuelve, no se reequipa nada.");
@@ -840,8 +854,9 @@ namespace Weapon
 		auto* weapon = weaponState.GetActiveWeapon();
 
 		if (player && weapon) {
-			// Se oculta el arma y la réplica toma el relevo; el desequipado real se difiere.
+			// Se oculta el arma (también de los menús) y la réplica toma el relevo; el desequipado real se difiere.
 			Animation::SetEquippedWeaponHidden(*player, true);
+			SetHiddenFromMenus(weapon, true);
 			throwTailActive = true;
 			lastAttackAnimationEventTime = std::chrono::steady_clock::now();
 
@@ -979,7 +994,9 @@ namespace Weapon
 		Physics::DestroyReference(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
 
+		// De vuelta en los menús antes de reequiparla.
 		auto* weapon = weaponState.GetActiveWeapon();
+		SetHiddenFromMenus(weapon, false);
 
 		if (player && weapon && throwTailWasPending) {
 			// Sin desequipar todavía: se vuelve a mostrar en vez de reequiparla encima (retiraría Lightning Dash) y se hace la
@@ -998,7 +1015,11 @@ namespace Weapon
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
 				// Sin animación de equipar/desenvainar (mod SkipEquipAnimation).
 				player->SetGraphVariableBool(Constants::kSkipEquipAnimationGraphVariable, true);
-				ActorUtils::EquipNow(*player, weapon);
+				if (!ActorUtils::EquipNow(*player, weapon)) {
+					// Se lo quitó un script mientras estaba fuera (p. ej. al confiscarlo): la réplica ya no está, y sin arma no hay poder.
+					logs::warn("WeaponManager::ReequipAndReset: el arma ya no está en el inventario, no se reequipa.");
+					OnThrowableWeaponEquipChanged(false);
+				}
 
 				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
 				Scheduler::Cancel(skipEquipAnimationToken);

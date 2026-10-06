@@ -55,9 +55,19 @@ namespace ActorUtils
 		return bone ? bone->world.translate : a_actor.GetPosition();
 	}
 
-	void EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
+	bool EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
 	{
+		// Sin el objeto en el inventario, EquipObject lo da por equipado sin modelo (un arma invisible en la mano).
+		if (!a_object) {
+			return false;
+		}
+		const auto counts = a_actor.GetInventoryCounts([a_object](RE::TESBoundObject& a_candidate) { return &a_candidate == a_object; });
+		if (const auto it = counts.find(a_object); it == counts.end() || it->second <= 0) {
+			return false;
+		}
+
 		RE::ActorEquipManager::GetSingleton()->EquipObject(&a_actor, a_object, nullptr, 1, nullptr, false, false, true, true);
+		return true;
 	}
 
 	void UnequipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
