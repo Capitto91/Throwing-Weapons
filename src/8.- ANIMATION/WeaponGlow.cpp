@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 namespace Animation
 {
@@ -198,8 +199,8 @@ namespace Animation
 			});
 		}
 
-		// Cierra el destello activo en el acto: bucle, shaders, luz y referencia. Lo usan el relevo de StartWeaponGlow
-		// y el final del fundido de StopWeaponGlow.
+		// Cierra el destello activo en el acto: bucle, shaders, luz y referencia. Lo usan el relevo de StartWeaponGlow,
+		// el final del fundido de StopWeaponGlow y StopWeaponGlowNow.
 		void TearDown()
 		{
 			Physics::CancelTickLoop(g_tickToken);
@@ -376,5 +377,41 @@ namespace Animation
 				TearDown();
 			}
 		});
+	}
+
+	void StopWeaponGlowNow()
+	{
+		// Invalida una espera del 3D o un cierre diferido pendientes.
+		++g_generation;
+		TearDown();
+	}
+
+	void RemoveStrayWeaponGlows()
+	{
+		auto* tes = RE::TES::GetSingleton();
+		auto* form = Forms::weaponGlowActivator;
+		if (!tes || !form) {
+			return;
+		}
+
+		// Se apuntan durante el recorrido de las celdas y se borran después, fuera de él.
+		std::vector<RE::ObjectRefHandle> strays;
+		tes->ForEachReference([&](RE::TESObjectREFR* a_ref) {
+			if (a_ref && !a_ref->IsDeleted() && a_ref->GetBaseObject() == form) {
+				const RE::ObjectRefHandle handle(a_ref);
+				if (handle != g_activeHandle) {
+					strays.push_back(handle);
+				}
+			}
+			return RE::BSContainer::ForEachResult::kContinue;
+		});
+
+		for (const auto& handle : strays) {
+			Physics::DestroyReference(handle);
+		}
+
+		if (!strays.empty()) {
+			logs::info("Animation::RemoveStrayWeaponGlows: retirados {} destellos que quedaron guardados en la partida.", strays.size());
+		}
 	}
 }

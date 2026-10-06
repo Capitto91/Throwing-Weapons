@@ -24,4 +24,12 @@ namespace Animation
 	// Apaga el destello con fundido y lo borra.
 	// Lo llaman WeaponManager al terminar el Atrape o al recuperar sin animación, y PowerAttackVFX.
 	void StopWeaponGlow();
+
+	// Cierra el destello en el acto, sin fundido. Lo llama WeaponManager::ResetToInHand al cargar partida: el de antes
+	// de la carga ya no existe, pero su handle impediría encender otro.
+	void StopWeaponGlowNow();
+
+	// Borra de las celdas cargadas los destellos que no son el activo (guardados en la partida a mitad de un ciclo; el
+	// .esp no coloca ninguno). Lo llama EventManager al cerrarse cada pantalla de carga.
+	void RemoveStrayWeaponGlows();
 }

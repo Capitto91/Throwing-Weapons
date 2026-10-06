@@ -211,7 +211,7 @@ namespace Weapon
 		// Un Lightning Dash en curso se corta (devuelve el movimiento).
 		LightningDash::Cancel();
 
-		// No hay réplica que borrar al cargar: solo se olvida el handle.
+		// Estado: no hay réplica que borrar al cargar, solo se olvida el handle.
 		weaponState.SetActiveWeapon(nullptr);
 		weaponState.SetActiveReplicaHandle({});
 		weaponState.SetStuckActorHandle({});
@@ -219,16 +219,25 @@ namespace Weapon
 		weaponState.SetActiveTickToken({});
 		TransitionState(State::kInHand);
 
-		// Solo se revierte iRightHandType si lo cambió nuestro código.
+		// Gestos y temporizadores del ciclo anterior: ninguno se ejecuta en la partida cargada.
+		// iRightHandType solo se revierte si lo cambió nuestro código.
 		const bool wasCallAnimationActive = callAnimationActive;
 		Scheduler::Cancel(attackInterruptToken);
+		Scheduler::Cancel(throwTailToken);
 		Events::AttackInterruptWatcher::Disarm();
 		attackInterruptActive = false;
+		throwTailActive = false;
 		catchState = {};
 		callAnimationActive = false;
 		throwPressArmed = false;
 
-		// Desbloquea movimiento, cambio de cámara y AnimationDriven por si se cargó en kThrowing o en un dash.
+		// Efectos de antes de la carga, en el acto: los del ataque fuerte, las chispas y el destello.
+		Animation::PowerAttackVFX::Cancel();
+		Animation::StopMovementVFX();
+		Animation::StopWeaponGlowNow();
+
+		// Desbloquea movimiento, cambio de cámara y AnimationDriven y apaga los Globals de los gestos (la partida guarda
+		// su valor), por si se cargó a mitad de un gesto o de un dash.
 		Input::SetMovementLocked(false);
 		Input::SetCameraSwitchLocked(false);
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
@@ -236,6 +245,7 @@ namespace Weapon
 			Animation::SetTrigger(Animation::Gesture::kThrow, false);
 			Animation::SetTrigger(Animation::Gesture::kCall, false);
 			Animation::SetTrigger(Animation::Gesture::kCatch, false);
+			Animation::SetTrigger(Animation::Gesture::kSlam, false);
 			if (wasCallAnimationActive) {
 				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 			}

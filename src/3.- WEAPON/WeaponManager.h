@@ -54,7 +54,8 @@ namespace Weapon
 		// Réplica del ciclo actual. La usa GlowMapControl.
 		[[nodiscard]] RE::ObjectRefHandle GetActiveReplicaHandle() const noexcept { return weaponState.GetActiveReplicaHandle(); }
 
-		// Vuelve a "en mano" sin tocar el arma física. Lo llama EventManager en kNewGame.
+		// Vuelve a "en mano" sin tocar el arma física y corta lo que quede del ciclo anterior (temporizadores, efectos y
+		// Globals). Lo llaman EventManager en kNewGame y RecoverOrReset al cargar partida.
 		void ResetToInHand();
 
 		// Datos del ciclo a guardar. Lo llama el callback de guardado del cosave.

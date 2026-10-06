@@ -16,6 +16,7 @@
 #include "7.- COMBAT/DamageManager.h"
 #include "8.- ANIMATION/GlowMapControl.h"
 #include "8.- ANIMATION/PowerAttackVFX.h"
+#include "8.- ANIMATION/WeaponGlow.h"
 
 #include <optional>
 
@@ -193,9 +194,10 @@ namespace Events
 					// Con coc desde el menú principal no llega kNewGame ni kPostLoadGame.
 					Animation::GlowMapControl::EnsureRunning();
 
-					// Efectos persistentes del VisualEffect del poder guardados en la partida.
+					// Restos guardados en la partida: efectos del VisualEffect antiguo del poder y destellos de un ciclo a medias.
 					SKSE::GetTaskInterface()->AddTask([]() {
 						Weapon::LightningDash::RemoveLegacyEffects();
+						Animation::RemoveStrayWeaponGlows();
 					});
 				}
 

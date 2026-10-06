@@ -15,6 +15,6 @@ namespace Animation::PowerAttackVFX
 	void EnsureRegistered(RE::Actor& a_actor);
 
 	// Da por terminados los efectos en curso y apaga el destello.
-	// Lo llama WeaponManager::BeginThrowAnimation antes de encender los del lanzamiento.
+	// Lo llaman WeaponManager::BeginThrowAnimation antes de encender los del lanzamiento y ResetToInHand al cargar partida.
 	void Cancel();
 }
