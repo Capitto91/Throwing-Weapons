@@ -4,9 +4,9 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Settings.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
-#include <numbers>
 
 namespace Animation
 {
@@ -15,7 +15,7 @@ namespace Animation
 		// Roll de la copia a_index en radianes.
 		float ComputeCopyRoll(float a_baseRoll, std::size_t a_index)
 		{
-			return a_baseRoll + static_cast<float>(a_index) * Constants::kTrailCopyRollStepDegrees * std::numbers::pi_v<float> / 180.0f;
+			return a_baseRoll + static_cast<float>(a_index) * Math::DegreesToRadians(Constants::kTrailCopyRollStepDegrees);
 		}
 	}
 

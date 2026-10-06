@@ -26,17 +26,22 @@ namespace Physics
 	// Sincroniza Havok y el nodo visual tras SetPosition/SetAngle.
 	void SyncHavok(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position, const RE::NiPoint3& a_angle);
 
+	// Lleva a_refr a a_position (posición lógica, Havok y nodo visual) con su ángulo actual.
+	// La usan los bucles de tick de la ida, el regreso y el clavado.
+	void MoveTo(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position);
+
 	// Llama a a_callback en el hilo principal en cada fotograma sin pausa (FrameHook) o, sin hook,
 	// cada Constants::kTickInterval. Empieza en el tick siguiente. Devuelve el token para cancelarlo.
 	[[nodiscard]] TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback);
 
-	// Detiene un bucle desde fuera; sin efecto si el token está vacío.
-	void CancelTickLoop(const TickToken& a_token);
+	// Detiene un bucle desde fuera y vacía a_token; sin efecto si ya estaba vacío.
+	void CancelTickLoop(TickToken& a_token);
 
 	// Avanza un fotograma los bucles de StartTickLoop con a_deltaSeconds de juego.
 	// Lo llama FrameHook en cada PlayerCharacter::Update sin pausa.
 	void RunFrame(float a_deltaSeconds);
 
-	// Borra la réplica (Disable + SetDelete); su bucle de tick para solo.
-	void DestroyReplica(RE::ObjectRefHandle a_handle);
+	// Borra una referencia creada por el plugin (réplica, destello o hazard) con Disable + SetDelete;
+	// si tenía un bucle de tick, para solo.
+	void DestroyReference(RE::ObjectRefHandle a_handle);
 }

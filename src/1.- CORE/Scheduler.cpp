@@ -57,10 +57,11 @@ namespace Scheduler
 		return active;
 	}
 
-	void Cancel(const CancelToken& a_token)
+	void Cancel(CancelToken& a_token)
 	{
 		if (a_token) {
 			a_token->store(false);
+			a_token.reset();
 		}
 	}
 

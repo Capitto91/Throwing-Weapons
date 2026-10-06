@@ -29,18 +29,18 @@ namespace Animation
 	// durante a_duration. Lo llama Return::BeginReturn si el arma estaba clavada.
 	void TickShudder(RE::TESObjectREFR& a_refr, const RE::NiMatrix3& a_baseRotation, float a_elapsedSeconds, float a_duration);
 
-	// Activa o desactiva el Global de Lanzar (Forms::throwTriggerGlobal) que lee OAR.
-	void SetThrowTrigger(RE::Actor& a_actor, bool a_active);
+	// Gestos con los que un submod de OAR sustituye el ataque ligero, cada uno con su Global (Forms::*TriggerGlobal).
+	enum class Gesture
+	{
+		kThrow,
+		kCall,
+		kCatch,
+		kSlam  // golpe en salto de Lightning Dash
+	};
 
-	// Igual para Llamada (Forms::callTriggerGlobal).
-	void SetCallTrigger(RE::Actor& a_actor, bool a_active);
-
-	// Igual para Atrape (Forms::catchTriggerGlobal).
-	void SetCatchTrigger(RE::Actor& a_actor, bool a_active);
-
-	// Igual para el golpe en salto de Lightning Dash (Forms::slamTriggerGlobal).
-	// false si el Global no existe (LightningDash baja entonces sin animación).
-	bool SetSlamTrigger(RE::Actor& a_actor, bool a_active);
+	// Activa o desactiva el Global que lee el submod de a_gesture. false si el Global no existe (Forms lo avisó al
+	// cargar); LightningDash baja entonces el golpe en salto sin animación.
+	bool SetTrigger(Gesture a_gesture, bool a_active);
 
 	// Activa o desactiva la graph variable vanilla Constants::kAnimationDrivenGraphVariable.
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active);

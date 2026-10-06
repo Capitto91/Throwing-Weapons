@@ -137,7 +137,7 @@ namespace Animation::GlowMapControl
 				auto* model = FindEquippedModel(a_player, weapon, firstPerson);
 				if (!model) {
 					auto* root = a_player.Get3D(firstPerson);
-					model = root ? root->GetObjectByName("WEAPON") : nullptr;
+					model = root ? root->GetObjectByName(Constants::kWeaponNodeName) : nullptr;
 				}
 
 				if (ApplyToTree(model, a_factor) == 0 && model && !firstPerson && !g_missingReported) {

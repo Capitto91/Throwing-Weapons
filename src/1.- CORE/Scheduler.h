@@ -16,8 +16,8 @@ namespace Scheduler
 	// sin él, tiempo real. Seguro desde cualquier hilo y desde dentro de una tarea.
 	[[nodiscard]] CancelToken After(std::chrono::milliseconds a_delay, std::function<void()> a_callback);
 
-	// Cancela una tarea de After; sin efecto si ya se disparó o el token está vacío.
-	void Cancel(const CancelToken& a_token);
+	// Cancela una tarea de After y vacía a_token; sin efecto si ya se disparó o el token está vacío.
+	void Cancel(CancelToken& a_token);
 
 	// Descuenta a_deltaSeconds de juego a las tareas de After y encola las vencidas.
 	// Lo llama FrameHook en cada PlayerCharacter::Update sin pausa.

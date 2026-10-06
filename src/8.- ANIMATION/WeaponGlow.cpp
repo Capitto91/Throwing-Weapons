@@ -6,6 +6,7 @@
 #include "1.- CORE/Forms.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <cmath>
@@ -180,8 +181,7 @@ namespace Animation
 		RE::NiPoint3 GetPlayerHandGlowPosition()
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* handNode = player ? player->GetNodeByName("WEAPON") : nullptr;
-			return GetGlowAnchorPosition(handNode);
+			return GetGlowAnchorPosition(player ? ActorUtils::GetWeaponBone(*player) : nullptr);
 		}
 
 		// Pone el destello en kKeyframed y arranca su bucle siguiendo a_getTargetPosition.
@@ -302,12 +302,11 @@ namespace Animation
 			// El anterior aún se estaba apagando: se cierra ya y se invalida su cierre diferido.
 			++g_generation;
 			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken = {};
 			g_shaderProperty.reset();
 			g_ringGlowShaderProperty.reset();
 			g_ringGlowNode.reset();
 			DetachGlowLight();
-			Physics::DestroyReplica(g_activeHandle);
+			Physics::DestroyReference(g_activeHandle);
 			g_activeHandle = {};
 		}
 
@@ -371,8 +370,8 @@ namespace Animation
 			return;
 		}
 
-		if (!a_actor.GetNodeByName("WEAPON")) {
-			logs::warn("Animation::RetargetWeaponGlowToActor: hueso \"WEAPON\" no encontrado.");
+		if (!ActorUtils::GetWeaponBone(a_actor)) {
+			logs::warn("Animation::RetargetWeaponGlowToActor: hueso \"{}\" no encontrado.", Constants::kWeaponNodeName);
 			return;
 		}
 
@@ -407,7 +406,6 @@ namespace Animation
 			}
 
 			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken = {};
 
 			g_shaderProperty.reset();
 			g_ringGlowShaderProperty.reset();
@@ -415,7 +413,7 @@ namespace Animation
 			DetachGlowLight();
 
 			if (g_activeHandle) {
-				Physics::DestroyReplica(g_activeHandle);
+				Physics::DestroyReference(g_activeHandle);
 				g_activeHandle = {};
 			}
 		});

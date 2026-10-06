@@ -3,6 +3,7 @@
 #include "5.- RETURN/ReturnTrajectory.h"
 
 #include "1.- CORE/Constants.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,7 @@ namespace Return
 		// Generador aleatorio del módulo (solo hilo principal).
 		float RandomLateralFraction()
 		{
-			static std::mt19937                  rng{ std::random_device{}() };
+			static std::mt19937                   rng{ std::random_device{}() };
 			std::uniform_real_distribution<float> dist(Constants::kReturnCurveLateralFractionMin, Constants::kReturnCurveLateralFractionMax);
 			return dist(rng);
 		}
@@ -105,5 +106,11 @@ namespace Return
 
 		// a = d·n·(n-1)/T^n con T = a_targetDuration.
 		return a_distance * n * (n - 1.0f) / std::pow(a_targetDuration, n);
+	}
+
+	float ComputeTailTimeRate(float a_distanceToHand)
+	{
+		const float tailBlend = Constants::kReturnTailDistance > 0.0f ? a_distanceToHand / Constants::kReturnTailDistance : 1.0f;
+		return Constants::kReturnTailMinRate + (1.0f - Constants::kReturnTailMinRate) * Math::SmoothStep01(tailBlend);
 	}
 }

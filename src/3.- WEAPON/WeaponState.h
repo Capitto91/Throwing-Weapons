@@ -47,6 +47,9 @@ namespace Weapon
 		[[nodiscard]] Physics::TickToken GetActiveTickToken() const noexcept { return activeTickToken; }
 		void                             SetActiveTickToken(Physics::TickToken a_token) noexcept { activeTickToken = std::move(a_token); }
 
+		// Detiene el bucle activo y olvida su token.
+		void CancelTickLoop() { Physics::CancelTickLoop(activeTickToken); }
+
 	private:
 		State               state{ State::kInHand };
 		RE::TESBoundObject* activeWeapon{ nullptr };

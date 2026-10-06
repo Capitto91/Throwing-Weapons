@@ -6,6 +6,7 @@
 #include "1.- CORE/Constants.h"
 #include "9.- MATH/CurveMath.h"
 #include "9.- MATH/RotationMath.h"
+#include "9.- MATH/VectorMath.h"
 
 namespace Animation
 {
@@ -14,16 +15,6 @@ namespace Animation
 		// Vida del efecto: margen amplio para cualquier vuelo.
 		constexpr float kParticleLifetime = 10.0f;
 
-		// Transformación local de a_node a partir de su mundial y la de su padre (de Precision).
-		RE::NiTransform GetLocalTransform(RE::NiAVObject* a_node, const RE::NiTransform& a_worldTransform)
-		{
-			if (auto* parent = a_node->parent) {
-				return parent->world.Invert() * a_worldTransform;
-			}
-
-			return a_worldTransform;
-		}
-
 		// Aparca todos los segmentos a escala 0.
 		void ParkAllSegments(RE::NiNode& a_trailRootNode, const RE::NiTransform& a_parkedTransform)
 		{
@@ -31,7 +22,7 @@ namespace Animation
 			const auto segmentCount = static_cast<std::uint32_t>(segments.size());
 			for (std::uint32_t i = 0; i < segmentCount; ++i) {
 				if (auto& segmentBone = segments[static_cast<std::uint16_t>(i)]) {
-					segmentBone->local = GetLocalTransform(segmentBone.get(), a_parkedTransform);
+					segmentBone->local = Math::LocalTransformFromWorld(*segmentBone, a_parkedTransform);
 					segmentBone->world = a_parkedTransform;
 				}
 			}
@@ -145,7 +136,6 @@ namespace Animation
 					orderedSegments.emplace_back(rawChildren[static_cast<std::uint16_t>(i)]);
 				}
 			}
-
 		}
 
 		auto&      segments = orderedSegments;
@@ -171,12 +161,7 @@ namespace Animation
 		const auto& ip2 = *p2It;
 
 		// Dirección de avance de los segmentos de este tick (ip2-ip1, negada por el sentido del NIF).
-		const auto segmentAxis = [&ip1, &ip2]() {
-			RE::NiPoint3 direction = ip2 - ip1;
-			const float  length = direction.Length();
-			direction = length > 0.0f ? direction / length : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
-			return -direction;
-		}();
+		const auto segmentAxis = -Math::NormalizedOr(ip2 - ip1, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
 		float      segmentsToAdd = segmentsToAddRemainder + distanceThisTick / Constants::kTrailSegmentSpacing;
 		const auto segmentsToAddTrunc = static_cast<std::uint32_t>(segmentsToAdd);
@@ -240,7 +225,7 @@ namespace Animation
 				newTransform.translate = interpolatedPos;
 				newTransform.scale = Constants::kTrailSegmentScale;
 
-				segmentBone->local = GetLocalTransform(segmentBone.get(), newTransform);
+				segmentBone->local = Math::LocalTransformFromWorld(*segmentBone, newTransform);
 				segmentBone->world = newTransform;
 
 				segmentDistances.emplace_back(totalDistance - distanceThisTick * (1.0f - t));
@@ -275,7 +260,7 @@ namespace Animation
 			Math::SetRotationFromForwardUp(worldTransform.rotate, segmentAxis, upReference, roll);
 			worldTransform.scale = 0.0f;
 
-			const auto localTransform = GetLocalTransform(segments[static_cast<std::uint16_t>(currentBoneIdx)].get(), worldTransform);
+			const auto localTransform = Math::LocalTransformFromWorld(*segments[static_cast<std::uint16_t>(currentBoneIdx)], worldTransform);
 			for (std::uint32_t i = currentBoneIdx; i < segmentCount; ++i) {
 				if (auto& segmentBone = segments[static_cast<std::uint16_t>(i)]) {
 					segmentBone->local = localTransform;

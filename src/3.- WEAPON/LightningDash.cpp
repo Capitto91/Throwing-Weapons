@@ -14,14 +14,14 @@
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponImpactVFX.h"
 #include "8.- ANIMATION/WeaponTrailGroup.h"
+#include "9.- MATH/LeadTimeEstimator.h"
+#include "9.- MATH/RotationMath.h"
+#include "9.- MATH/VectorMath.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
-#include <numbers>
-#include <vector>
 
 namespace Weapon::LightningDash
 {
@@ -48,10 +48,9 @@ namespace Weapon::LightningDash
 		// Arma lanzada del desplazamiento en curso (para iRightHandType del golpe en salto); la pasa Begin.
 		RE::TESBoundObject* g_weapon = nullptr;
 
-		// Tiempo hasta la anotación del golpe por cámara ([0] tercera, [1] primera persona): mediana de
-		// g_slamLeadSamples (nominal al cargar).
-		std::array<float, 2>              g_slamLeadSeconds{ Constants::kSlamAnimationLeadTime, Constants::kSlamAnimationLeadTimeFirstPerson };
-		std::array<std::vector<float>, 2> g_slamLeadSamples;
+		// Tiempo hasta la anotación del golpe por cámara: mediana de las últimas medidas.
+		Math::LeadTimeEstimator g_slamLeadTime{ Constants::kSlamAnimationLeadTime, Constants::kSlamAnimationLeadTimeFirstPerson,
+			Constants::kSlamLeadMeasureMinFactor, Constants::kSlamLeadMeasureMaxFactor, Constants::kSlamLeadSampleCount };
 
 		// Retira el hechizo del aspecto del dash (el motor apaga su shader y su arte) y devuelve el cambio de cámara.
 		// Lo llaman la llegada del desplazamiento y Finish (cancelación).
@@ -156,15 +155,12 @@ namespace Weapon::LightningDash
 		void Finish()
 		{
 			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken.reset();
 			if (g_active) {
 				StopDashVFX();
 			}
 			if (g_slam.active) {
 				g_slam = {};
-				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-					Animation::SetSlamTrigger(*player, false);
-				}
+				Animation::SetTrigger(Animation::Gesture::kSlam, false);
 			}
 			if (g_active) {
 				g_active = false;
@@ -186,7 +182,7 @@ namespace Weapon::LightningDash
 					OnSlamImpactAnimationEvent(false);
 				}
 			});
-			return g_slamLeadSeconds[g_slam.firstPerson ? 1 : 0];
+			return g_slamLeadTime.Get(g_slam.firstPerson);
 		}
 
 		// Sin ataque en curso. Dentro de otro (p. ej. Throw.hkx sin terminar), attackStart se rechaza o encadena el
@@ -266,7 +262,7 @@ namespace Weapon::LightningDash
 
 			// iRightHandType a una mano: el arma recuperada todavía se está equipando (como en Atrape).
 			// Sin el Global no se envía attackStart: saldría el ataque ligero normal en vez del golpe.
-			const bool hasTrigger = Animation::SetSlamTrigger(*player, true);
+			const bool hasTrigger = Animation::SetTrigger(Animation::Gesture::kSlam, true);
 			bool       waitingForAnimation = false;
 			float      descentTime = height / Constants::kLightningDashSpeed;
 			if (hasTrigger) {
@@ -297,7 +293,7 @@ namespace Weapon::LightningDash
 					} else if (waited >= Constants::kSlamStartTimeoutSeconds) {
 						waitingForAnimation = false;
 						Events::GraphSettleWatcher::Reset();
-						Animation::SetSlamTrigger(*actor, false);
+						Animation::SetTrigger(Animation::Gesture::kSlam, false);
 						logs::warn("LightningDash: el grafo no aceptó '{}' en {:.2f} s, golpe en salto sin animación.", Constants::kLightAttackAnimationEvent, waited);
 						descentTime = height / Constants::kLightningDashSpeed;
 					}
@@ -348,8 +344,7 @@ namespace Weapon::LightningDash
 			const auto   actorPosition = a_stuckActor->GetPosition();
 			RE::NiPoint3 away = a_player.GetPosition() - actorPosition;
 			away.z = 0.0f;
-			const float awayLength = away.Length();
-			away = awayLength > 0.0f ? away / awayLength : RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
+			away = Math::NormalizedOr(away, RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
 			return actorPosition + away * (GetHorizontalRadius(*a_stuckActor) + Constants::kLightningDashActorGap);
 		}
 
@@ -394,10 +389,8 @@ namespace Weapon::LightningDash
 			logs::warn("LightningDash: hueso \"{}\" no encontrado, la estela sale desde los pies.", Constants::kLightningDashTrailNodeName);
 		}
 
-		RE::NiPoint3 trailUpReference = toDestination.Cross(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-		const float  trailUpLength = trailUpReference.Length();
-		trailUpReference = trailUpLength > 0.0f ? trailUpReference / trailUpLength : RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
-		const float trailRoll = Constants::kTrailRollDegrees * std::numbers::pi_v<float> / 180.0f;
+		const auto  trailUpReference = Math::NormalizedOr(toDestination.Cross(Math::kWorldUp), Math::kWorldUp);
+		const float trailRoll = Math::DegreesToRadians(Constants::kTrailRollDegrees);
 
 		auto trail = std::make_shared<Animation::WeaponTrailGroup>();
 		trail->Start(a_player.GetParentCell(), start + trailAnchorOffset, trailUpReference, trailRoll, RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, false);
@@ -440,7 +433,6 @@ namespace Weapon::LightningDash
 
 				// Golpe en salto: con el grafo asentado, el arma vuelve a la mano y empieza el golpe, sin soltar el control.
 				Physics::CancelTickLoop(g_tickToken);
-				g_tickToken.reset();
 				HoldUntilGraphSettled(generation, [slamGround, onArrived, generation]() {
 					if (onArrived) {
 						onArrived();
@@ -461,22 +453,9 @@ namespace Weapon::LightningDash
 
 		// Tiempo del clip hasta su anotación, para la bajada del siguiente golpe (mediana, como en el Atrape).
 		if (a_fromAnnotation && g_slam.animationPlaying) {
-			const std::size_t view = g_slam.firstPerson ? 1 : 0;
-			const float       measured = static_cast<float>(FrameHook::Now() - g_slam.startTime);
-			const float       nominal = g_slam.firstPerson ? Constants::kSlamAnimationLeadTimeFirstPerson : Constants::kSlamAnimationLeadTime;
-			if (measured >= nominal * Constants::kSlamLeadMeasureMinFactor && measured <= nominal * Constants::kSlamLeadMeasureMaxFactor) {
-				auto& samples = g_slamLeadSamples[view];
-				samples.push_back(measured);
-				if (samples.size() > Constants::kSlamLeadSampleCount) {
-					samples.erase(samples.begin());
-				}
-
-				std::vector<float> sorted = samples;
-				std::ranges::sort(sorted);
-				const std::size_t middle = sorted.size() / 2;
-				g_slamLeadSeconds[view] = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
-			} else {
-				logs::warn("LightningDash: medida del golpe en salto fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, g_slamLeadSeconds[view]);
+			const float measured = static_cast<float>(FrameHook::Now() - g_slam.startTime);
+			if (!g_slamLeadTime.Record(g_slam.firstPerson, measured)) {
+				logs::warn("LightningDash: medida del golpe en salto fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, g_slamLeadTime.Get(g_slam.firstPerson));
 			}
 		}
 
@@ -488,7 +467,6 @@ namespace Weapon::LightningDash
 
 		// Si la anotación llega antes de tocar el suelo, la bajada termina ahora.
 		Physics::CancelTickLoop(g_tickToken);
-		g_tickToken.reset();
 		if (!g_slam.landed) {
 			PlaceWithoutCollision(*player, g_slam.ground);
 		}
@@ -498,7 +476,7 @@ namespace Weapon::LightningDash
 		if (a_fromAnnotation) {
 			Animation::SpawnSlamVFX(*player, g_slam.ground);
 		}
-		Animation::SetSlamTrigger(*player, false);
+		Animation::SetTrigger(Animation::Gesture::kSlam, false);
 
 		if (!g_slam.animationPlaying) {
 			Finish();

@@ -4,6 +4,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
@@ -73,11 +74,11 @@ namespace Animation
 
 	RE::NiMatrix3 GetEquippedWeaponWorldRotation(RE::Actor& a_actor)
 	{
-		// "WEAPON" es el hueso; la malla es su hijo.
-		auto* weaponNode = a_actor.GetNodeByName("WEAPON");
+		// El hueso del arma no es la malla: la malla es su hijo.
+		auto* weaponNode = ActorUtils::GetWeaponBone(a_actor);
 		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
 		if (!asNode || asNode->GetChildren().empty()) {
-			logs::warn("Animation::GetEquippedWeaponWorldRotation: nodo \"WEAPON\" no encontrado o sin hijos.");
+			logs::warn("Animation::GetEquippedWeaponWorldRotation: nodo \"{}\" no encontrado o sin hijos.", Constants::kWeaponNodeName);
 			return RE::NiMatrix3{};
 		}
 
@@ -92,9 +93,9 @@ namespace Animation
 
 	RE::NiMatrix3 GetHandBoneWorldRotation(RE::Actor& a_actor)
 	{
-		auto* handNode = a_actor.GetNodeByName("WEAPON");
+		auto* handNode = ActorUtils::GetWeaponBone(a_actor);
 		if (!handNode) {
-			logs::warn("Animation::GetHandBoneWorldRotation: hueso \"WEAPON\" no encontrado.");
+			logs::warn("Animation::GetHandBoneWorldRotation: hueso \"{}\" no encontrado.", Constants::kWeaponNodeName);
 			return RE::NiMatrix3{};
 		}
 
@@ -126,37 +127,29 @@ namespace Animation
 		spinNode->local.rotate = a_baseRotation * wobble;
 	}
 
-	namespace
+	bool SetTrigger(Gesture a_gesture, bool a_active)
 	{
-		// Pone a_global a 1 o 0. false si no existe (Forms ya lo avisó al cargar).
-		bool SetTriggerGlobal(RE::TESGlobal* a_global, bool a_active)
-		{
-			if (!a_global) {
-				return false;
-			}
-			a_global->value = a_active ? 1.0f : 0.0f;
-			return true;
+		RE::TESGlobal* global = nullptr;
+		switch (a_gesture) {
+		case Gesture::kThrow:
+			global = Forms::throwTriggerGlobal;
+			break;
+		case Gesture::kCall:
+			global = Forms::callTriggerGlobal;
+			break;
+		case Gesture::kCatch:
+			global = Forms::catchTriggerGlobal;
+			break;
+		case Gesture::kSlam:
+			global = Forms::slamTriggerGlobal;
+			break;
 		}
-	}
 
-	void SetThrowTrigger(RE::Actor&, bool a_active)
-	{
-		SetTriggerGlobal(Forms::throwTriggerGlobal, a_active);
-	}
-
-	void SetCallTrigger(RE::Actor&, bool a_active)
-	{
-		SetTriggerGlobal(Forms::callTriggerGlobal, a_active);
-	}
-
-	void SetCatchTrigger(RE::Actor&, bool a_active)
-	{
-		SetTriggerGlobal(Forms::catchTriggerGlobal, a_active);
-	}
-
-	bool SetSlamTrigger(RE::Actor&, bool a_active)
-	{
-		return SetTriggerGlobal(Forms::slamTriggerGlobal, a_active);
+		if (!global) {
+			return false;
+		}
+		global->value = a_active ? 1.0f : 0.0f;
+		return true;
 	}
 
 	void SetAnimationDriven(RE::Actor& a_actor, bool a_active)
@@ -171,7 +164,7 @@ namespace Animation
 		bool applied = false;
 		for (const bool firstPerson : { false, true }) {
 			auto* root = a_actor.Get3D(firstPerson);
-			auto* weaponNode = root ? root->GetObjectByName("WEAPON") : nullptr;
+			auto* weaponNode = root ? root->GetObjectByName(Constants::kWeaponNodeName) : nullptr;
 			auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
 			if (!asNode) {
 				continue;
@@ -186,7 +179,7 @@ namespace Animation
 		}
 
 		if (!applied) {
-			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"WEAPON\" no encontrado o sin hijos.");
+			logs::warn("Animation::SetEquippedWeaponHidden: nodo \"{}\" no encontrado o sin hijos.", Constants::kWeaponNodeName);
 		}
 		return applied;
 	}

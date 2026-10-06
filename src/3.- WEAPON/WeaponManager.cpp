@@ -23,8 +23,6 @@
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponVFX.h"
 
-#include <algorithm>
-
 namespace Weapon
 {
 	namespace
@@ -212,9 +210,9 @@ namespace Weapon
 		Input::SetCameraSwitchLocked(false);
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
 			Animation::SetAnimationDriven(*player, false);
-			Animation::SetThrowTrigger(*player, false);
-			Animation::SetCallTrigger(*player, false);
-			Animation::SetCatchTrigger(*player, false);
+			Animation::SetTrigger(Animation::Gesture::kThrow, false);
+			Animation::SetTrigger(Animation::Gesture::kCall, false);
+			Animation::SetTrigger(Animation::Gesture::kCatch, false);
 			if (wasCallAnimationActive) {
 				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 			}
@@ -265,7 +263,7 @@ namespace Weapon
 		if (a_data.replicaFormID) {
 			auto* replicaForm = RE::TESForm::LookupByID(a_data.replicaFormID);
 			if (auto* replicaRefr = replicaForm ? replicaForm->As<RE::TESObjectREFR>() : nullptr) {
-				Physics::DestroyReplica(RE::ObjectRefHandle(replicaRefr));
+				Physics::DestroyReference(RE::ObjectRefHandle(replicaRefr));
 			}
 		}
 
@@ -276,7 +274,7 @@ namespace Weapon
 		if (player && weapon) {
 			// Diferido un tick: síncrono falla en silencio.
 			SKSE::GetTaskInterface()->AddTask([player, weapon]() {
-				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+				ActorUtils::EquipNow(*player, weapon);
 			});
 		} else {
 			logs::warn("WeaponManager::RecoverOrReset: el arma guardada ya no se resuelve, no se reequipa nada.");
@@ -442,8 +440,7 @@ namespace Weapon
 		// En vuelo, el arma se queda en ese punto y desaparece hasta la llegada: sin seguir su curso ni chocar entretanto.
 		// La llegada (o una pantalla de carga) la recupera y destruye la réplica.
 		if (state == State::kThrown && replica) {
-			Physics::CancelTickLoop(weaponState.GetActiveTickToken());
-			weaponState.SetActiveTickToken({});
+			weaponState.CancelTickLoop();
 			Animation::FadeOutMovementVFX();
 			Animation::StopWeaponGlow();
 			replica->Disable();
@@ -479,7 +476,7 @@ namespace Weapon
 		case State::kThrowing:
 			// En kThrowing basta volver a mano, apagar el Global de OAR y desbloquear el movimiento.
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-				Animation::SetThrowTrigger(*player, false);
+				Animation::SetTrigger(Animation::Gesture::kThrow, false);
 				Animation::SetAnimationDriven(*player, false);
 			}
 			Input::SetMovementLocked(false);
@@ -488,7 +485,7 @@ namespace Weapon
 		case State::kCalling:
 			// En kCalling el arma sigue fuera: RecallWeapon.
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-				Animation::SetCallTrigger(*player, false);
+				Animation::SetTrigger(Animation::Gesture::kCall, false);
 				Animation::SetAnimationDriven(*player, false);
 			}
 			Input::SetMovementLocked(false);
@@ -506,7 +503,7 @@ namespace Weapon
 			catchReequipPending = false;
 			catchEndSoundPlayed = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-				Animation::SetCatchTrigger(*player, false);
+				Animation::SetTrigger(Animation::Gesture::kCatch, false);
 				Animation::SetAnimationDriven(*player, false);
 				// iRightHandType no se toca: RecallWeapon ya reequipó.
 			}
@@ -519,7 +516,7 @@ namespace Weapon
 		if (callAnimationActive) {
 			callAnimationActive = false;
 			if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-				Animation::SetCallTrigger(*player, false);
+				Animation::SetTrigger(Animation::Gesture::kCall, false);
 				Animation::SetAnimationDriven(*player, false);
 				player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, 0);
 			}
@@ -576,7 +573,7 @@ namespace Weapon
 		Animation::SetAnimationDriven(*player, true);
 
 		// El Global hace que OAR sustituya el ataque ligero por Throw.hkx.
-		Animation::SetThrowTrigger(*player, true);
+		Animation::SetTrigger(Animation::Gesture::kThrow, true);
 
 		// Antes del desequipado de la cola: el vigilante tiene que ver el final del desenvainado que provoca.
 		Events::GraphSettleWatcher::Track(*player);
@@ -656,9 +653,7 @@ namespace Weapon
 			return;
 		}
 
-		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			Animation::SetThrowTrigger(*player, false);
-		}
+		Animation::SetTrigger(Animation::Gesture::kThrow, false);
 
 		// Movimiento y AnimationDriven se desbloquean con el desequipado real (ThrowWeapon).
 		ThrowWeapon();
@@ -684,7 +679,7 @@ namespace Weapon
 		// iRightHandType al tipo del arma lanzada para que la rama de combate reproduzca Call.hkx.
 		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Animation::GetRightHandTypeFor(weaponState.GetActiveWeapon()));
 
-		Animation::SetCallTrigger(*player, true);
+		Animation::SetTrigger(Animation::Gesture::kCall, true);
 
 		if (!player->NotifyAnimationGraph(Constants::kLightAttackAnimationEvent)) {
 			logs::warn("WeaponManager: el grafo de animación rechazó '{}' para Llamada; el regreso empezará por la red de seguridad.", Constants::kLightAttackAnimationEvent);
@@ -732,7 +727,7 @@ namespace Weapon
 		lastAttackAnimationEventTime = std::chrono::steady_clock::now();
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			Animation::SetCallTrigger(*player, false);
+			Animation::SetTrigger(Animation::Gesture::kCall, false);
 			Animation::SetAnimationDriven(*player, false);
 
 			// Vuelve iRightHandType a 0 (desarmado).
@@ -772,7 +767,7 @@ namespace Weapon
 		// iRightHandType al tipo del arma lanzada; el arma real aún no está equipada.
 		player->SetGraphVariableInt(Constants::kRightHandTypeGraphVariable, Animation::GetRightHandTypeFor(weaponState.GetActiveWeapon()));
 
-		Animation::SetCatchTrigger(*player, true);
+		Animation::SetTrigger(Animation::Gesture::kCatch, true);
 
 		// Brillo de manos.
 		Animation::TriggerHandGlow(*player);
@@ -812,23 +807,9 @@ namespace Weapon
 		// con la misma cámara.
 		if (a_fromAnnotation && catchLeadMeasurePending) {
 			catchLeadMeasurePending = false;
-			const std::size_t view = catchAnimationFirstPerson ? 1 : 0;
-			const float       measured = static_cast<float>(FrameHook::Now() - catchAnimationStartTime);
-			const float       nominal = catchAnimationFirstPerson ? Constants::kCatchAnimationLeadTimeFirstPerson : Constants::kCatchAnimationLeadTime;
-			if (measured >= nominal * Constants::kCatchLeadMeasureMinFactor && measured <= nominal * Constants::kCatchLeadMeasureMaxFactor) {
-				// Mediana de las últimas medidas: un gesto retrasado suelto no cambia la llegada del siguiente.
-				auto& samples = catchLeadSamples[view];
-				samples.push_back(measured);
-				if (samples.size() > Constants::kCatchLeadSampleCount) {
-					samples.erase(samples.begin());
-				}
-
-				std::vector<float> sorted = samples;
-				std::ranges::sort(sorted);
-				const std::size_t middle = sorted.size() / 2;
-				catchLeadSeconds[view] = sorted.size() % 2 != 0 ? sorted[middle] : 0.5f * (sorted[middle - 1] + sorted[middle]);
-			} else {
-				logs::warn("WeaponManager: medida de Catch.hkx fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, catchLeadSeconds[view]);
+			const float measured = static_cast<float>(FrameHook::Now() - catchAnimationStartTime);
+			if (!catchLeadTime.Record(catchAnimationFirstPerson, measured)) {
+				logs::warn("WeaponManager: medida de Catch.hkx fuera de rango ({:.3f} s), se conserva {:.3f} s.", measured, catchLeadTime.Get(catchAnimationFirstPerson));
 			}
 		}
 
@@ -895,7 +876,7 @@ namespace Weapon
 		lastAttackAnimationEventTime = std::chrono::steady_clock::now();
 
 		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			Animation::SetCatchTrigger(*player, false);
+			Animation::SetTrigger(Animation::Gesture::kCatch, false);
 			Animation::SetAnimationDriven(*player, false);
 
 			// attackStop pasada la cola de Catch.hkx para desatascar el grafo.
@@ -925,7 +906,7 @@ namespace Weapon
 
 				// Con las manos vacías el motor desenvaina los puños; sus eventos llegan unos fotogramas después.
 				Events::GraphSettleWatcher::NoteDrawExpected();
-				RE::ActorEquipManager::GetSingleton()->UnequipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+				ActorUtils::UnequipNow(*player, weapon);
 
 				// Solo desbloquea movimiento y AnimationDriven si Llamada o Atrape no los han tomado.
 				if (!callAnimationActive && !catchAnimationActive) {
@@ -985,8 +966,7 @@ namespace Weapon
 		Combat::RemoveImpactHazard();
 
 		// Cancela el bucle que movía la réplica antes de arrancar el del regreso.
-		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
-		weaponState.SetActiveTickToken({});
+		weaponState.CancelTickLoop();
 
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		auto  replicaHandle = weaponState.GetActiveReplicaHandle();
@@ -1027,7 +1007,7 @@ namespace Weapon
 		};
 
 		// Llegada a la anotación del Atrape de la cámara activa.
-		catchSync = std::make_shared<Return::CatchSync>(catchLeadSeconds[ActorUtils::IsPlayerInFirstPerson() ? 1 : 0]);
+		catchSync = std::make_shared<Return::CatchSync>(catchLeadTime.Get(ActorUtils::IsPlayerInFirstPerson()));
 		Return::BeginReturn(player, replicaHandle, a_wasStuck, catchSync, std::move(callbacks));
 	}
 
@@ -1062,11 +1042,10 @@ namespace Weapon
 			Animation::RetargetWeaponGlowToActor(*player);
 		}
 
-		Physics::CancelTickLoop(weaponState.GetActiveTickToken());
-		weaponState.SetActiveTickToken({});
+		weaponState.CancelTickLoop();
 		catchSync.reset();
 
-		Physics::DestroyReplica(weaponState.GetActiveReplicaHandle());
+		Physics::DestroyReference(weaponState.GetActiveReplicaHandle());
 		weaponState.SetActiveReplicaHandle({});
 
 		auto* weapon = weaponState.GetActiveWeapon();
@@ -1088,7 +1067,7 @@ namespace Weapon
 			SKSE::GetTaskInterface()->AddTask([this, player, weapon]() {
 				// Sin animación de equipar/desenvainar (graph variable "SkipEquipAnimation").
 				player->SetGraphVariableBool("SkipEquipAnimation", true);
-				RE::ActorEquipManager::GetSingleton()->EquipObject(player, weapon, nullptr, 1, nullptr, false, true, true, true);
+				ActorUtils::EquipNow(*player, weapon);
 
 				// Se apaga pasado kSkipEquipAnimationWindow; cancela el temporizador anterior.
 				Scheduler::Cancel(skipEquipAnimationToken);

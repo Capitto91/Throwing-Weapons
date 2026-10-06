@@ -123,6 +123,12 @@ namespace Physics
 		a_refr.Update3DPosition(true);
 	}
 
+	void MoveTo(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position)
+	{
+		a_refr.SetPosition(a_position);
+		SyncHavok(a_refr, a_position, a_refr.GetAngle());
+	}
+
 	TickToken StartTickLoop(RE::ObjectRefHandle a_handle, TickCallback a_callback)
 	{
 		// El callback se comparte por puntero para conservar su estado entre ticks.
@@ -203,14 +209,15 @@ namespace Physics
 		std::erase_if(g_frameLoops, [](const FrameLoop& a_loop) { return !a_loop.active->load(); });
 	}
 
-	void CancelTickLoop(const TickToken& a_token)
+	void CancelTickLoop(TickToken& a_token)
 	{
 		if (a_token) {
 			a_token->store(false);
+			a_token.reset();
 		}
 	}
 
-	void DestroyReplica(RE::ObjectRefHandle a_handle)
+	void DestroyReference(RE::ObjectRefHandle a_handle)
 	{
 		if (auto refr = a_handle.get()) {
 			refr->Disable();

@@ -1,4 +1,4 @@
-// Cálculos del regreso: punto de control de la curva, lado de desvío y perfil de aceleración.
+// Cálculos del regreso: punto de control de la curva, lado de desvío, perfil de aceleración y ritmo del tramo final.
 
 #pragma once
 
@@ -26,4 +26,8 @@ namespace Return
 	// Aceleración para recorrer a_distance en a_targetDuration.
 	// La usa BeginReturnMovement para alargar el vuelo si no hubo temblor.
 	float ComputeReturnAccelerationForDuration(float a_distance, float a_targetDuration);
+
+	// Ritmo del reloj de progreso a a_distanceToHand de la mano: 1 lejos, bajando con curva suave hasta
+	// Constants::kReturnTailMinRate por debajo de kReturnTailDistance. Lo usan la simulación de la llegada y el bucle.
+	float ComputeTailTimeRate(float a_distanceToHand);
 }

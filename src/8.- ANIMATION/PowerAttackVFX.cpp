@@ -23,7 +23,6 @@ namespace Animation::PowerAttackVFX
 		void ClearState()
 		{
 			Scheduler::Cancel(g_safetyToken);
-			g_safetyToken.reset();
 			g_active = false;
 			g_ownsGlow = false;
 		}

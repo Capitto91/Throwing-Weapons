@@ -16,6 +16,9 @@ namespace Constants
 	// Keyword que identifica al arma arrojadiza (WAF_ThrowableWeapon), FormID local del ESL.
 	inline constexpr RE::FormID kThrowableWeaponKeywordLocalFormID = 0x018;
 
+	// Hueso del esqueleto vanilla del que cuelga el arma de la mano derecha; la malla del arma es su hijo.
+	inline constexpr std::string_view kWeaponNodeName{ "WEAPON" };
+
 	// Ruta del INI, relativa a la carpeta del juego.
 	inline constexpr const char* kInputConfigPath = "Data/SKSE/Plugins/ThorMjolnir.ini";
 

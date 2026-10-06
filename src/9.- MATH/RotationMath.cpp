@@ -75,6 +75,15 @@ namespace Math
 		return a_parentWorld.Transpose() * a_desiredWorld;
 	}
 
+	RE::NiTransform LocalTransformFromWorld(const RE::NiAVObject& a_node, const RE::NiTransform& a_worldTransform)
+	{
+		if (auto* parent = a_node.parent) {
+			return parent->world.Invert() * a_worldTransform;
+		}
+
+		return a_worldTransform;
+	}
+
 	float SmoothStep01(float a_t)
 	{
 		const float t = std::clamp(a_t, 0.0f, 1.0f);
@@ -84,7 +93,7 @@ namespace Math
 	void SetRotationFromForwardUp(RE::NiMatrix3& a_matrix, const RE::NiPoint3& a_forward, const RE::NiPoint3& a_up, float a_roll)
 	{
 		// "right" perpendicular a a_forward y a_up; si degenera, eje del mundo de respaldo.
-		RE::NiPoint3 right       = a_up.Cross(a_forward);
+		RE::NiPoint3 right = a_up.Cross(a_forward);
 		float        rightLength = right.Length();
 		if (rightLength < 1.0e-4f) {
 			const RE::NiPoint3 fallbackUp = std::abs(a_forward.z) < 0.99f ? RE::NiPoint3{ 0.0f, 0.0f, 1.0f } : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
@@ -97,10 +106,10 @@ namespace Math
 		const RE::NiPoint3 up = a_forward.Cross(right);
 
 		// a_roll gira (right, up) alrededor de a_forward.
-		const float        cosRoll     = std::cos(a_roll);
-		const float        sinRoll     = std::sin(a_roll);
+		const float        cosRoll = std::cos(a_roll);
+		const float        sinRoll = std::sin(a_roll);
 		const RE::NiPoint3 rolledRight = right * cosRoll + up * sinRoll;
-		const RE::NiPoint3 rolledUp    = up * cosRoll - right * sinRoll;
+		const RE::NiPoint3 rolledUp = up * cosRoll - right * sinRoll;
 
 		// Columnas: X = right, Y = a_forward, Z = up.
 		a_matrix.entry[0][0] = rolledRight.x;

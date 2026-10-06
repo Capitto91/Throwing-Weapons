@@ -2,6 +2,7 @@
 
 #include "11.- SKYRIM/ActorUtils.h"
 
+#include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
 
 #include <limits>
@@ -41,6 +42,27 @@ namespace ActorUtils
 	{
 		// false = mano derecha / mano principal.
 		return a_actor && IsThrowableWeapon(a_actor->GetEquippedObject(false));
+	}
+
+	RE::NiAVObject* GetWeaponBone(RE::Actor& a_actor)
+	{
+		return a_actor.GetNodeByName(Constants::kWeaponNodeName);
+	}
+
+	RE::NiPoint3 GetWeaponBonePosition(RE::Actor& a_actor)
+	{
+		auto* bone = GetWeaponBone(a_actor);
+		return bone ? bone->world.translate : a_actor.GetPosition();
+	}
+
+	void EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
+	{
+		RE::ActorEquipManager::GetSingleton()->EquipObject(&a_actor, a_object, nullptr, 1, nullptr, false, true, true, true);
+	}
+
+	void UnequipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object)
+	{
+		RE::ActorEquipManager::GetSingleton()->UnequipObject(&a_actor, a_object, nullptr, 1, nullptr, false, true, true, true);
 	}
 
 	RE::BSFixedString FindNearestBoneName(RE::Actor* a_actor, const RE::NiPoint3& a_worldPoint)

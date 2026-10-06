@@ -4,6 +4,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/FrameHook.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "12.- AUDIO/CatchSound.h"
 #include "5.- RETURN/ReturnTrajectory.h"
 #include "6.- PHYSICS/CollisionManager.h"
@@ -12,6 +13,7 @@
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 #include "9.- MATH/CurveMath.h"
 #include "9.- MATH/RotationMath.h"
+#include "9.- MATH/VectorMath.h"
 
 #include <algorithm>
 #include <chrono>
@@ -65,16 +67,6 @@ namespace Return
 			return static_cast<float>(FrameHook::Now() - a_from);
 		}
 
-		// Posición del nodo del arma en la mano derecha: destino del regreso.
-		RE::NiPoint3 GetHandPosition(RE::Actor* a_player)
-		{
-			if (auto* handNode = a_player->GetNodeByName("WEAPON")) {
-				return handNode->world.translate;
-			}
-
-			return a_player->GetPosition();
-		}
-
 		// Tiempo que falta hasta la llegada a ritmo natural, simulando paso a paso con las fórmulas
 		// del bucle (mano fija). Se corta en a_maxLookahead.
 		float SimulateRemainingReturnTime(const RE::NiPoint3& a_currentPos, const RE::NiPoint3& a_handPos, const RE::NiPoint3& a_start, const RE::NiPoint3& a_controlPoint, float a_acceleration, float a_initialDistance, float a_progressElapsed, float a_maxLookahead)
@@ -89,11 +81,7 @@ namespace Return
 					return remaining;
 				}
 
-				const float tailBlend = Constants::kReturnTailDistance > 0.0f ? std::clamp(distanceToHand / Constants::kReturnTailDistance, 0.0f, 1.0f) : 1.0f;
-				const float smoothTailBlend = tailBlend * tailBlend * (3.0f - 2.0f * tailBlend);
-				const float timeRate = Constants::kReturnTailMinRate + (1.0f - Constants::kReturnTailMinRate) * smoothTailBlend;
-
-				progressElapsed += Constants::kTickDeltaSeconds * timeRate;
+				progressElapsed += Constants::kTickDeltaSeconds * ComputeTailTimeRate(distanceToHand);
 				remaining += Constants::kTickDeltaSeconds;
 
 				const float traveled = ComputeTraveledDistance(a_acceleration, progressElapsed);
@@ -130,7 +118,7 @@ namespace Return
 			}
 
 			const auto start = replica->GetPosition();
-			const auto initialHandPos = GetHandPosition(a_player);
+			const auto initialHandPos = ActorUtils::GetWeaponBonePosition(*a_player);
 
 			const float initialDistance = (initialHandPos - start).Length();
 			// Aceleración natural (ComputeReturnAcceleration, acotada por kReturnMaxDuration).
@@ -157,12 +145,10 @@ namespace Return
 			auto trail = std::make_shared<Animation::WeaponTrailGroup>();
 
 			// Plano de la estela: normal del plano de la Bezier, con el signo del eje Z del arma.
-			RE::NiPoint3 trailUpReference = (controlPoint - start).Cross(initialHandPos - start);
-			const float  trailUpLength = trailUpReference.Length();
-			trailUpReference = trailUpLength > 0.0f ? trailUpReference / trailUpLength : RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+			const auto trailUpReference = Math::NormalizedOr((controlPoint - start).Cross(initialHandPos - start), Math::kWorldUp);
 
 			// Roll fijo Constants::kTrailRollDegrees.
-			const float trailRoll = Constants::kTrailRollDegrees * std::numbers::pi_v<float> / 180.0f;
+			const float trailRoll = Math::DegreesToRadians(Constants::kTrailRollDegrees);
 
 			// Offset de anclaje rotado con rootWorld.
 			const RE::NiPoint3 trailAnchorWorldOffset = rootWorld * Constants::kTrailAnchorLocalOffset;
@@ -174,12 +160,11 @@ namespace Return
 				const auto  previousPos = a_refr.GetPosition();
 				elapsed += deltaSeconds;
 
-				const auto handPos = GetHandPosition(a_player);
+				const auto handPos = ActorUtils::GetWeaponBonePosition(*a_player);
 
 				// Tras la llegada, la réplica se pega a la mano cada tick hasta que ReequipAndReset cancele el bucle.
 				if (arrivedFired) {
-					a_refr.SetPosition(handPos);
-					Physics::SyncHavok(a_refr, handPos, a_refr.GetAngle());
+					Physics::MoveTo(a_refr, handPos);
 					return true;
 				}
 
@@ -203,11 +188,7 @@ namespace Return
 				const float timeToArrival = naturalRemaining / retimeRate;
 
 				// Tramo final más lento: el tiempo de progreso avanza menos cerca de la mano (kReturnTailDistance).
-				const float previousDistanceToHand = (handPos - previousPos).Length();
-				const float tailBlend = Constants::kReturnTailDistance > 0.0f ? std::clamp(previousDistanceToHand / Constants::kReturnTailDistance, 0.0f, 1.0f) : 1.0f;
-				const float smoothTailBlend = tailBlend * tailBlend * (3.0f - 2.0f * tailBlend);
-				const float timeRate = Constants::kReturnTailMinRate + (1.0f - Constants::kReturnTailMinRate) * smoothTailBlend;
-				progressElapsed += deltaSeconds * timeRate * retimeRate;
+				progressElapsed += deltaSeconds * ComputeTailTimeRate((handPos - previousPos).Length()) * retimeRate;
 
 				const float traveled = ComputeTraveledDistance(acceleration, progressElapsed);
 				const float t = initialDistance > 0.0f ? std::clamp(traveled / initialDistance, 0.0f, 1.0f) : 1.0f;
@@ -226,8 +207,7 @@ namespace Return
 					}
 				}
 
-				a_refr.SetPosition(nextPos);
-				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+				Physics::MoveTo(a_refr, nextPos);
 
 				// Sonido de arranque del atrape con la llegada prevista.
 				catchCue->UpdateStart(nextPos, timeToArrival);
@@ -324,23 +304,18 @@ namespace Return
 
 		// Duración prevista del temblor, solo para su rampa visual (TickShudder): espera mínima del Atrape
 		// menos el vuelo natural, con un mínimo de kStickShudderDuration. El final real lo decide el bucle.
-		const float initialFlight = EstimateFlightDuration(replica->GetPosition(), GetHandPosition(a_player));
+		const float initialFlight = EstimateFlightDuration(replica->GetPosition(), ActorUtils::GetWeaponBonePosition(*a_player));
 		const float shudderForCatch = Constants::kMinCatchAnimationDelay + a_catchSync->GetLeadSeconds() - initialFlight;
 		const float plannedShudder = shudderForCatch > Constants::kStickShudderDuration ? shudderForCatch : Constants::kStickShudderDuration;
 
 		// Temblor sin mover la réplica sobre su rotación al clavarse; al despegar arranca BeginReturnMovement.
-		RE::NiMatrix3 baseRotation;
-		if (auto* root = replica->Get3D()) {
-			if (auto* spinNode = root->GetObjectByName(Constants::kWeaponSpinNodeName)) {
-				baseRotation = spinNode->local.rotate;
-			}
-		}
+		const RE::NiMatrix3 baseRotation = Animation::GetSpinLocalRotation(*replica);
 
 		auto shudderToken = Physics::StartTickLoop(a_replicaHandle, [a_player, a_replicaHandle, callbacks = a_callbacks, baseRotation, catchCue, catchSync = a_catchSync, callTime, plannedShudder, elapsed = 0.0f](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
 			elapsed += a_deltaSeconds;
 
 			const auto  replicaPos = a_refr.GetPosition();
-			const float flight = EstimateFlightDuration(replicaPos, GetHandPosition(a_player));
+			const float flight = EstimateFlightDuration(replicaPos, ActorUtils::GetWeaponBonePosition(*a_player));
 			const float lead = catchSync->GetLeadSeconds();
 			const auto  toDeadline = catchSync->GetSecondsToDeadline();
 

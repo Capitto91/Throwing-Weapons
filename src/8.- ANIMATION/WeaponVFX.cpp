@@ -6,7 +6,9 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
+#include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
+#include "9.- MATH/RotationMath.h"
 
 #include <atomic>
 
@@ -30,22 +32,11 @@ namespace Animation
 		Physics::TickToken            g_tickToken;
 		Scheduler::CancelToken        g_fadeOutToken;       // apagado diferido de FadeOutMovementVFX(true)
 
-		// Posición del hueso "WEAPON" del jugador, reevaluada cada tick.
+		// Posición del hueso del arma del jugador, reevaluada cada tick.
 		RE::NiPoint3 GetPlayerHandPosition()
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* node = player ? player->GetNodeByName("WEAPON") : nullptr;
-			return node ? node->world.translate : RE::NiPoint3{};
-		}
-
-		// Transformación local de a_node que lo deja en a_worldTransform (mismo cálculo que WeaponTrail).
-		RE::NiTransform GetLocalTransform(RE::NiAVObject* a_node, const RE::NiTransform& a_worldTransform)
-		{
-			if (auto* parent = a_node->parent) {
-				return parent->world.Invert() * a_worldTransform;
-			}
-
-			return a_worldTransform;
+			return player ? ActorUtils::GetWeaponBonePosition(*player) : RE::NiPoint3{};
 		}
 
 		// Hace que el motor retire el efecto en su próxima actualización (age >= lifetime).
@@ -90,7 +81,6 @@ namespace Animation
 		void StartTicking(std::shared_ptr<SparksEffect> a_sparks, std::function<RE::NiPoint3()> a_getTargetPosition, bool a_emitting)
 		{
 			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken = {};
 
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			if (!player || !a_sparks) {
@@ -121,7 +111,7 @@ namespace Animation
 				if (auto* anchor = root->GetObjectByName(Constants::kMovementVfxAnchorNodeName)) {
 					RE::NiTransform worldTransform = anchor->world;
 					worldTransform.translate = getPos();
-					anchor->local = GetLocalTransform(anchor, worldTransform);
+					anchor->local = Math::LocalTransformFromWorld(*anchor, worldTransform);
 					anchor->world = worldTransform;
 				} else if (!warned) {
 					warned = true;
@@ -153,9 +143,7 @@ namespace Animation
 		void StopNow()
 		{
 			Scheduler::Cancel(g_fadeOutToken);
-			g_fadeOutToken = {};
 			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken = {};
 
 			if (g_sparks) {
 				Retire(*g_sparks);
@@ -182,7 +170,6 @@ namespace Animation
 		void Start(RE::TESObjectCELL* a_cell, std::function<RE::NiPoint3()> a_getTargetPosition)
 		{
 			Scheduler::Cancel(g_fadeOutToken);
-			g_fadeOutToken = {};
 
 			if (!a_cell) {
 				logs::warn("Animation::WeaponVFX: sin celda, no se crea el efecto de chispas.");
@@ -215,8 +202,8 @@ namespace Animation
 			return;
 		}
 
-		if (!a_actor.GetNodeByName("WEAPON")) {
-			logs::warn("Animation::StartMovementVFXOnActor: hueso \"WEAPON\" no encontrado.");
+		if (!ActorUtils::GetWeaponBone(a_actor)) {
+			logs::warn("Animation::StartMovementVFXOnActor: hueso \"{}\" no encontrado.", Constants::kWeaponNodeName);
 			return;
 		}
 
@@ -229,8 +216,8 @@ namespace Animation
 			return;
 		}
 
-		if (!a_actor.GetNodeByName("WEAPON")) {
-			logs::warn("Animation::RetargetMovementVFXToActor: hueso \"WEAPON\" no encontrado.");
+		if (!ActorUtils::GetWeaponBone(a_actor)) {
+			logs::warn("Animation::RetargetMovementVFXToActor: hueso \"{}\" no encontrado.", Constants::kWeaponNodeName);
 			return;
 		}
 

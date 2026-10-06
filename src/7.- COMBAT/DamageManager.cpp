@@ -9,6 +9,7 @@
 #include "11.- SKYRIM/ActorUtils.h"
 #include "3.- WEAPON/WeaponManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
+#include "9.- MATH/VectorMath.h"
 
 #include <cmath>
 #include <optional>
@@ -94,11 +95,7 @@ namespace Combat
 			hitData->totalDamage = fullDamage * a_mult;
 			hitData->stagger = 0.0f;
 			hitData->hitPosition = a_hitPosition;
-			auto direction = a_target->GetPosition() - a_attacker->GetPosition();
-			if (direction.Length() > 0.0f) {
-				direction.Unitize();
-			}
-			hitData->hitDirection = direction;
+			hitData->hitDirection = Math::NormalizedOr(a_target->GetPosition() - a_attacker->GetPosition(), RE::NiPoint3{});
 
 			if (g_processHit) {
 				g_processHit(a_target, *hitData);
@@ -140,10 +137,7 @@ namespace Combat
 				logs::warn("Combat::PlaceHazard: la referencia colocada no es un RE::Hazard, sin dueño asignado.");
 			}
 
-			if (auto previous = g_activeHazard.get()) {
-				previous->Disable();
-				previous->SetDelete(true);
-			}
+			Physics::DestroyReference(g_activeHazard);
 			g_activeHazard = ref->CreateRefHandle();
 			return ref.get();
 		}
@@ -221,8 +215,7 @@ namespace Combat
 			const auto nextPos = currentNode ?
 			                         currentNode->world.translate + currentNode->world.rotate * localOffset :
 			                         target->GetPosition();
-			a_refr.SetPosition(nextPos);
-			Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+			Physics::MoveTo(a_refr, nextPos);
 
 			totalElapsed += a_deltaSeconds;
 
@@ -297,10 +290,7 @@ namespace Combat
 	void RemoveImpactHazard()
 	{
 		++g_hazardGeneration;
-		if (auto hazard = g_activeHazard.get()) {
-			hazard->Disable();
-			hazard->SetDelete(true);
-		}
+		Physics::DestroyReference(g_activeHazard);
 		g_activeHazard = {};
 	}
 

@@ -2,6 +2,8 @@
 
 #include "6.- PHYSICS/CollisionManager.h"
 
+#include "9.- MATH/VectorMath.h"
+
 #include <array>
 #include <cmath>
 
@@ -81,11 +83,8 @@ namespace Collision
 			const bool selfOrShooter = target && (target == a_ignore1 || target == a_ignore2);
 			if (!selfOrShooter && IsSolidLayer(layer)) {
 				// La normal ya es unitaria, sin escala de mundo; la fracción, sobre el rayo original.
-				alignas(16) float normal[4]{};
-				_mm_store_ps(normal, pickData.rayOutput.normal.quad);
-
 				const float fraction = (point - a_from).Length() / length;
-				return HitResult{ true, point, target, layer, fraction, RE::NiPoint3{ normal[0], normal[1], normal[2] } };
+				return HitResult{ true, point, target, layer, fraction, Math::ToNiPoint3(pickData.rayOutput.normal) };
 			}
 
 			from = point + direction * kRaycastSkipDistance;

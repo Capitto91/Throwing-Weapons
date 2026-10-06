@@ -16,24 +16,14 @@
 #include "8.- ANIMATION/WeaponImpactVFX.h"
 #include "8.- ANIMATION/WeaponTrailGroup.h"
 #include "9.- MATH/RotationMath.h"
+#include "9.- MATH/VectorMath.h"
 
 #include <cmath>
-#include <numbers>
 
 namespace Throw
 {
 	namespace
 	{
-		// Origen del lanzamiento: el nodo del arma en la mano derecha.
-		RE::NiPoint3 GetLaunchOrigin(RE::Actor* a_shooter)
-		{
-			if (auto* weaponNode = a_shooter->GetNodeByName("WEAPON")) {
-				return weaponNode->world.translate;
-			}
-
-			return a_shooter->GetPosition();
-		}
-
 		RE::NiPoint3 GetCameraPosition()
 		{
 			auto* camera = RE::PlayerCamera::GetSingleton();
@@ -69,17 +59,15 @@ namespace Throw
 			const auto hit = Collision::Raycast(cameraPos, rayEnd, a_shooter);
 			const auto aimPoint = hit.hit ? hit.point : rayEnd;
 
-			const RE::NiPoint3 toAimPoint = aimPoint - a_origin;
-			const float        length = toAimPoint.Length();
-			return length > 0.0f ? toAimPoint / length : forward;
+			return Math::NormalizedOr(aimPoint - a_origin, forward);
 		}
 
 		// Gravedad Z del mundo de Havok en unidades de juego (kThrowFallbackWorldGravity si no se lee).
 		float GetWorldGravity(RE::Actor* a_shooter)
 		{
-			auto* cell = a_shooter->GetParentCell();
-			auto* bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
-			auto* world = bhkWorld ? bhkWorld->GetWorld1() : nullptr;
+			auto*       cell = a_shooter->GetParentCell();
+			auto*       bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
+			auto*       world = bhkWorld ? bhkWorld->GetWorld1() : nullptr;
 			const float scale = RE::bhkWorld::GetWorldScale();
 
 			if (!world || scale <= 0.0f) {
@@ -87,9 +75,7 @@ namespace Throw
 				return Constants::kThrowFallbackWorldGravity;
 			}
 
-			alignas(16) float components[4];
-			_mm_store_ps(components, world->gravity.quad);
-			const float gravity = components[2] / scale;
+			const float gravity = Math::ToNiPoint3(world->gravity).z / scale;
 
 			if (!std::isfinite(gravity) || gravity >= 0.0f) {
 				logs::warn("Throw::GetWorldGravity: valor leído no válido ({}), se usa el valor de respaldo {:.3f}.", gravity, Constants::kThrowFallbackWorldGravity);
@@ -112,7 +98,8 @@ namespace Throw
 			return;
 		}
 
-		const auto  origin = GetLaunchOrigin(a_shooter);
+		// Origen del lanzamiento: el hueso del arma en la mano derecha.
+		const auto origin = ActorUtils::GetWeaponBonePosition(*a_shooter);
 		// Velocidad y gravedad de Settings, fijas durante el vuelo.
 		const float speed = Settings::GetThrowSpeed();
 		const float gravity = GetWorldGravity(a_shooter) * Settings::GetThrowGravityMult();
@@ -149,18 +136,14 @@ namespace Throw
 				return;
 			}
 
-
 			// Rotación local sobre el nodo raíz que reproduce la pose capturada; TickSpin gira sobre ella.
 			RE::NiMatrix3 launchBaseLocal;
 			// Estela del tramo de ida, movida por el bucle de tick de abajo.
 			auto trail = std::make_shared<Animation::WeaponTrailGroup>();
 			if (auto replica = a_handle.get()) {
 				// Plano de la estela: normal del plano de la parábola más el roll fijo Constants::kTrailRollDegrees.
-				RE::NiPoint3 trailUpReference = velocity0.Cross(RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-				const float  trailUpLength = trailUpReference.Length();
-				trailUpReference = trailUpLength > 0.0f ? trailUpReference / trailUpLength : RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
-
-				const float trailRoll = Constants::kTrailRollDegrees * std::numbers::pi_v<float> / 180.0f;
+				const auto  trailUpReference = Math::NormalizedOr(velocity0.Cross(Math::kWorldUp), Math::kWorldUp);
+				const float trailRoll = Math::DegreesToRadians(Constants::kTrailRollDegrees);
 
 				// Anclaje de la estela: offset desde el nodo raíz (base del mango) rotado con rootWorld.
 				RE::NiPoint3 trailAnchorWorldOffset{ 0.0f, 0.0f, 0.0f };
@@ -195,17 +178,14 @@ namespace Throw
 				if (hit.hit) {
 					auto* actor = hit.target ? hit.target->As<RE::Actor>() : nullptr;
 
-					const auto  travel = nextPos - previousPos;
-					const float travelLength = travel.Length();
-					const auto  travelDir = travelLength > 0.0f ? travel / travelLength : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+					const auto travelDir = Math::NormalizedOr(nextPos - previousPos, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
 					// Ajuste del punto de clavado: retrocede contra superficies y avanza contra actores.
 					const auto stickPoint = actor ?
 					                            hit.point + travelDir * Constants::kActorStickForwardOffset :
 					                            hit.point - travelDir * Constants::kStickEmbedBackoff;
 
-					a_refr.SetPosition(stickPoint);
-					Physics::SyncHavok(a_refr, stickPoint, a_refr.GetAngle());
+					Physics::MoveTo(a_refr, stickPoint);
 					trail->Update(stickPoint, a_deltaSeconds);
 
 					// Explosión de impacto en la cabeza del martillo, diferida un tick con Scheduler
@@ -252,8 +232,7 @@ namespace Throw
 					return false;
 				}
 
-				a_refr.SetPosition(nextPos);
-				Physics::SyncHavok(a_refr, nextPos, a_refr.GetAngle());
+				Physics::MoveTo(a_refr, nextPos);
 				trail->Update(nextPos, a_deltaSeconds);
 				return true;
 			});
