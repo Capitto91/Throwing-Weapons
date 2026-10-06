@@ -22,4 +22,8 @@ namespace Scheduler
 	// Descuenta a_deltaSeconds de juego a las tareas de After y encola las vencidas.
 	// Lo llama FrameHook en cada PlayerCharacter::Update sin pausa.
 	void RunFrame(float a_deltaSeconds);
+
+	// Tareas de After en cuenta atrás (incluidas las recién creadas). Solo desde el hilo del hook:
+	// lo llama PerfMonitor tras RunFrame.
+	[[nodiscard]] std::size_t GetPendingTimerCount();
 }

@@ -89,4 +89,10 @@ namespace Scheduler
 
 		std::erase_if(g_timers, [](const Timer& a_timer) { return a_timer.fired || !a_timer.active->load(); });
 	}
+
+	std::size_t GetPendingTimerCount()
+	{
+		std::scoped_lock lock(g_pendingLock);
+		return g_timers.size() + g_pendingTimers.size();
+	}
 }

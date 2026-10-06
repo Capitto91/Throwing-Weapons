@@ -6,6 +6,7 @@
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Settings.h"
 #include "10.- EVENTS/EventManager.h"
+#include "8.- ANIMATION/CameraKick.h"
 
 namespace Plugin
 {
@@ -17,6 +18,8 @@ namespace Plugin
 		FrameHook::Install();
 		// Deniega Lightning Dash antes de lanzarlo si no puede desplazar al jugador.
 		CastHook::Install();
+		// Golpe de cámara del atrape, sumado a la rotación de la cámara del jugador.
+		Animation::CameraKick::Install();
 		Events::Init();
 	}
 }

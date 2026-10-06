@@ -71,6 +71,14 @@ namespace Constants
 	// Paso máximo de un bucle de Physics por tick, tras un tirón (s).
 	inline constexpr float kMaxTickDeltaSeconds = 0.1f;
 
+	// -- Medición de rendimiento (PerfMonitor, con [Debug] PerformanceLog) --
+
+	// Segundos de fotogramas (sin pausas) que resume cada línea del log.
+	inline constexpr float kPerformanceLogIntervalSeconds = 10.0f;
+
+	// Un hueco mayor entre dos fotogramas medidos es una pausa (menú, pantalla de carga): no cuenta como fotograma.
+	inline constexpr float kPerformanceLogMaxFrameSeconds = 1.0f;
+
 	// -- Pulsación y corte de un ataque o bloqueo en curso (WeaponManager) --
 
 	// Intervalo mínimo entre dos attackStart por pulsación (Lanzar tras Atrape, Llamada tras Lanzar).
@@ -265,9 +273,11 @@ namespace Constants
 	// Espera extra al final del Atrape antes de apagar las chispas (el grafo sigue mezclando).
 	inline constexpr std::chrono::milliseconds kCatchVfxSettleDelay{ 400 };
 
-	// Fuerza y duración del temblor de cámara al atrapar (RE::ShakeCamera).
+	// Fuerza del temblor vanilla al atrapar (RE::ShakeCamera), solo sin el golpe de cámara propio (VR).
 	inline constexpr float kCatchShakeStrength = 20.0f;
-	inline constexpr float kCatchShakeDuration = 0.3f;
+
+	// Fracción del primer impulso que queda al acabar la duración del golpe de cámara (Animation::CameraKick).
+	inline constexpr float kCameraKickEndAmplitudeFraction = 0.05f;
 
 	// -- Poder Lightning Dash --
 
@@ -383,6 +393,14 @@ namespace Constants
 	// Volumen del chasquido de Llamada (más alto: el archivo suena bajo).
 	inline constexpr float kCallReleaseSoundVolume = 3.0f;
 
+	// -- Sistemas de partículas (ParticleUtils) --
+
+	// Nombre de clase (RTTI) del controlador que hace nacer las partículas, en la cadena del NiParticleSystem.
+	inline constexpr std::string_view kEmitterControllerRTTIName{ "NiPSysEmitterCtlr" };
+
+	// Identificador del interpolador del ritmo de nacimiento en un NiPSysEmitterCtlr (GetInterpolatorID).
+	inline constexpr std::string_view kBirthRateInterpolatorID{ "BirthRate" };
+
 	// -- Chispas de movimiento (WeaponVFX) --
 
 	// NIF de chispas sin NiControllerManager (controladores en bucle), relativo a meshes/; lo crea BSTempEffectParticle.
@@ -395,7 +413,7 @@ namespace Constants
 	inline constexpr float kMovementVfxEffectLifetime = 2.0f;
 
 	// Tope del apagado en segundos de juego: si quedan partículas vivas pasado este tiempo, se retira igual.
-	// Mayor que la vida máxima de una partícula del NIF (Life Span + Life Span Variation del emisor).
+	// Mayor que la vida máxima de una partícula del NIF (Life Span + Life Span Variation); se escala con su multiplicador.
 	inline constexpr float kMovementVfxFadeOutSafetySeconds = 6.0f;
 
 	// Escala del efecto de chispas.

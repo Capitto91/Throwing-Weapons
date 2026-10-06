@@ -18,6 +18,7 @@ namespace Settings
 		constexpr const char* kThrowSection = "Throw";
 		constexpr const char* kDamageSection = "Damage";
 		constexpr const char* kVfxSection = "VFX";
+		constexpr const char* kDebugSection = "Debug";
 
 		struct Values
 		{
@@ -36,6 +37,8 @@ namespace Settings
 			bool             weaponLight{ kDefaultWeaponLight };
 			bool             handEffect{ kDefaultHandEffect };
 			bool             powerAttackEffects{ kDefaultPowerAttackEffects };
+			float            particleAmount{ kDefaultParticleAmount };
+			float            particleLifetime{ kDefaultParticleLifetime };
 			GlowMode         glowMode{ kDefaultGlowMode };
 			GlowCondition    glowCondition{ kDefaultGlowCondition };
 			bool             glowNearDragons{ kDefaultGlowNearDragons };
@@ -44,6 +47,11 @@ namespace Settings
 			float            glowRadius{ kDefaultGlowRadius };
 			float            glowIntensity{ kDefaultGlowIntensity };
 			float            glowPulseSpeed{ kDefaultGlowPulseSpeed };
+			bool             cameraShake{ kDefaultCameraShake };
+			float            cameraShakeAngle{ kDefaultCameraShakeAngle };
+			float            cameraShakeDuration{ kDefaultCameraShakeDuration };
+			float            cameraShakeFrequency{ kDefaultCameraShakeFrequency };
+			bool             performanceLog{ kDefaultPerformanceLog };
 		};
 
 		std::mutex g_mutex;
@@ -151,6 +159,8 @@ namespace Settings
 			Key{ kVfxSection, "WeaponLight", BoolKey{ &Values::weaponLight } },
 			Key{ kVfxSection, "HandEffect", BoolKey{ &Values::handEffect } },
 			Key{ kVfxSection, "PowerAttackEffects", BoolKey{ &Values::powerAttackEffects } },
+			Key{ kVfxSection, "ParticleAmount", FloatKey{ &Values::particleAmount, kParticleAmountMin, kParticleAmountMax } },
+			Key{ kVfxSection, "ParticleLifetime", FloatKey{ &Values::particleLifetime, kParticleLifetimeMin, kParticleLifetimeMax } },
 			Key{ kVfxSection, "GlowMode", TextKey{ WriteGlowMode, ReadGlowMode } },
 			Key{ kVfxSection, "GlowCondition", TextKey{ WriteGlowCondition, ReadGlowCondition } },
 			Key{ kVfxSection, "GlowNearDragons", BoolKey{ &Values::glowNearDragons } },
@@ -159,6 +169,11 @@ namespace Settings
 			Key{ kVfxSection, "GlowRadius", FloatKey{ &Values::glowRadius, kGlowRadiusMin, kGlowRadiusMax } },
 			Key{ kVfxSection, "GlowIntensity", FloatKey{ &Values::glowIntensity, kGlowIntensityMin, kGlowIntensityMax } },
 			Key{ kVfxSection, "GlowPulseSpeed", FloatKey{ &Values::glowPulseSpeed, kGlowPulseSpeedMin, kGlowPulseSpeedMax } },
+			Key{ kVfxSection, "CameraShake", BoolKey{ &Values::cameraShake } },
+			Key{ kVfxSection, "CameraShakeAngle", FloatKey{ &Values::cameraShakeAngle, kCameraShakeAngleMin, kCameraShakeAngleMax } },
+			Key{ kVfxSection, "CameraShakeDuration", FloatKey{ &Values::cameraShakeDuration, kCameraShakeDurationMin, kCameraShakeDurationMax } },
+			Key{ kVfxSection, "CameraShakeFrequency", FloatKey{ &Values::cameraShakeFrequency, kCameraShakeFrequencyMin, kCameraShakeFrequencyMax } },
+			Key{ kDebugSection, "PerformanceLog", BoolKey{ &Values::performanceLog } },
 		};
 
 		// Junta varias lambdas en un solo visitante de std::visit.
@@ -246,14 +261,15 @@ namespace Settings
 			g_values = loaded;
 		}
 
-		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f} | daño ida {:.2f} / regreso {:.2f} | stagger regreso {} | hazard actor {} / superficie {} | explosión {} | VFX trail {} / partículas {} / luz {} / manos {} / power attack {}.",
+		logs::info("Settings::Load: tecla {} {} | velocidad {:.0f} u/s | multiplicador de gravedad {:.2f} | daño ida {:.2f} / regreso {:.2f} | stagger regreso {} | hazard actor {} / superficie {} | explosión {} | VFX trail {} / partículas {} (cantidad {:.2f}, vida {:.2f}) / luz {} / manos {} / power attack {}.",
 			DeviceToString(loaded.device), loaded.keyCode, loaded.throwSpeed, loaded.throwGravityMult, loaded.throwHitMult, loaded.returnHitMult,
 			loaded.returnStagger, loaded.hazardOnActor, loaded.hazardOnSurface, loaded.impactExplosion,
-			loaded.trail, loaded.particles, loaded.weaponLight, loaded.handEffect, loaded.powerAttackEffects);
-		logs::info("Settings::Load: glow del arma {} / {} | dragones {} / no muertos {} / daedra {} | radio {:.0f} | intensidad {:.2f} | pulso {:.2f} Hz.",
+			loaded.trail, loaded.particles, loaded.particleAmount, loaded.particleLifetime, loaded.weaponLight, loaded.handEffect, loaded.powerAttackEffects);
+		logs::info("Settings::Load: glow del arma {} / {} | dragones {} / no muertos {} / daedra {} | radio {:.0f} | intensidad {:.2f} | pulso {:.2f} Hz | golpe de cámara {} ({:.1f}°, {:.2f} s, {:.1f} rebotes/s) | registro de rendimiento {}.",
 			GlowModeToString(loaded.glowMode), GlowConditionToString(loaded.glowCondition),
 			loaded.glowNearDragons, loaded.glowNearUndead, loaded.glowNearDaedra,
-			loaded.glowRadius, loaded.glowIntensity, loaded.glowPulseSpeed);
+			loaded.glowRadius, loaded.glowIntensity, loaded.glowPulseSpeed,
+			loaded.cameraShake, loaded.cameraShakeAngle, loaded.cameraShakeDuration, loaded.cameraShakeFrequency, loaded.performanceLog);
 	}
 
 	bool Save()
@@ -346,6 +362,12 @@ namespace Settings
 	bool GetPowerAttackEffects() { return Read(&Values::powerAttackEffects); }
 	void SetPowerAttackEffects(bool a_enabled) { Write(&Values::powerAttackEffects, a_enabled); }
 
+	float GetParticleAmount() { return Read(&Values::particleAmount); }
+	void  SetParticleAmount(float a_mult) { Write(&Values::particleAmount, a_mult); }
+
+	float GetParticleLifetime() { return Read(&Values::particleLifetime); }
+	void  SetParticleLifetime(float a_mult) { Write(&Values::particleLifetime, a_mult); }
+
 	GlowMode GetGlowMode() { return Read(&Values::glowMode); }
 	void     SetGlowMode(GlowMode a_mode) { Write(&Values::glowMode, a_mode); }
 
@@ -369,4 +391,19 @@ namespace Settings
 
 	float GetGlowPulseSpeed() { return Read(&Values::glowPulseSpeed); }
 	void  SetGlowPulseSpeed(float a_speed) { Write(&Values::glowPulseSpeed, a_speed); }
+
+	bool GetCameraShake() { return Read(&Values::cameraShake); }
+	void SetCameraShake(bool a_enabled) { Write(&Values::cameraShake, a_enabled); }
+
+	float GetCameraShakeAngle() { return Read(&Values::cameraShakeAngle); }
+	void  SetCameraShakeAngle(float a_degrees) { Write(&Values::cameraShakeAngle, a_degrees); }
+
+	float GetCameraShakeDuration() { return Read(&Values::cameraShakeDuration); }
+	void  SetCameraShakeDuration(float a_seconds) { Write(&Values::cameraShakeDuration, a_seconds); }
+
+	float GetCameraShakeFrequency() { return Read(&Values::cameraShakeFrequency); }
+	void  SetCameraShakeFrequency(float a_bouncesPerSecond) { Write(&Values::cameraShakeFrequency, a_bouncesPerSecond); }
+
+	bool GetPerformanceLog() { return Read(&Values::performanceLog); }
+	void SetPerformanceLog(bool a_enabled) { Write(&Values::performanceLog, a_enabled); }
 }

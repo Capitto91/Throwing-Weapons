@@ -237,6 +237,14 @@ namespace UI::ConfigMenu
 			SettingCheckbox("Power attack VFX", Settings::GetPowerAttackEffects, Settings::SetPowerAttackEffects,
 				"Sparks, hammer glow and light during every power attack with the weapon in hand. Independent from the throw effects above.");
 
+			// Chispas (WeaponVFX), aplicado en vivo.
+			ImGui::SeparatorText("Sparks");
+
+			SettingPercentSlider("Amount", Settings::GetParticleAmount, Settings::SetParticleAmount, Settings::kParticleAmountMin, Settings::kParticleAmountMax,
+				"Sparks emitted per second, relative to the original mesh. Default: 100%. Also applies to power attack sparks. Combined with a long lifetime, very high values are capped by the mesh's particle limit.");
+			SettingPercentSlider("Lifetime", Settings::GetParticleLifetime, Settings::SetParticleLifetime, Settings::kParticleLifetimeMin, Settings::kParticleLifetimeMax,
+				"How long each spark lasts, relative to the original mesh. Default: 100%. Longer sparks leave a longer trail behind the weapon.");
+
 			// Glow de la textura del martillo (GlowMapControl), aplicado en vivo.
 			ImGui::SeparatorText("Weapon glow");
 
@@ -273,6 +281,34 @@ namespace UI::ConfigMenu
 
 			ImGui::EndDisabled();
 
+			// Golpe de cámara al atrapar (CameraKick), leído en cada atrape.
+			ImGui::SeparatorText("Camera");
+
+			SettingCheckbox("Camera shake on catch", Settings::GetCameraShake, Settings::SetCameraShake,
+				"When the weapon lands back in your hand, the camera snaps upwards like a blow to the forehead, then springs back and forth, each time less, until it settles.");
+
+			ImGui::BeginDisabled(!Settings::GetCameraShake());
+
+			SettingSlider("Strength", Settings::GetCameraShakeAngle, Settings::SetCameraShakeAngle, Settings::kCameraShakeAngleMin, Settings::kCameraShakeAngleMax, "%.1f deg",
+				"Upward angle of the initial jolt. The bounces after it are smaller. Default: 6 deg.");
+			SettingSlider("Duration", Settings::GetCameraShakeDuration, Settings::SetCameraShakeDuration, Settings::kCameraShakeDurationMin, Settings::kCameraShakeDurationMax, "%.2f s",
+				"Time until the bounces die out. Default: 1.00 s.");
+			SettingSlider("Bounce speed", Settings::GetCameraShakeFrequency, Settings::SetCameraShakeFrequency, Settings::kCameraShakeFrequencyMin, Settings::kCameraShakeFrequencyMax, "%.1f per second",
+				"Back-and-forth movements per second after the jolt. Higher values give quicker, tighter bounces. Default: 3.");
+
+			ImGui::EndDisabled();
+
+			RenderFooter();
+		}
+
+		void __stdcall RenderDebug()
+		{
+			ImGui::SeparatorText("Diagnostics");
+			ImGui::Spacing();
+
+			SettingCheckbox("Performance log", Settings::GetPerformanceLog, Settings::SetPerformanceLog,
+				"Writes a line to ThorMjolnir_OAR.log every 10 seconds: time the mod spends per frame (average and peak), frame time, and active loops and timers. For diagnostics only; leave it off for normal play.");
+
 			RenderFooter();
 		}
 	}
@@ -289,6 +325,7 @@ namespace UI::ConfigMenu
 		SKSEMenuFramework::AddSectionItem("Throw", RenderThrow);
 		SKSEMenuFramework::AddSectionItem("Damage", RenderDamage);
 		SKSEMenuFramework::AddSectionItem("VFX", RenderVfx);
+		SKSEMenuFramework::AddSectionItem("Debug", RenderDebug);
 
 		// Vive toda la sesión: no se libera.
 		(void)SKSEMenuFramework::AddInputEvent(OnInputEvent);

@@ -3,7 +3,9 @@
 #include "1.- CORE/FrameHook.h"
 
 #include "1.- CORE/Constants.h"
+#include "1.- CORE/PerfMonitor.h"
 #include "1.- CORE/Scheduler.h"
+#include "1.- CORE/Settings.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 
 #include <atomic>
@@ -41,6 +43,10 @@ namespace FrameHook
 
 				g_gameClock.store(g_gameClock.load() + delta);
 
+				// Con [Debug] PerformanceLog se cronometra el trabajo del plugin en este fotograma (PerfMonitor).
+				const bool measure = Settings::GetPerformanceLog();
+				const auto start = measure ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
 				// Ninguna excepción debe cruzar al motor.
 				try {
 					Scheduler::RunFrame(delta);
@@ -49,6 +55,12 @@ namespace FrameHook
 					logs::error("FrameHook: excepción en los bucles por fotograma: {}", e.what());
 				} catch (...) {
 					logs::error("FrameHook: excepción desconocida en los bucles por fotograma.");
+				}
+
+				if (measure) {
+					PerfMonitor::RecordFrame(std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count());
+				} else {
+					PerfMonitor::Stop();
 				}
 			}
 

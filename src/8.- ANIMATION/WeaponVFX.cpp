@@ -7,23 +7,25 @@
 #include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "11.- SKYRIM/ParticleUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "9.- MATH/RotationMath.h"
 
+#include <algorithm>
 #include <atomic>
 
 namespace Animation
 {
 	namespace
 	{
-		// Clase (RTTI) del controlador que hace nacer las partículas, en la cadena del NiParticleSystem.
-		constexpr std::string_view kEmitterControllerRTTIName{ "NiPSysEmitterCtlr" };
-
-		// Efecto de chispas; el bucle lo marca retirado cuando el motor ya lo va a borrar.
+		// Efecto de chispas; el bucle lo marca retirado cuando el motor ya lo va a borrar. emitters guarda los
+		// valores del NIF de cada emisor, capturados al cargar su 3D, para escalarlos con Settings.
 		struct SparksEffect
 		{
-			RE::NiPointer<RE::BSTempEffectParticle> particle;
-			std::atomic<bool>                       retired{ false };
+			RE::NiPointer<RE::BSTempEffectParticle>   particle;
+			std::atomic<bool>                         retired{ false };
+			std::vector<ParticleUtils::EmitterTuning> emitters;
+			bool                                      emittersCaptured{ false };
 		};
 
 		std::shared_ptr<SparksEffect> g_sparks;
@@ -61,8 +63,7 @@ namespace Animation
 				}
 
 				for (auto* controller = particles->GetControllers(); controller; controller = controller->GetNext()) {
-					const auto* rtti = controller->GetRTTI();
-					if (rtti && rtti->GetName() && rtti->GetName() == kEmitterControllerRTTIName) {
+					if (ParticleUtils::IsEmitterController(controller)) {
 						controller->flags.set(a_emitting, RE::NiTimeController::Flag::kActive);
 					}
 				}
@@ -108,6 +109,13 @@ namespace Animation
 					fadeNode->GetRuntimeData().currentFade = 1.0f;
 				}
 
+				if (!sparks->emittersCaptured) {
+					sparks->emitters = ParticleUtils::CaptureEmitters(root, Constants::kMovementVfxEffectPath);
+					sparks->emittersCaptured = true;
+				}
+				const float lifetimeMult = Settings::GetParticleLifetime();
+				ParticleUtils::ApplyMultipliers(sparks->emitters, Settings::GetParticleAmount(), lifetimeMult);
+
 				if (auto* anchor = root->GetObjectByName(Constants::kMovementVfxAnchorNodeName)) {
 					RE::NiTransform worldTransform = anchor->world;
 					worldTransform.translate = getPos();
@@ -129,7 +137,8 @@ namespace Animation
 					return false;
 				}
 
-				if (fadeOutSeconds >= Constants::kMovementVfxFadeOutSafetySeconds) {
+				// Con más vida que la del NIF, las partículas tardan más en morir: el tope crece con ella.
+				if (fadeOutSeconds >= Constants::kMovementVfxFadeOutSafetySeconds * (std::max)(1.0f, lifetimeMult)) {
 					logs::warn("Animation::WeaponVFX: quedan {} partículas tras {:.1f} s sin emisión, se retira el efecto.", liveParticles, fadeOutSeconds);
 					Retire(*sparks);
 					return false;

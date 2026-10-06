@@ -219,6 +219,12 @@ namespace Physics
 		std::erase_if(g_frameLoops, [](const FrameLoop& a_loop) { return !a_loop.active->load(); });
 	}
 
+	std::size_t GetActiveLoopCount()
+	{
+		std::scoped_lock lock(g_pendingLock);
+		return g_frameLoops.size() + g_pendingLoops.size();
+	}
+
 	void CancelTickLoop(TickToken& a_token)
 	{
 		if (a_token) {

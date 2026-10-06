@@ -45,6 +45,10 @@ namespace Physics
 	// Lo llama FrameHook en cada PlayerCharacter::Update sin pausa.
 	void RunFrame(float a_deltaSeconds);
 
+	// Bucles de StartTickLoop en marcha (incluidos los recién creados). Solo desde el hilo del hook:
+	// lo llama PerfMonitor tras RunFrame.
+	[[nodiscard]] std::size_t GetActiveLoopCount();
+
 	// Borra una referencia creada por el plugin (réplica, destello o hazard) con Disable + SetDelete;
 	// si tenía un bucle de tick, para solo.
 	void DestroyReference(RE::ObjectRefHandle a_handle);

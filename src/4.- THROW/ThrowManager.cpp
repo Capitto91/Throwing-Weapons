@@ -11,6 +11,7 @@
 #include "6.- PHYSICS/CollisionManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/CameraKick.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
 #include "8.- ANIMATION/WeaponGlow.h"
 #include "8.- ANIMATION/WeaponImpactVFX.h"
@@ -46,7 +47,10 @@ namespace Throw
 				return { std::sin(heading) * std::cos(pitch), std::cos(heading) * std::cos(pitch), -std::sin(pitch) };
 			}
 
-			return camera->cameraRoot->world.rotate.GetVectorY();
+			// Sin la inclinación del golpe de cámara del atrape (CameraKick): se apunta con la cámara en reposo.
+			const auto& rotate = camera->cameraRoot->world.rotate;
+			const float kick = Animation::CameraKick::GetAppliedPitch();
+			return rotate.GetVectorY() * std::cos(kick) - rotate.GetVectorZ() * std::sin(kick);
 		}
 
 		// Dirección en línea recta desde la mano hacia el punto bajo la mirilla (raycast desde la cámara).

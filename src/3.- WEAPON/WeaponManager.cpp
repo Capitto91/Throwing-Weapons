@@ -6,6 +6,7 @@
 #include "1.- CORE/Forms.h"
 #include "1.- CORE/FrameHook.h"
 #include "1.- CORE/Scheduler.h"
+#include "1.- CORE/Settings.h"
 #include "10.- EVENTS/AttackInterruptWatcher.h"
 #include "10.- EVENTS/GraphSettleWatcher.h"
 #include "11.- SKYRIM/ActorUtils.h"
@@ -17,6 +18,7 @@
 #include "5.- RETURN/ReturnManager.h"
 #include "6.- PHYSICS/PhysicsManager.h"
 #include "7.- COMBAT/DamageManager.h"
+#include "8.- ANIMATION/CameraKick.h"
 #include "8.- ANIMATION/HandGlow.h"
 #include "8.- ANIMATION/PowerAttackVFX.h"
 #include "8.- ANIMATION/WeaponAnimation.h"
@@ -545,6 +547,9 @@ namespace Weapon
 			callAnimationActive = false;
 			CloseGestureClip(Animation::Gesture::kCall, false);
 		}
+
+		// Las chispas que quedan en la celda que se deja no se actualizan (no se apagarían solas): se cortan en el acto.
+		Animation::StopMovementVFX();
 	}
 
 	bool WeaponManager::PrepareThrow()
@@ -814,9 +819,14 @@ namespace Weapon
 	{
 		catchState.reequipDone = true;
 
-		if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-			// Temblor de cámara al cerrar la mano, con epicentro en el jugador.
-			RE::ShakeCamera(Constants::kCatchShakeStrength, player->GetPosition(), Constants::kCatchShakeDuration);
+		if (Settings::GetCameraShake()) {
+			// Golpe de cámara al cerrar la mano; sin sus hooks (VR), temblor vanilla con epicentro en el jugador.
+			const float duration = Settings::GetCameraShakeDuration();
+			if (!Animation::CameraKick::Start(Settings::GetCameraShakeAngle(), duration, Settings::GetCameraShakeFrequency())) {
+				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+					RE::ShakeCamera(Constants::kCatchShakeStrength, player->GetPosition(), duration);
+				}
+			}
 		}
 
 		// Reequipa con la anotación de Catch.hkx y las chispas pasan a seguir la mano.
