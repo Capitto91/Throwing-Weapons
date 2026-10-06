@@ -4,6 +4,7 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/FrameHook.h"
+#include "1.- CORE/Scheduler.h"
 
 #include <algorithm>
 #include <atomic>
@@ -48,7 +49,8 @@ namespace Physics
 			return (std::min)(delta, Constants::kMaxTickDeltaSeconds);
 		}
 
-		void WaitFor3DThenReady(RE::ObjectRefHandle a_handle, int a_attemptsLeft, ReadyCallback a_onReady)
+		// Un intento de WaitFor3D; si el 3D no está, se reprograma con Scheduler (en el hilo principal).
+		void PollFor3D(RE::ObjectRefHandle a_handle, const char* a_what, int a_attemptsLeft, ReadyCallback a_onReady)
 		{
 			auto refr = a_handle.get();
 			if (!refr) {
@@ -56,27 +58,26 @@ namespace Physics
 				return;
 			}
 
-			if (auto* node3D = refr->Get3D()) {
-				// Movida por código: sin fuerzas ni gravedad, con colisión.
-				node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true);
-				SyncHavok(*refr, refr->GetPosition(), refr->GetAngle());
+			if (refr->Get3D()) {
 				a_onReady(a_handle);
 				return;
 			}
 
 			if (a_attemptsLeft <= 0) {
-				logs::warn("Physics::SpawnReplica: agotados los reintentos, el 3D nunca llegó a cargar.");
+				logs::warn("Physics::WaitFor3D: el 3D de {} nunca llegó a cargar, se aborta.", a_what);
 				a_onReady({});
 				return;
 			}
 
-			std::thread([a_handle, a_attemptsLeft, onReady = std::move(a_onReady)]() mutable {
-				std::this_thread::sleep_for(Constants::kTickInterval);
-				SKSE::GetTaskInterface()->AddTask([a_handle, a_attemptsLeft, onReady = std::move(onReady)]() mutable {
-					WaitFor3DThenReady(a_handle, a_attemptsLeft - 1, std::move(onReady));
-				});
-			}).detach();
+			(void)Scheduler::After(Constants::kTickInterval, [a_handle, a_what, a_attemptsLeft, onReady = std::move(a_onReady)]() mutable {
+				PollFor3D(a_handle, a_what, a_attemptsLeft - 1, std::move(onReady));
+			});
 		}
+	}
+
+	void WaitFor3D(RE::ObjectRefHandle a_handle, const char* a_what, ReadyCallback a_onReady)
+	{
+		PollFor3D(a_handle, a_what, kMax3DWaitAttempts, std::move(a_onReady));
 	}
 
 	void SpawnReplica(RE::Actor* a_actor, RE::TESObjectWEAP* a_weapon, const RE::NiPoint3& a_position, ReadyCallback a_onReady)
@@ -97,7 +98,16 @@ namespace Physics
 		// Sin activación: el jugador no puede recogerla del suelo.
 		ref->SetActivationBlocked(true);
 
-		WaitFor3DThenReady(RE::ObjectRefHandle(ref.get()), kMax3DWaitAttempts, std::move(a_onReady));
+		WaitFor3D(RE::ObjectRefHandle(ref.get()), "la réplica", [onReady = std::move(a_onReady)](RE::ObjectRefHandle a_handle) {
+			auto  refr = a_handle.get();
+			auto* node3D = refr ? refr->Get3D() : nullptr;
+			if (node3D) {
+				// Movida por código: sin fuerzas ni gravedad, con colisión.
+				node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true);
+				SyncHavok(*refr, refr->GetPosition(), refr->GetAngle());
+			}
+			onReady(node3D ? a_handle : RE::ObjectRefHandle{});
+		});
 	}
 
 	void SyncHavok(RE::TESObjectREFR& a_refr, const RE::NiPoint3& a_position, const RE::NiPoint3& a_angle)

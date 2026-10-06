@@ -16,9 +16,6 @@ namespace Animation
 {
 	namespace
 	{
-		// Intentos de espera a que cargue el 3D (~800 ms).
-		constexpr int kMax3DWaitAttempts = 50;
-
 		// Único destello activo del plugin.
 		RE::ObjectRefHandle g_activeHandle;
 		Physics::TickToken  g_tickToken;
@@ -184,10 +181,40 @@ namespace Animation
 			return GetGlowAnchorPosition(player ? ActorUtils::GetWeaponBone(*player) : nullptr);
 		}
 
-		// Pone el destello en kKeyframed y arranca su bucle siguiendo a_getTargetPosition.
-		void StartTicking(RE::ObjectRefHandle a_handle, std::function<RE::NiPoint3()> a_getTargetPosition)
+		// Mueve el destello cada tick a a_getTargetPosition y avanza su scroll, pulso, giro y fundido. Sustituye el bucle
+		// anterior; lo usan el arranque y los cambios de objetivo (mano o réplica).
+		void FollowTarget(std::function<RE::NiPoint3()> a_getTargetPosition)
 		{
-			auto  ref = a_handle.get();
+			Physics::CancelTickLoop(g_tickToken);
+			g_tickToken = Physics::StartTickLoop(g_activeHandle, [getPos = std::move(a_getTargetPosition)](RE::TESObjectREFR& a_refr, float a_deltaSeconds) {
+				const auto pos = getPos();
+				a_refr.SetPosition(pos);
+				Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+				TickGlowUVScroll(a_deltaSeconds);
+				TickGlowPulse(a_deltaSeconds);
+				TickGlowRingRotation(a_deltaSeconds);
+				TickGlowFade(a_refr, a_deltaSeconds);
+				return true;
+			});
+		}
+
+		// Cierra el destello activo en el acto: bucle, shaders, luz y referencia. Lo usan el relevo de StartWeaponGlow
+		// y el final del fundido de StopWeaponGlow.
+		void TearDown()
+		{
+			Physics::CancelTickLoop(g_tickToken);
+			g_shaderProperty.reset();
+			g_ringGlowShaderProperty.reset();
+			g_ringGlowNode.reset();
+			DetachGlowLight();
+			Physics::DestroyReference(g_activeHandle);
+			g_activeHandle = {};
+		}
+
+		// Con el 3D del destello ya cargado: kKeyframed, shaders y luz, y empieza a seguir la mano.
+		void StartTicking()
+		{
+			auto  ref = g_activeHandle.get();
 			auto* node3D = ref ? ref->Get3D() : nullptr;
 			if (!node3D) {
 				return;
@@ -232,43 +259,7 @@ namespace Animation
 			// Luz enganchada al nodo raíz: se mueve con él.
 			AttachGlowLight(ref.get(), node3D);
 
-			g_tickToken = Physics::StartTickLoop(a_handle, [getPos = std::move(a_getTargetPosition)](RE::TESObjectREFR& a_refr, float a_deltaSeconds) {
-				const auto pos = getPos();
-				a_refr.SetPosition(pos);
-				Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
-				TickGlowUVScroll(a_deltaSeconds);
-				TickGlowPulse(a_deltaSeconds);
-				TickGlowRingRotation(a_deltaSeconds);
-				TickGlowFade(a_refr, a_deltaSeconds);
-				return true;
-			});
-		}
-
-		// Espera a que cargue el 3D y arranca el bucle.
-		void WaitFor3DThenStartTicking(RE::ObjectRefHandle a_handle, std::function<RE::NiPoint3()> a_getTargetPosition, int a_attemptsLeft, std::uint64_t a_generation)
-		{
-			if (g_generation.load() != a_generation) {
-				return;
-			}
-
-			auto ref = a_handle.get();
-			if (!ref) {
-				return;
-			}
-
-			if (ref->Get3D()) {
-				StartTicking(a_handle, std::move(a_getTargetPosition));
-				return;
-			}
-
-			if (a_attemptsLeft <= 0) {
-				logs::warn("Animation::WeaponGlow: el 3D del destello nunca llegó a cargar, se aborta.");
-				return;
-			}
-
-			(void)Scheduler::After(Constants::kTickInterval, [a_handle, getPos = std::move(a_getTargetPosition), a_attemptsLeft, a_generation]() mutable {
-				WaitFor3DThenStartTicking(a_handle, std::move(getPos), a_attemptsLeft - 1, a_generation);
-			});
+			FollowTarget(GetPlayerHandGlowPosition);
 		}
 	}
 
@@ -301,13 +292,7 @@ namespace Animation
 
 			// El anterior aún se estaba apagando: se cierra ya y se invalida su cierre diferido.
 			++g_generation;
-			Physics::CancelTickLoop(g_tickToken);
-			g_shaderProperty.reset();
-			g_ringGlowShaderProperty.reset();
-			g_ringGlowNode.reset();
-			DetachGlowLight();
-			Physics::DestroyReference(g_activeHandle);
-			g_activeHandle = {};
+			TearDown();
 		}
 
 		auto* form = Forms::weaponGlowActivator;
@@ -326,8 +311,13 @@ namespace Animation
 
 		g_activeHandle = RE::ObjectRefHandle(ref.get());
 
+		// Descarta la espera si entretanto el destello se apagó o lo relevó otro.
 		const auto generation = ++g_generation;
-		WaitFor3DThenStartTicking(g_activeHandle, GetPlayerHandGlowPosition, kMax3DWaitAttempts, generation);
+		Physics::WaitFor3D(g_activeHandle, "el destello", [generation](RE::ObjectRefHandle a_handle) {
+			if (a_handle && g_generation.load() == generation) {
+				StartTicking();
+			}
+		});
 		return true;
 	}
 
@@ -344,23 +334,14 @@ namespace Animation
 			return;
 		}
 
-		// Cancela el bucle anterior antes de arrancar el nuevo.
-		Physics::CancelTickLoop(g_tickToken);
-
 		// Si la réplica desaparece, se queda en su última posición.
-		g_tickToken = Physics::StartTickLoop(g_activeHandle, [handle = a_handle, lastPosition = GetGlowAnchorPosition(root)](RE::TESObjectREFR& a_refr, float a_deltaSeconds) mutable {
+		FollowTarget([handle = a_handle, lastPosition = GetGlowAnchorPosition(root)]() mutable {
 			auto  replicaRef = handle.get();
 			auto* replicaRoot = replicaRef ? replicaRef->Get3D() : nullptr;
 			if (replicaRoot) {
 				lastPosition = GetGlowAnchorPosition(replicaRoot);
 			}
-			a_refr.SetPosition(lastPosition);
-			Physics::SyncHavok(a_refr, lastPosition, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
-			TickGlowUVScroll(a_deltaSeconds);
-			TickGlowPulse(a_deltaSeconds);
-			TickGlowRingRotation(a_deltaSeconds);
-			TickGlowFade(a_refr, a_deltaSeconds);
-			return true;
+			return lastPosition;
 		});
 	}
 
@@ -375,17 +356,7 @@ namespace Animation
 			return;
 		}
 
-		Physics::CancelTickLoop(g_tickToken);
-		g_tickToken = Physics::StartTickLoop(g_activeHandle, [](RE::TESObjectREFR& a_refr, float a_deltaSeconds) {
-			const auto pos = GetPlayerHandGlowPosition();
-			a_refr.SetPosition(pos);
-			Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
-			TickGlowUVScroll(a_deltaSeconds);
-			TickGlowPulse(a_deltaSeconds);
-			TickGlowRingRotation(a_deltaSeconds);
-			TickGlowFade(a_refr, a_deltaSeconds);
-			return true;
-		});
+		FollowTarget(GetPlayerHandGlowPosition);
 	}
 
 	void StopWeaponGlow()
@@ -401,20 +372,8 @@ namespace Animation
 
 		const auto generation = ++g_generation;
 		(void)Scheduler::After(Constants::kGlowFadeDuration, [generation]() {
-			if (g_generation.load() != generation) {
-				return;
-			}
-
-			Physics::CancelTickLoop(g_tickToken);
-
-			g_shaderProperty.reset();
-			g_ringGlowShaderProperty.reset();
-			g_ringGlowNode.reset();
-			DetachGlowLight();
-
-			if (g_activeHandle) {
-				Physics::DestroyReference(g_activeHandle);
-				g_activeHandle = {};
+			if (g_generation.load() == generation) {
+				TearDown();
 			}
 		});
 	}

@@ -106,19 +106,8 @@ namespace Animation::PowerAttackVFX
 
 	void EnsureRegistered(RE::Actor& a_actor)
 	{
-		// Todos los grafos (tercera y primera persona); AddEventSink ignora repetidos.
-		RE::BSAnimationGraphManagerPtr graphManager;
-		a_actor.GetAnimationGraphManager(graphManager);
-		if (!graphManager) {
-			// Sin grafo todavía (p. ej. la intro de una partida nueva): se reintenta al equipar el arma.
-			return;
-		}
-
-		for (const auto& graph : graphManager->graphs) {
-			if (graph) {
-				graph->GetEventSource<RE::BSAnimationGraphEvent>()->AddEventSink(&sink);
-			}
-		}
+		// Sin grafo todavía (p. ej. la intro de una partida nueva) no engancha nada: se reintenta al equipar el arma.
+		(void)ActorUtils::AddEventSinkToAllGraphs(a_actor, &sink);
 	}
 
 	void Cancel()

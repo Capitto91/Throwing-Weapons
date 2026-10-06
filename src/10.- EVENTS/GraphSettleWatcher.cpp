@@ -2,9 +2,9 @@
 
 #include "10.- EVENTS/GraphSettleWatcher.h"
 
+#include "11.- SKYRIM/ActorUtils.h"
+
 #include <atomic>
-#include <mutex>
-#include <vector>
 
 namespace Events::GraphSettleWatcher
 {
@@ -13,10 +13,6 @@ namespace Events::GraphSettleWatcher
 		// Escritos por el sink desde los hilos de animación y leídos en el hilo principal.
 		std::atomic<bool> drawPending{ false };
 		std::atomic<bool> attackStopPending{ false };
-
-		// Fuentes de evento ya enganchadas (solo para no duplicar; no se desreferencian).
-		std::mutex               sourcesMutex;
-		std::vector<const void*> sources;
 
 		class Sink final : public RE::BSTEventSink<RE::BSAnimationGraphEvent>
 		{
@@ -44,26 +40,8 @@ namespace Events::GraphSettleWatcher
 
 	void Track(RE::Actor& a_player)
 	{
-		RE::BSTSmartPointer<RE::BSAnimationGraphManager> manager;
-		if (!a_player.GetAnimationGraphManager(manager) || !manager) {
-			return;
-		}
-
-		// Los grafos cambian si se recarga el 3D; se enganchan los que falten.
-		for (auto& graph : manager->graphs) {
-			auto* source = graph ? graph->GetEventSource<RE::BSAnimationGraphEvent>() : nullptr;
-			if (!source) {
-				continue;
-			}
-			{
-				std::lock_guard lock(sourcesMutex);
-				if (std::ranges::find(sources, source) != sources.end()) {
-					continue;
-				}
-				sources.push_back(source);
-			}
-			source->AddEventSink(&sink);
-		}
+		// Los grafos cambian si se recarga el 3D; los ya enganchados se ignoran.
+		(void)ActorUtils::AddEventSinkToAllGraphs(a_player, &sink);
 	}
 
 	void NoteDrawExpected()

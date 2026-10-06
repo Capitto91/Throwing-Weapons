@@ -65,6 +65,21 @@ namespace ActorUtils
 		RE::ActorEquipManager::GetSingleton()->UnequipObject(&a_actor, a_object, nullptr, 1, nullptr, false, true, true, true);
 	}
 
+	bool AddEventSinkToAllGraphs(RE::Actor& a_actor, RE::BSTEventSink<RE::BSAnimationGraphEvent>* a_sink)
+	{
+		RE::BSAnimationGraphManagerPtr graphManager;
+		if (!a_actor.GetAnimationGraphManager(graphManager) || !graphManager) {
+			return false;
+		}
+
+		for (const auto& graph : graphManager->graphs) {
+			if (auto* source = graph ? graph->GetEventSource<RE::BSAnimationGraphEvent>() : nullptr) {
+				source->AddEventSink(a_sink);
+			}
+		}
+		return true;
+	}
+
 	RE::BSFixedString FindNearestBoneName(RE::Actor* a_actor, const RE::NiPoint3& a_worldPoint)
 	{
 		auto* root = a_actor ? a_actor->Get3D() : nullptr;

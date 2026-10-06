@@ -41,7 +41,6 @@ namespace Events::AttackInterruptWatcher
 						return RE::BSEventNotifyControl::kContinue;
 					}
 
-
 					if (a_event->tag == Constants::kAttackStopAnimationEvent &&
 						++attackStopCount == Constants::kAttackInterruptReadyEventOrdinal) {
 						armed = false;
@@ -63,6 +62,8 @@ namespace Events::AttackInterruptWatcher
 
 	void Arm(RE::Actor& a_actor, std::function<void()> a_onReady)
 	{
+		// Solo el primer grafo, a propósito: se cuentan los attackStop, y en primera persona los dos grafos los
+		// emiten (con ActorUtils::AddEventSinkToAllGraphs se contarían dos veces).
 		a_actor.AddAnimationGraphEventSink(&sink);
 
 		std::lock_guard lock(mutex);

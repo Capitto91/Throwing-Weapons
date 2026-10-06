@@ -23,6 +23,11 @@ namespace ActorUtils
 	void EquipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object);
 	void UnequipNow(RE::Actor& a_actor, RE::TESBoundObject* a_object);
 
+	// Engancha a_sink a todos los grafos de animación de a_actor (en primera persona son dos). El motor ignora un sink
+	// repetido: se puede volver a llamar para cubrir grafos nuevos tras recargar el 3D. false si aún no tiene grafos.
+	// Actor::AddAnimationGraphEventSink, en cambio, solo engancha el primero.
+	bool AddEventSinkToAllGraphs(RE::Actor& a_actor, RE::BSTEventSink<RE::BSAnimationGraphEvent>* a_sink);
+
 	// Nombre del nodo del 3D de a_actor más cercano a a_worldPoint (vacío sin 3D).
 	// Lo usa Combat::BeginEmbeddedEffect para seguir el hueso donde se clava el arma.
 	RE::BSFixedString FindNearestBoneName(RE::Actor* a_actor, const RE::NiPoint3& a_worldPoint);

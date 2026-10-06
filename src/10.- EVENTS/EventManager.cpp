@@ -92,63 +92,12 @@ namespace Events
 			// Partida nueva o sin datos nuestros: se descarta lo anterior.
 			g_pendingRecovery.reset();
 		}
-		// Desequipa cualquier otra arma mientras la arrojadiza está fuera de la mano.
-		class EquipGuard final : public RE::BSTEventSink<RE::TESEquipEvent>
+
+		// Equipado del jugador. Con el arma arrojadiza fuera de la mano, desequipa cualquier otra que se equipe; al
+		// equipar o desequipar la arrojadiza, efectos de power attack y glow, y avisa a OnThrowableWeaponEquipChanged.
+		class EquipWatcher final : public RE::BSTEventSink<RE::TESEquipEvent>
 		{
 		public:
-			static EquipGuard* GetSingleton()
-			{
-				static EquipGuard singleton;
-				return &singleton;
-			}
-
-			EquipGuard(const EquipGuard&) = delete;
-			EquipGuard(EquipGuard&&) = delete;
-			EquipGuard& operator=(const EquipGuard&) = delete;
-			EquipGuard& operator=(EquipGuard&&) = delete;
-
-		protected:
-			RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent* a_event, RE::BSTEventSource<RE::TESEquipEvent>*) override
-			{
-				auto* player = RE::PlayerCharacter::GetSingleton();
-				if (!a_event || !a_event->equipped || !player || a_event->actor.get() != player) {
-					return RE::BSEventNotifyControl::kContinue;
-				}
-
-				if (Weapon::WeaponManager::GetSingleton()->GetState() == Weapon::State::kInHand) {
-					return RE::BSEventNotifyControl::kContinue;
-				}
-
-				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
-				if (auto* boundObject = form ? form->As<RE::TESBoundObject>() : nullptr) {
-					RE::ActorEquipManager::GetSingleton()->UnequipObject(player, boundObject);
-				}
-
-				return RE::BSEventNotifyControl::kContinue;
-			}
-
-		private:
-			EquipGuard() = default;
-			~EquipGuard() override = default;
-		};
-
-		// Concede o retira el poder Lightning Dash al equipar/desequipar el arma arrojadiza.
-		// Avisa a WeaponManager::OnThrowableWeaponEquipChanged.
-		class LightningDashWatcher final : public RE::BSTEventSink<RE::TESEquipEvent>
-		{
-		public:
-			static LightningDashWatcher* GetSingleton()
-			{
-				static LightningDashWatcher singleton;
-				return &singleton;
-			}
-
-			LightningDashWatcher(const LightningDashWatcher&) = delete;
-			LightningDashWatcher(LightningDashWatcher&&) = delete;
-			LightningDashWatcher& operator=(const LightningDashWatcher&) = delete;
-			LightningDashWatcher& operator=(LightningDashWatcher&&) = delete;
-
-		protected:
 			RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent* a_event, RE::BSTEventSource<RE::TESEquipEvent>*) override
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
@@ -156,7 +105,16 @@ namespace Events
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
-				if (!ActorUtils::IsThrowableWeapon(RE::TESForm::LookupByID(a_event->baseObject))) {
+				auto* form = RE::TESForm::LookupByID(a_event->baseObject);
+
+				// Con el ciclo en marcha no se puede equipar nada más.
+				if (a_event->equipped && Weapon::WeaponManager::GetSingleton()->GetState() != Weapon::State::kInHand) {
+					if (auto* boundObject = form ? form->As<RE::TESBoundObject>() : nullptr) {
+						RE::ActorEquipManager::GetSingleton()->UnequipObject(player, boundObject);
+					}
+				}
+
+				if (!ActorUtils::IsThrowableWeapon(form)) {
 					return RE::BSEventNotifyControl::kContinue;
 				}
 
@@ -175,10 +133,6 @@ namespace Events
 
 				return RE::BSEventNotifyControl::kContinue;
 			}
-
-		private:
-			LightningDashWatcher() = default;
-			~LightningDashWatcher() override = default;
 		};
 
 		// El jugador lanza el poder Lightning Dash: encola WeaponManager::OnLightningDashCast
@@ -186,18 +140,6 @@ namespace Events
 		class LightningDashCastWatcher final : public RE::BSTEventSink<RE::TESSpellCastEvent>
 		{
 		public:
-			static LightningDashCastWatcher* GetSingleton()
-			{
-				static LightningDashCastWatcher singleton;
-				return &singleton;
-			}
-
-			LightningDashCastWatcher(const LightningDashCastWatcher&) = delete;
-			LightningDashCastWatcher(LightningDashCastWatcher&&) = delete;
-			LightningDashCastWatcher& operator=(const LightningDashCastWatcher&) = delete;
-			LightningDashCastWatcher& operator=(LightningDashCastWatcher&&) = delete;
-
-		protected:
 			RE::BSEventNotifyControl ProcessEvent(const RE::TESSpellCastEvent* a_event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
@@ -212,28 +154,12 @@ namespace Events
 
 				return RE::BSEventNotifyControl::kContinue;
 			}
-
-		private:
-			LightningDashCastWatcher() = default;
-			~LightningDashCastWatcher() override = default;
 		};
 
 		// Al cerrarse cualquier pantalla de carga, avisa a WeaponManager::OnLoadingScreenClosed.
 		class LoadingScreenWatcher final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 		{
 		public:
-			static LoadingScreenWatcher* GetSingleton()
-			{
-				static LoadingScreenWatcher singleton;
-				return &singleton;
-			}
-
-			LoadingScreenWatcher(const LoadingScreenWatcher&) = delete;
-			LoadingScreenWatcher(LoadingScreenWatcher&&) = delete;
-			LoadingScreenWatcher& operator=(const LoadingScreenWatcher&) = delete;
-			LoadingScreenWatcher& operator=(LoadingScreenWatcher&&) = delete;
-
-		protected:
 			RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
 			{
 				if (a_event && !a_event->opening && a_event->menuName == RE::LoadingMenu::MENU_NAME) {
@@ -252,11 +178,12 @@ namespace Events
 
 				return RE::BSEventNotifyControl::kContinue;
 			}
-
-		private:
-			LoadingScreenWatcher() = default;
-			~LoadingScreenWatcher() override = default;
 		};
+
+		// Sinks registrados en kDataLoaded; viven toda la sesión.
+		EquipWatcher             g_equipWatcher;
+		LightningDashCastWatcher g_lightningDashCastWatcher;
+		LoadingScreenWatcher     g_loadingScreenWatcher;
 
 		void OnSKSEMessage(SKSE::MessagingInterface::Message* a_message)
 		{
@@ -291,10 +218,9 @@ namespace Events
 				// Formularios del plugin, antes que todo lo que los usa (sinks y Requirements::CheckPluginFile).
 				Forms::Load();
 				// Sinks del motor, con los datos del juego ya cargados.
-				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(EquipGuard::GetSingleton());
-				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashWatcher::GetSingleton());
-				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(LightningDashCastWatcher::GetSingleton());
-				RE::UI::GetSingleton()->AddEventSink(LoadingScreenWatcher::GetSingleton());
+				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESEquipEvent>(&g_equipWatcher);
+				RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESSpellCastEvent>(&g_lightningDashCastWatcher);
+				RE::UI::GetSingleton()->AddEventSink<RE::MenuOpenCloseEvent>(&g_loadingScreenWatcher);
 				Combat::Init();
 				Requirements::CheckPluginFile();
 				// Gasta el primer uso de cada sonido del arma.

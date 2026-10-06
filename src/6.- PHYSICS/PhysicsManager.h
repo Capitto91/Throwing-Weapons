@@ -16,8 +16,12 @@ namespace Physics
 	// Token para detener un bucle de tick desde fuera.
 	using TickToken = std::shared_ptr<std::atomic<bool>>;
 
-	// Aviso con la réplica lista para moverse, o handle inválido si su 3D no cargó.
+	// Aviso con la referencia lista (3D cargado), o handle inválido si desapareció o su 3D no cargó.
 	using ReadyCallback = std::function<void(RE::ObjectRefHandle)>;
+
+	// Espera a que cargue el 3D de a_handle, recién creada (sondeo con Scheduler cada Constants::kTickInterval de juego,
+	// ~800 ms como mucho), y llama a a_onReady. Si no carga, lo avisa nombrándola con a_what (literal).
+	void WaitFor3D(RE::ObjectRefHandle a_handle, const char* a_what, ReadyCallback a_onReady);
 
 	// Crea la réplica del arma en a_position, espera a su 3D, la pone en kKeyframed
 	// y llama a a_onReady.
