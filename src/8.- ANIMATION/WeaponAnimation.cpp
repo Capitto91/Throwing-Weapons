@@ -5,6 +5,7 @@
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
 #include "11.- SKYRIM/ActorUtils.h"
+#include "8.- ANIMATION/WeaponGlow.h"
 #include "9.- MATH/RotationMath.h"
 
 #include <algorithm>
@@ -74,7 +75,7 @@ namespace Animation
 
 	RE::NiMatrix3 GetEquippedWeaponWorldRotation(RE::Actor& a_actor)
 	{
-		// El hueso del arma no es la malla: la malla es su hijo.
+		// El hueso del arma no es la malla: la malla es su hijo (el destello, si cuelga de él, no cuenta).
 		auto* weaponNode = ActorUtils::GetWeaponBone(a_actor);
 		auto* asNode = weaponNode ? netimmerse_cast<RE::NiNode*>(weaponNode) : nullptr;
 		if (!asNode || asNode->GetChildren().empty()) {
@@ -83,7 +84,7 @@ namespace Animation
 		}
 
 		for (auto& child : asNode->GetChildren()) {
-			if (child) {
+			if (child && !IsWeaponGlowNode(child.get())) {
 				return child->world.rotate;
 			}
 		}
@@ -159,8 +160,8 @@ namespace Animation
 
 	bool SetEquippedWeaponHidden(RE::Actor& a_actor, bool a_hidden)
 	{
-		// kHidden en el BSFadeNode hijo de "WEAPON" (en el hueso no oculta nada), en los dos esqueletos:
-		// el arma cuelga de ambos y solo se ve el de la cámara activa.
+		// kHidden en el BSFadeNode del arma, hijo de "WEAPON" (en el hueso no oculta nada; el destello, otro hijo, no se
+		// toca), en los dos esqueletos: el arma cuelga de ambos y solo se ve el de la cámara activa.
 		bool applied = false;
 		for (const bool firstPerson : { false, true }) {
 			auto* root = a_actor.Get3D(firstPerson);
@@ -171,7 +172,7 @@ namespace Animation
 			}
 
 			for (auto& child : asNode->GetChildren()) {
-				if (child) {
+				if (child && !IsWeaponGlowNode(child.get())) {
 					child->GetFlags().set(a_hidden, RE::NiAVObject::Flag::kHidden);
 					applied = true;
 				}

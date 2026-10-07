@@ -31,8 +31,10 @@ namespace FrameHook
 			{
 				func(a_this, a_delta);
 
+				// Pausa de menú o tiempo congelado (Main::freezeTime: Photo Mode, "tfc 1"): ni reloj ni bucles.
 				auto* ui = RE::UI::GetSingleton();
-				if (!ui || ui->GameIsPaused()) {
+				auto* main = RE::Main::GetSingleton();
+				if (!ui || ui->GameIsPaused() || (main && main->GetRuntimeData().freezeTime)) {
 					return;
 				}
 

@@ -454,18 +454,20 @@ namespace Constants
 
 	// -- Destello con luz (WeaponGlow) --
 
-	// Nodo de la cabeza del martillo en Mjolnir.nif; el destello sigue su posición.
+	// Malla de la cabeza del martillo en Mjolnir.nif; el destello se coloca en ella y, en la réplica, cuelga de su padre.
 	inline constexpr std::string_view kWeaponHammerHeadNodeName{ "Gold" };
 
 	// Offset del destello en el espacio local de "Gold".
 	inline constexpr RE::NiPoint3 kGlowAnchorLocalOffset{ 0.0f, 15.0f, 0.0f };
 
-	// Activator del destello (ThorMjolnirLight.nif), FormID local del ESL.
+	// Activator del destello, FormID local del ESL; de su modelo se carga ThorMjolnirLight.nif.
 	inline constexpr RE::FormID kWeaponGlowActivatorLocalFormID = 0x027;
 
-	// Duración del fundido de encendido/apagado del destello (mismas cifras en ms y s).
-	inline constexpr std::chrono::milliseconds kGlowFadeDuration{ 300 };
-	inline constexpr float                     kGlowFadeDurationSeconds = 0.3f;
+	// Nombre que se da al nodo raíz del clon del destello; con él se reconoce entre los hijos del hueso "WEAPON".
+	inline constexpr std::string_view kWeaponGlowRootNodeName{ "ThorMjolnirGlow" };
+
+	// Duración del fundido de encendido/apagado del destello (s).
+	inline constexpr float kGlowFadeDurationSeconds = 0.3f;
 
 	// Velocidad del scroll de "V Offset" del destello, escrito por código cada tick.
 	inline constexpr float kGlowUVScrollSpeed = -1.0f / 7.083333f;
@@ -484,6 +486,11 @@ namespace Constants
 
 	// Luz del destello (TESObjectLIGH), FormID local del ESL.
 	inline constexpr RE::FormID kWeaponGlowLightLocalFormID = 0x028;
+
+	// Alta de la luz del destello en el ShadowSceneNode: valores de una luz puntual sin sombra.
+	inline constexpr float kGlowLightFov = 1.0f;
+	inline constexpr float kGlowLightFalloff = 1.0f;
+	inline constexpr float kGlowLightNearDistance = 5.0f;
 
 	// -- Brillo de manos (HandGlow) --
 

@@ -4,94 +4,88 @@
 
 #include "1.- CORE/Constants.h"
 #include "1.- CORE/Forms.h"
-#include "1.- CORE/Scheduler.h"
 #include "1.- CORE/Settings.h"
 #include "11.- SKYRIM/ActorUtils.h"
 #include "6.- PHYSICS/PhysicsManager.h"
+#include "9.- MATH/RotationMath.h"
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 namespace Animation
 {
 	namespace
 	{
-		// Único destello activo del plugin.
-		RE::ObjectRefHandle g_activeHandle;
-		Physics::TickToken  g_tickToken;
-
-		// Luz dinámica creada con TESObjectLIGH::GenDynamic sobre el nodo raíz del destello.
-		RE::NiPointer<RE::NiLight> g_niLight;
-
-		// Fade pleno de la luz, leído del formulario (0 sin luz).
-		float g_lightTargetFade = 0.0f;
-
-		// Fase del fundido de encendido/apagado (escala de la malla y fade de la luz).
+		// Fase del fundido de encendido/apagado (escala del destello y fade de la luz).
 		enum class GlowPhase
 		{
 			kFadingIn,
 			kSteady,
 			kFadingOut
 		};
-		GlowPhase g_phase = GlowPhase::kFadingIn;
-		float     g_phaseElapsed = 0.0f;
 
-		// Avanza el fundido en curso. Lo llaman los bucles de tick del destello.
-		void TickGlowFade(RE::TESObjectREFR& a_refr, float a_deltaSeconds)
+		// Un destello: clon de ThorMjolnirLight.nif colgado de la mano o de la réplica, su luz y su estado. Lo mantiene
+		// vivo su bucle por fotograma (TickGlow), el único que lo cuelga, lo mueve y lo suelta de la escena.
+		struct Glow
 		{
-			if (g_phase == GlowPhase::kSteady) {
-				return;
+			RE::NiPointer<RE::NiNode> root;
+			RE::NiPointer<RE::NiNode> parent;       // nodo del que cuelga root
+			RE::NiPoint3              anchorLocal;  // posición en el espacio de parent; se conserva si "Gold" desaparece
+
+			// A quién sigue: la mano de actor o, con followReplica, la réplica.
+			RE::ActorHandle     actor;
+			RE::ObjectRefHandle replica;
+			bool                followReplica{ false };
+
+			// Luz: NiPointLight hijo de root y su registro en el ShadowSceneNode.
+			RE::NiPointer<RE::NiPointLight> niLight;
+			RE::NiPointer<RE::BSLight>      bsLight;
+			float                           lightTargetFade{ 0.0f };
+
+			// Malla con scroll de "V Offset" (bajo el NiBillboardNode) y "RingGlow" (pulso y giro).
+			RE::NiPointer<RE::BSEffectShaderProperty> scrollShader;
+			RE::NiPointer<RE::BSEffectShaderProperty> ringShader;
+			RE::NiPointer<RE::NiAVObject>             ringNode;
+			RE::NiMatrix3                             ringBaseLocalRotation;
+			float                                     pulseElapsed{ 0.0f };
+			float                                     ringRotationElapsed{ 0.0f };
+
+			GlowPhase phase{ GlowPhase::kFadingIn };
+			float     phaseElapsed{ 0.0f };
+			bool      closeNow{ false };  // cierre sin fundido: el siguiente tick lo suelta
+		};
+
+		// Destello activo; uno que se apaga sigue vivo en su bucle hasta terminar.
+		std::shared_ptr<Glow> g_active;
+
+		// Avanza el fundido de a_glow y devuelve su factor (0 apagado, 1 pleno).
+		float AdvanceFade(Glow& a_glow, float a_deltaSeconds)
+		{
+			if (a_glow.phase == GlowPhase::kSteady) {
+				return 1.0f;
 			}
 
-			g_phaseElapsed += a_deltaSeconds;
-			float t = g_phaseElapsed / Constants::kGlowFadeDurationSeconds;
-			t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-
-			if (g_phase == GlowPhase::kFadingOut) {
-				t = 1.0f - t;
-			} else if (t >= 1.0f) {
-				g_phase = GlowPhase::kSteady;
+			a_glow.phaseElapsed += a_deltaSeconds;
+			const float t = std::clamp(a_glow.phaseElapsed / Constants::kGlowFadeDurationSeconds, 0.0f, 1.0f);
+			if (a_glow.phase == GlowPhase::kFadingOut) {
+				return 1.0f - t;
 			}
 
-			if (auto* node3D = a_refr.Get3D()) {
-				node3D->local.scale = t;
-				node3D->world.scale = t;
+			if (t >= 1.0f) {
+				a_glow.phase = GlowPhase::kSteady;
 			}
-			if (g_niLight) {
-				g_niLight->GetLightRuntimeData().fade = g_lightTargetFade * t;
-			}
+			return t;
 		}
 
-		// Crea la luz del formulario y la engancha a a_root.
-		void AttachGlowLight(RE::TESObjectREFR* a_ref, RE::NiAVObject* a_root)
+		// Posición mundial del destello a partir del nodo "Gold" (cabeza del martillo) y su offset.
+		RE::NiPoint3 AnchorFromGold(const RE::NiAVObject& a_gold)
 		{
-			auto* lightForm = Forms::weaponGlowLight;
-			auto* rootNode = a_root ? a_root->AsNode() : nullptr;
-			if (!lightForm || !rootNode || !a_ref) {
-				return;
-			}
-
-			auto* niLight = lightForm->GenDynamic(a_ref, rootNode, 1, 1, 0);
-			if (!niLight) {
-				logs::warn("Animation::WeaponGlow: TESObjectLIGH::GenDynamic devolvió nullptr -- sin luz real.");
-				return;
-			}
-
-			g_niLight = RE::NiPointer<RE::NiLight>(niLight);
-
-			// Fade pleno tomado del formulario.
-			g_lightTargetFade = lightForm->fade;
+			return a_gold.world.translate + a_gold.world.rotate * Constants::kGlowAnchorLocalOffset;
 		}
-
-		// Suelta la luz; se borra junto con la referencia del destello.
-		void DetachGlowLight()
-		{
-			g_niLight.reset();
-		}
-
-		// Shader de la malla con scroll de "V Offset" (bajo el NiBillboardNode), escrito cada tick.
-		RE::NiPointer<RE::BSEffectShaderProperty> g_shaderProperty;
 
 		// Busca la geometría del primer NiBillboardNode hijo de a_root (por estructura, sin nombre).
 		RE::BSGeometry* FindGlowScrollGeometry(RE::NiAVObject* a_root)
@@ -119,153 +113,302 @@ namespace Animation
 			return nullptr;
 		}
 
-		// Avanza texCoordOffset[0] cada tick (Constants::kGlowUVScrollSpeed).
-		void TickGlowUVScroll(float a_deltaSeconds)
+		// Clon propio de ThorMjolnirLight.nif, cargado con BSModelDB desde el modelo del Activator del destello.
+		RE::NiPointer<RE::NiNode> LoadGlowModel()
 		{
-			if (!g_shaderProperty) {
-				return;
+			auto*       form = Forms::weaponGlowActivator;
+			const char* modelPath = form ? form->GetModel() : nullptr;
+			if (!modelPath || !*modelPath) {
+				logs::warn("Animation::StartWeaponGlow: el Activator del destello no tiene modelo.");
+				return {};
 			}
 
-			if (auto* material = g_shaderProperty->GetMaterial()) {
-				material->texCoordOffset[0].y += Constants::kGlowUVScrollSpeed * a_deltaSeconds;
-			}
-		}
-
-		// Shader de la malla "RingGlow" (Constants::kGlowRingGlowNodeName).
-		RE::NiPointer<RE::BSEffectShaderProperty> g_ringGlowShaderProperty;
-		float                                     g_pulseElapsed = 0.0f;
-
-		// Nodo "RingGlow" y su rotación local inicial, base de su giro.
-		RE::NiPointer<RE::NiAVObject> g_ringGlowNode;
-		RE::NiMatrix3                 g_ringGlowBaseLocalRotation;
-		float                         g_ringRotationElapsed = 0.0f;
-
-		// Pulso de baseColorScale de "RingGlow" con una onda seno.
-		void TickGlowPulse(float a_deltaSeconds)
-		{
-			if (!g_ringGlowShaderProperty) {
-				return;
+			RE::NiPointer<RE::NiNode>                   loaded;
+			constexpr RE::BSModelDB::DBTraits::ArgsType args{};
+			if (const auto error = RE::BSModelDB::Demand(modelPath, loaded, args); error != RE::BSResource::ErrorCode::kNone || !loaded) {
+				logs::warn("Animation::StartWeaponGlow: no se pudo cargar \"{}\" (código {}).", modelPath, std::to_underlying(error));
+				return {};
 			}
 
-			g_pulseElapsed += a_deltaSeconds;
-
-			constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-			const float     sine01 = 0.5f * (1.0f + std::sin(twoPi * Constants::kGlowPulseFrequencyHz * g_pulseElapsed));
-			const float     scale = Constants::kGlowPulseScaleMin + (Constants::kGlowPulseScaleMax - Constants::kGlowPulseScaleMin) * sine01;
-
-			if (auto* material = g_ringGlowShaderProperty->GetMaterial()) {
-				material->baseColorScale = scale;
+			const RE::NiPointer<RE::NiObject> clone(loaded->Clone());
+			auto*                             cloneNode = clone ? netimmerse_cast<RE::NiNode*>(clone.get()) : nullptr;
+			if (!cloneNode) {
+				logs::warn("Animation::StartWeaponGlow: el clon de \"{}\" no es un NiNode.", modelPath);
+				return {};
 			}
+			return RE::NiPointer<RE::NiNode>(cloneNode);
 		}
 
-		// Giro continuo de "RingGlow" sobre su eje.
-		void TickGlowRingRotation(float a_deltaSeconds)
+		// Shaders y nodo que se animan cada tick, resueltos sobre el clon. A la malla con scroll se le quitan los
+		// controladores horneados: el scroll lo escribe TickGlowUVScroll.
+		void ResolveShaders(Glow& a_glow)
 		{
-			if (!g_ringGlowNode) {
-				return;
-			}
-
-			g_ringRotationElapsed += a_deltaSeconds;
-
-			RE::NiMatrix3 spin;
-			spin.MakeRotation(Constants::kGlowRingRotationSpeed * g_ringRotationElapsed, Constants::kGlowRingRotationAxisLocal);
-			g_ringGlowNode->local.rotate = g_ringGlowBaseLocalRotation * spin;
-		}
-
-		// Generación: descarta esperas de 3D pendientes si el destello se paró o se relevó.
-		std::atomic<std::uint64_t> g_generation{ 0 };
-
-		// Posición de la cabeza del martillo en la mano del jugador, reevaluada cada tick.
-		RE::NiPoint3 GetPlayerHandGlowPosition()
-		{
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			return GetGlowAnchorPosition(player ? ActorUtils::GetWeaponBone(*player) : nullptr);
-		}
-
-		// Mueve el destello cada tick a a_getTargetPosition y avanza su scroll, pulso, giro y fundido. Sustituye el bucle
-		// anterior; lo usan el arranque y los cambios de objetivo (mano o réplica).
-		void FollowTarget(std::function<RE::NiPoint3()> a_getTargetPosition)
-		{
-			Physics::CancelTickLoop(g_tickToken);
-			g_tickToken = Physics::StartTickLoop(g_activeHandle, [getPos = std::move(a_getTargetPosition)](RE::TESObjectREFR& a_refr, float a_deltaSeconds) {
-				const auto pos = getPos();
-				a_refr.SetPosition(pos);
-				Physics::SyncHavok(a_refr, pos, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
-				TickGlowUVScroll(a_deltaSeconds);
-				TickGlowPulse(a_deltaSeconds);
-				TickGlowRingRotation(a_deltaSeconds);
-				TickGlowFade(a_refr, a_deltaSeconds);
-				return true;
-			});
-		}
-
-		// Cierra el destello activo en el acto: bucle, shaders, luz y referencia. Lo usan el relevo de StartWeaponGlow,
-		// el final del fundido de StopWeaponGlow y StopWeaponGlowNow.
-		void TearDown()
-		{
-			Physics::CancelTickLoop(g_tickToken);
-			g_shaderProperty.reset();
-			g_ringGlowShaderProperty.reset();
-			g_ringGlowNode.reset();
-			DetachGlowLight();
-			Physics::DestroyReference(g_activeHandle);
-			g_activeHandle = {};
-		}
-
-		// Con el 3D del destello ya cargado: kKeyframed, shaders y luz, y empieza a seguir la mano.
-		void StartTicking()
-		{
-			auto  ref = g_activeHandle.get();
-			auto* node3D = ref ? ref->Get3D() : nullptr;
-			if (!node3D) {
-				return;
-			}
-
-			node3D->SetMotionType(RE::hkpMotion::MotionType::kKeyframed, true, true, true);
-
-			// Nace a escala 0; el fundido lo sube a 1.
-			g_phase = GlowPhase::kFadingIn;
-			g_phaseElapsed = 0.0f;
-			node3D->local.scale = 0.0f;
-			node3D->world.scale = 0.0f;
-
-			// Shader del scroll, resuelto al cargar el 3D.
-			if (auto* geometry = FindGlowScrollGeometry(node3D)) {
-				g_shaderProperty = RE::NiPointer<RE::BSEffectShaderProperty>(
+			if (auto* geometry = FindGlowScrollGeometry(a_glow.root.get())) {
+				a_glow.scrollShader = RE::NiPointer<RE::BSEffectShaderProperty>(
 					skyrim_cast<RE::BSEffectShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get()));
-				if (!g_shaderProperty) {
+				if (!a_glow.scrollShader) {
 					logs::warn("Animation::WeaponGlow: geometría del destello sin BSEffectShaderProperty -- sin scroll de UV.");
 				}
 			} else {
 				logs::warn("Animation::WeaponGlow: no se encontró la geometría del NiBillboardNode -- sin scroll de UV.");
 			}
 
-			// Shader y nodo de "RingGlow" para el pulso y el giro.
-			g_pulseElapsed = 0.0f;
-			g_ringRotationElapsed = 0.0f;
-			if (auto* ringGlow = node3D->GetObjectByName(Constants::kGlowRingGlowNodeName)) {
-				g_ringGlowNode = RE::NiPointer<RE::NiAVObject>(ringGlow);
-				g_ringGlowBaseLocalRotation = ringGlow->local.rotate;
+			if (a_glow.scrollShader) {
+				std::vector<RE::NiTimeController*> controllers;
+				for (auto* controller = a_glow.scrollShader->GetControllers(); controller; controller = controller->GetNext()) {
+					controllers.push_back(controller);
+				}
+				for (auto* controller : controllers) {
+					a_glow.scrollShader->RemoveController(controller);
+				}
+			}
+
+			if (auto* ringGlow = a_glow.root->GetObjectByName(Constants::kGlowRingGlowNodeName)) {
+				a_glow.ringNode = RE::NiPointer<RE::NiAVObject>(ringGlow);
+				a_glow.ringBaseLocalRotation = ringGlow->local.rotate;
 				if (auto* geometry = ringGlow->AsGeometry()) {
-					g_ringGlowShaderProperty = RE::NiPointer<RE::BSEffectShaderProperty>(
+					a_glow.ringShader = RE::NiPointer<RE::BSEffectShaderProperty>(
 						skyrim_cast<RE::BSEffectShaderProperty*>(geometry->GetGeometryRuntimeData().shaderProperty.get()));
 				}
 			}
-			if (!g_ringGlowNode) {
+			if (!a_glow.ringNode) {
 				logs::warn("Animation::WeaponGlow: no se encontró \"{}\" -- sin pulso de energía ni rotación.", Constants::kGlowRingGlowNodeName);
-			} else if (!g_ringGlowShaderProperty) {
+			} else if (!a_glow.ringShader) {
 				logs::warn("Animation::WeaponGlow: \"{}\" sin BSEffectShaderProperty -- sin pulso de energía (la rotación sí aplica).", Constants::kGlowRingGlowNodeName);
 			}
+		}
 
-			// Luz enganchada al nodo raíz: se mueve con él.
-			AttachGlowLight(ref.get(), node3D);
+		// Luz del formulario como NiPointLight hijo del clon, apagada; RegisterGlowLight la da de alta en la escena.
+		void CreateGlowLight(Glow& a_glow)
+		{
+			auto* lightForm = Forms::weaponGlowLight;
+			if (!lightForm) {
+				return;
+			}
 
-			FollowTarget(GetPlayerHandGlowPosition);
+			auto* niLight = RE::NiPointLight::Create();
+			if (!niLight) {
+				logs::warn("Animation::WeaponGlow: NiPointLight::Create devolvió nullptr -- sin luz real.");
+				return;
+			}
+			a_glow.niLight = RE::NiPointer<RE::NiPointLight>(niLight);
+			a_glow.root->AttachChild(niLight, false);
+
+			auto&       data = niLight->GetLightRuntimeData();
+			RE::NiColor color(lightForm->data.color);
+			const float radius = static_cast<float>(lightForm->data.radius);
+			data.ambient = RE::NiColor();
+			data.diffuse = lightForm->data.flags.any(RE::TES_LIGHT_FLAGS::kNegative) ? -color : color;
+			data.radius = RE::NiPoint3(radius, radius, radius);
+			data.fade = 0.0f;
+			niLight->SetLightAttenuation(radius);
+
+			// Fade pleno tomado del formulario.
+			a_glow.lightTargetFade = lightForm->fade;
+		}
+
+		// Da de alta la luz de a_glow en el ShadowSceneNode como luz dinámica sin sombra. Lo llama TickGlow una vez.
+		void RegisterGlowLight(Glow& a_glow)
+		{
+			auto* shadowSceneNode = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0];
+			auto* lightForm = Forms::weaponGlowLight;
+			if (!a_glow.niLight || a_glow.bsLight || !shadowSceneNode || !lightForm) {
+				return;
+			}
+
+			RE::ShadowSceneNode::LIGHT_CREATE_PARAMS params{};
+			params.dynamic = true;
+			params.shadowLight = false;
+			params.portalStrict = lightForm->data.flags.any(RE::TES_LIGHT_FLAGS::kPortalStrict);
+			params.affectLand = true;
+			params.affectWater = true;
+			params.neverFades = true;
+			params.fov = Constants::kGlowLightFov;
+			params.falloff = Constants::kGlowLightFalloff;
+			params.nearDistance = Constants::kGlowLightNearDistance;
+			params.depthBias = 0.0f;
+			params.sceneGraphIndex = 0;
+			params.restrictedNode = nullptr;
+			params.lensFlareData = lightForm->lensFlare;
+			a_glow.bsLight = RE::NiPointer<RE::BSLight>(shadowSceneNode->AddLight(a_glow.niLight.get(), params));
+		}
+
+		// Suelta el clon de su padre actual.
+		void DetachGlow(Glow& a_glow)
+		{
+			if (auto* current = a_glow.root->parent) {
+				current->DetachChild(a_glow.root.get());
+			}
+			a_glow.parent.reset();
+		}
+
+		// Cuelga el clon de a_parent; la posición guardada se reinicia (es de otro espacio local).
+		void AttachGlow(Glow& a_glow, RE::NiNode& a_parent)
+		{
+			DetachGlow(a_glow);
+			a_parent.AttachChild(a_glow.root.get(), false);
+			a_glow.parent = RE::NiPointer<RE::NiNode>(&a_parent);
+			a_glow.anchorLocal = RE::NiPoint3{};
+			logs::info("Animation::WeaponGlow: destello colgado de \"{}\".", a_parent.name.c_str());
+		}
+
+		// Da de baja la luz y suelta el clon de la escena.
+		void ReleaseGlow(Glow& a_glow)
+		{
+			if (a_glow.bsLight) {
+				if (auto* shadowSceneNode = RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0]) {
+					shadowSceneNode->RemoveLight(a_glow.bsLight);
+				}
+				a_glow.bsLight.reset();
+			}
+			DetachGlow(a_glow);
+		}
+
+		// Muestra u oculta el clon; oculto, la luz se apaga.
+		void SetGlowVisible(Glow& a_glow, bool a_visible)
+		{
+			a_glow.root->GetFlags().set(!a_visible, RE::NiAVObject::Flag::kHidden);
+			if (!a_visible && a_glow.niLight) {
+				a_glow.niLight->GetLightRuntimeData().fade = 0.0f;
+			}
+		}
+
+		// Nodo del que cuelga el destello y raíz bajo la que se busca "Gold".
+		struct AttachPoint
+		{
+			RE::NiNode*     parent{ nullptr };
+			RE::NiAVObject* anchorRoot{ nullptr };
+		};
+
+		// Réplica: el padre de "Gold", que gira con ella. Mano: el hueso "WEAPON", que sigue ahí con el arma oculta o ya
+		// desequipada. Vacío si no hay 3D.
+		AttachPoint ResolveAttachPoint(Glow& a_glow)
+		{
+			if (a_glow.followReplica) {
+				auto  replicaRef = a_glow.replica.get();
+				auto* replicaRoot = replicaRef ? replicaRef->Get3D() : nullptr;
+				if (!replicaRoot) {
+					return {};
+				}
+				auto* gold = replicaRoot->GetObjectByName(Constants::kWeaponHammerHeadNodeName);
+				return { gold && gold->parent ? gold->parent : replicaRoot->AsNode(), replicaRoot };
+			}
+
+			auto  actor = a_glow.actor.get();
+			auto* bone = actor ? ActorUtils::GetWeaponBone(*actor) : nullptr;
+			return { bone ? bone->AsNode() : nullptr, bone };
+		}
+
+		// Diagnóstico, una vez por sesión: si el motor pide su cola de tareas para tocar la escena desde este bucle.
+		void LogTaskQueueOnce()
+		{
+			static bool logged = false;
+			if (!logged) {
+				logged = true;
+				logs::info("Animation::WeaponGlow: ShouldUseTaskQueue en el bucle por fotograma = {}.", RE::TaskQueueInterface::ShouldUseTaskQueue());
+			}
+		}
+
+		// Avanza texCoordOffset[0] cada tick (Constants::kGlowUVScrollSpeed).
+		void TickGlowUVScroll(Glow& a_glow, float a_deltaSeconds)
+		{
+			if (!a_glow.scrollShader) {
+				return;
+			}
+
+			if (auto* material = a_glow.scrollShader->GetMaterial()) {
+				material->texCoordOffset[0].y += Constants::kGlowUVScrollSpeed * a_deltaSeconds;
+			}
+		}
+
+		// Pulso de baseColorScale de "RingGlow" con una onda seno.
+		void TickGlowPulse(Glow& a_glow, float a_deltaSeconds)
+		{
+			if (!a_glow.ringShader) {
+				return;
+			}
+
+			a_glow.pulseElapsed += a_deltaSeconds;
+
+			constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
+			const float     sine01 = 0.5f * (1.0f + std::sin(twoPi * Constants::kGlowPulseFrequencyHz * a_glow.pulseElapsed));
+			const float     scale = Constants::kGlowPulseScaleMin + (Constants::kGlowPulseScaleMax - Constants::kGlowPulseScaleMin) * sine01;
+
+			if (auto* material = a_glow.ringShader->GetMaterial()) {
+				material->baseColorScale = scale;
+			}
+		}
+
+		// Giro continuo de "RingGlow" sobre su eje.
+		void TickGlowRingRotation(Glow& a_glow, float a_deltaSeconds)
+		{
+			if (!a_glow.ringNode) {
+				return;
+			}
+
+			a_glow.ringRotationElapsed += a_deltaSeconds;
+
+			RE::NiMatrix3 spin;
+			spin.MakeRotation(Constants::kGlowRingRotationSpeed * a_glow.ringRotationElapsed, Constants::kGlowRingRotationAxisLocal);
+			a_glow.ringNode->local.rotate = a_glow.ringBaseLocalRotation * spin;
+		}
+
+		// Un tick de a_glow: fundido, nodo del que cuelga, transformación local, luz y shaders. false al terminar (cierre o
+		// fin del fundido de salida), ya fuera de la escena. Lo llama el bucle que arranca StartWeaponGlow.
+		bool TickGlow(Glow& a_glow, float a_deltaSeconds)
+		{
+			const float fade = AdvanceFade(a_glow, a_deltaSeconds);
+			if (a_glow.closeNow || (a_glow.phase == GlowPhase::kFadingOut && fade <= 0.0f)) {
+				ReleaseGlow(a_glow);
+				if (g_active.get() == &a_glow) {
+					g_active.reset();
+				}
+				return false;
+			}
+
+			LogTaskQueueOnce();
+
+			const auto point = ResolveAttachPoint(a_glow);
+			if (!point.parent) {
+				SetGlowVisible(a_glow, false);
+				return true;
+			}
+
+			if (point.parent != a_glow.parent.get()) {
+				AttachGlow(a_glow, *point.parent);
+			}
+			RegisterGlowLight(a_glow);
+
+			// Cabeza del martillo en espacio mundial (sin rotación, con la escala del fundido) pasada al espacio del padre:
+			// el motor la lleva con él al propagar su transformación. Sin "Gold", la última posición relativa.
+			RE::NiTransform world;
+			world.scale = fade;
+			auto* gold = point.anchorRoot->GetObjectByName(Constants::kWeaponHammerHeadNodeName);
+			world.translate = gold ? AnchorFromGold(*gold) : point.parent->world.translate;
+
+			auto local = Math::LocalTransformFromWorld(*a_glow.root, world);
+			if (gold) {
+				a_glow.anchorLocal = local.translate;
+			} else {
+				local.translate = a_glow.anchorLocal;
+			}
+			a_glow.root->local = local;
+
+			SetGlowVisible(a_glow, true);
+			if (a_glow.niLight) {
+				a_glow.niLight->GetLightRuntimeData().fade = a_glow.lightTargetFade * fade;
+			}
+
+			TickGlowUVScroll(a_glow, a_deltaSeconds);
+			TickGlowPulse(a_glow, a_deltaSeconds);
+			TickGlowRingRotation(a_glow, a_deltaSeconds);
+
+			RE::NiUpdateData updateData{};
+			a_glow.root->Update(updateData);
+			return true;
 		}
 	}
 
-	// Posición del nodo "Gold" (cabeza) bajo a_root + offset; sin él (el modelo del arma aún sin cargar,
-	// p. ej. justo tras reequipar), la de a_root.
 	RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root)
 	{
 		if (!a_root) {
@@ -273,10 +416,15 @@ namespace Animation
 		}
 
 		if (auto* goldNode = a_root->GetObjectByName(Constants::kWeaponHammerHeadNodeName)) {
-			return goldNode->world.translate + goldNode->world.rotate * Constants::kGlowAnchorLocalOffset;
+			return AnchorFromGold(*goldNode);
 		}
 
 		return a_root->world.translate;
+	}
+
+	bool IsWeaponGlowNode(const RE::NiAVObject* a_object)
+	{
+		return a_object && std::string_view(a_object->name.c_str()) == Constants::kWeaponGlowRootNodeName;
 	}
 
 	bool StartWeaponGlow(RE::Actor& a_actor, bool a_checkSetting)
@@ -286,69 +434,55 @@ namespace Animation
 			return false;
 		}
 
-		if (g_activeHandle) {
-			if (g_phase != GlowPhase::kFadingOut) {
+		if (g_active) {
+			if (g_active->phase != GlowPhase::kFadingOut) {
 				return false;
 			}
 
-			// El anterior aún se estaba apagando: se cierra ya y se invalida su cierre diferido.
-			++g_generation;
-			TearDown();
+			// El anterior aún se estaba apagando: su bucle lo suelta ya.
+			g_active->closeNow = true;
+			g_active.reset();
 		}
 
-		auto* form = Forms::weaponGlowActivator;
-		if (!form) {
+		auto glow = std::make_shared<Glow>();
+		glow->root = LoadGlowModel();
+		if (!glow->root) {
 			return false;
 		}
+		glow->root->name = RE::BSFixedString(Constants::kWeaponGlowRootNodeName);
+		glow->actor = a_actor.GetHandle();
+		ResolveShaders(*glow);
+		CreateGlowLight(*glow);
 
-		auto ref = a_actor.PlaceObjectAtMe(form, false);
-		if (!ref) {
-			logs::warn("Animation::StartWeaponGlow: PlaceObjectAtMe devolvió nullptr.");
-			return false;
-		}
-
-		// Sin activación: el jugador no puede recogerlo.
-		ref->SetActivationBlocked(true);
-
-		g_activeHandle = RE::ObjectRefHandle(ref.get());
-
-		// Descarta la espera si entretanto el destello se apagó o lo relevó otro.
-		const auto generation = ++g_generation;
-		Physics::WaitFor3D(g_activeHandle, "el destello", [generation](RE::ObjectRefHandle a_handle) {
-			if (a_handle && g_generation.load() == generation) {
-				StartTicking();
-			}
+		// Desde el fotograma siguiente: el primer tick lo cuelga de la mano a escala 0.
+		(void)Physics::StartTickLoop(a_actor.GetHandle(), [glow](RE::TESObjectREFR&, float a_deltaSeconds) {
+			return TickGlow(*glow, a_deltaSeconds);
 		});
+
+		g_active = std::move(glow);
 		return true;
 	}
 
 	void RetargetWeaponGlowToReplica(RE::ObjectRefHandle a_handle)
 	{
-		if (!g_activeHandle) {
+		if (!g_active) {
 			return;
 		}
 
-		auto  replica = a_handle.get();
-		auto* root = replica ? replica->Get3D() : nullptr;
-		if (!replica || !root) {
+		auto replica = a_handle.get();
+		if (!replica || !replica->Get3D()) {
 			logs::warn("Animation::RetargetWeaponGlowToReplica: réplica sin 3D todavía.");
 			return;
 		}
 
-		// Si la réplica desaparece, se queda en su última posición.
-		FollowTarget([handle = a_handle, lastPosition = GetGlowAnchorPosition(root)]() mutable {
-			auto  replicaRef = handle.get();
-			auto* replicaRoot = replicaRef ? replicaRef->Get3D() : nullptr;
-			if (replicaRoot) {
-				lastPosition = GetGlowAnchorPosition(replicaRoot);
-			}
-			return lastPosition;
-		});
+		// El siguiente tick lo cuelga de la réplica.
+		g_active->replica = a_handle;
+		g_active->followReplica = true;
 	}
 
 	void RetargetWeaponGlowToActor(RE::Actor& a_actor)
 	{
-		if (!g_activeHandle) {
+		if (!g_active) {
 			return;
 		}
 
@@ -357,33 +491,30 @@ namespace Animation
 			return;
 		}
 
-		FollowTarget(GetPlayerHandGlowPosition);
+		// El siguiente tick lo cuelga de la mano.
+		g_active->actor = a_actor.GetHandle();
+		g_active->replica = {};
+		g_active->followReplica = false;
 	}
 
 	void StopWeaponGlow()
 	{
-		if (!g_activeHandle || g_phase == GlowPhase::kFadingOut) {
+		if (!g_active || g_active->phase == GlowPhase::kFadingOut) {
 			// Sin destello o ya apagándose.
 			return;
 		}
 
-		// Fundido de salida y borrado pasado Constants::kGlowFadeDuration (si nadie arrancó otro).
-		g_phase = GlowPhase::kFadingOut;
-		g_phaseElapsed = 0.0f;
-
-		const auto generation = ++g_generation;
-		(void)Scheduler::After(Constants::kGlowFadeDuration, [generation]() {
-			if (g_generation.load() == generation) {
-				TearDown();
-			}
-		});
+		// Fundido de salida; al terminar, su bucle lo suelta.
+		g_active->phase = GlowPhase::kFadingOut;
+		g_active->phaseElapsed = 0.0f;
 	}
 
 	void StopWeaponGlowNow()
 	{
-		// Invalida una espera del 3D o un cierre diferido pendientes.
-		++g_generation;
-		TearDown();
+		if (g_active) {
+			g_active->closeNow = true;
+			g_active.reset();
+		}
 	}
 
 	void RemoveStrayWeaponGlows()
@@ -398,10 +529,7 @@ namespace Animation
 		std::vector<RE::ObjectRefHandle> strays;
 		tes->ForEachReference([&](RE::TESObjectREFR* a_ref) {
 			if (a_ref && !a_ref->IsDeleted() && a_ref->GetBaseObject() == form) {
-				const RE::ObjectRefHandle handle(a_ref);
-				if (handle != g_activeHandle) {
-					strays.push_back(handle);
-				}
+				strays.emplace_back(a_ref);
 			}
 			return RE::BSContainer::ForEachResult::kContinue;
 		});

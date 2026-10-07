@@ -90,8 +90,9 @@ namespace Animation
 		// Aplica el offset de anclaje a la posición recibida.
 		const RE::NiPoint3 anchoredPosition = a_currentPosition + anchorWorldOffset;
 
-		const float distanceThisTick = history.empty() ? 0.0f : (anchoredPosition - history.back()).Length();
-		history.emplace_back(anchoredPosition);
+		const float distanceThisTick = lastPosition ? (anchoredPosition - *lastPosition).Length() : 0.0f;
+		previousPosition = lastPosition;
+		lastPosition = anchoredPosition;
 		totalDistance += distanceThisTick;
 
 		auto* fadeNode = particle->particleObject->AsFadeNode();
@@ -143,21 +144,17 @@ namespace Animation
 			return;
 		}
 
-		// Con menos de 2 muestras se aparcan los segmentos.
-		if (history.size() < 2) {
+		// Sin posición anterior (primera muestra) se aparcan los segmentos.
+		if (!previousPosition) {
 			RE::NiTransform parkedTransform;
-			parkedTransform.translate = history.back();
+			parkedTransform.translate = *lastPosition;
 			parkedTransform.scale = 0.0f;
 			ParkAllSegments(*trailRootNode, parkedTransform);
 			return;
 		}
 
-		// Últimas dos muestras del historial.
-		auto p2It = history.rbegin();
-		auto p1It = p2It + 1;
-
-		const auto& ip1 = *p1It;
-		const auto& ip2 = *p2It;
+		const auto& ip1 = *previousPosition;
+		const auto& ip2 = *lastPosition;
 
 		// Dirección de avance de los segmentos de este tick (ip2-ip1, negada por el sentido del NIF).
 		const auto segmentAxis = -Math::NormalizedOr(ip2 - ip1, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
@@ -254,7 +251,7 @@ namespace Animation
 		// Segmentos sin usar: en la posición actual a escala 0.
 		if (currentBoneIdx < segmentCount) {
 			RE::NiTransform worldTransform;
-			worldTransform.translate = history.back();
+			worldTransform.translate = *lastPosition;
 
 			Math::SetRotationFromForwardUp(worldTransform.rotate, segmentAxis, upReference, roll);
 			worldTransform.scale = 0.0f;

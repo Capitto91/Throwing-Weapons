@@ -1,5 +1,5 @@
-// Destello con luz (ThorMjolnirLight.nif + TESObjectLIGH) que sigue a la mano o a la réplica
-// desde Lanzar hasta el final del Atrape; un solo Activator por ciclo.
+// Destello con luz (clon de ThorMjolnirLight.nif + NiPointLight con los datos del TESObjectLIGH) colgado de la mano o de
+// la réplica desde Lanzar hasta el final del Atrape; uno activo a la vez.
 
 #pragma once
 
@@ -9,27 +9,30 @@ namespace Animation
 	// La usan el destello y Animation::SpawnImpactVFX.
 	RE::NiPoint3 GetGlowAnchorPosition(RE::NiAVObject* a_root);
 
-	// Coloca el destello siguiendo el hueso "WEAPON" de a_actor. true si colocó uno nuevo.
+	// true si a_object es el nodo raíz de un destello. Lo usa WeaponAnimation para saltárselo entre los hijos del hueso
+	// "WEAPON".
+	bool IsWeaponGlowNode(const RE::NiAVObject* a_object);
+
+	// Cuelga un destello del hueso "WEAPON" de a_actor. true si creó uno nuevo.
 	// Lo llaman WeaponManager::BeginThrowAnimation y PowerAttackVFX (a_checkSetting=false).
 	bool StartWeaponGlow(RE::Actor& a_actor, bool a_checkSetting = true);
 
-	// Pasa a seguir la réplica a_handle; si desaparece, se queda en su última posición.
+	// Pasa a colgar de la réplica a_handle; si desaparece, se oculta.
 	// Lo llama WeaponManager::ThrowWeapon al crearse la réplica.
 	void RetargetWeaponGlowToReplica(RE::ObjectRefHandle a_handle);
 
-	// Vuelve a seguir el hueso "WEAPON" de a_actor.
+	// Vuelve a colgar del hueso "WEAPON" de a_actor.
 	// Lo llama WeaponManager::ReequipAndReset durante el Atrape.
 	void RetargetWeaponGlowToActor(RE::Actor& a_actor);
 
-	// Apaga el destello con fundido y lo borra.
+	// Apaga el destello con fundido; al terminar se retira de la escena.
 	// Lo llaman WeaponManager al terminar el Atrape o al recuperar sin animación, y PowerAttackVFX.
 	void StopWeaponGlow();
 
-	// Cierra el destello en el acto, sin fundido. Lo llama WeaponManager::ResetToInHand al cargar partida: el de antes
-	// de la carga ya no existe, pero su handle impediría encender otro.
+	// Retira el destello sin fundido. Lo llama WeaponManager::ResetToInHand al cargar partida.
 	void StopWeaponGlowNow();
 
-	// Borra de las celdas cargadas los destellos que no son el activo (guardados en la partida a mitad de un ciclo; el
-	// .esp no coloca ninguno). Lo llama EventManager al cerrarse cada pantalla de carga.
+	// Borra de las celdas cargadas los Activator del destello guardados en la partida (ni el .esp ni el plugin colocan
+	// ninguno). Lo llama EventManager al cerrarse cada pantalla de carga.
 	void RemoveStrayWeaponGlows();
 }

@@ -1,10 +1,11 @@
 // Estela de rayo (Constants::kTrailEffectPath, BSTempEffectParticle) cuyos huesos se recolocan
-// cada tick sobre el historial de posiciones de la réplica. Basado en la estela de Precision.
+// cada tick entre las dos últimas posiciones de la réplica. Basado en la estela de Precision.
 
 #pragma once
 
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <vector>
 
 namespace Animation
@@ -31,12 +32,15 @@ namespace Animation
 		// Lo usa Return::BeginReturnMovement durante el enderezado final.
 		void SetRoll(float a_roll);
 
-		// Añade a_currentPosition al historial y recoloca los segmentos según la distancia recorrida.
+		// Guarda a_currentPosition como última posición y recoloca los segmentos según la distancia recorrida.
 		void Update(const RE::NiPoint3& a_currentPosition, float a_deltaSeconds);
 
 	private:
 		RE::NiPointer<RE::BSTempEffectParticle> particle;
-		std::vector<RE::NiPoint3>               history;
+
+		// Posiciones del tick anterior y del actual: de ellas salen el avance y la dirección de los segmentos nuevos.
+		std::optional<RE::NiPoint3> previousPosition;
+		std::optional<RE::NiPoint3> lastPosition;
 
 		// Huesos de Constants::kTrailRootNodeName ordenados por nombre ("Bone001"...).
 		std::vector<RE::NiPointer<RE::NiAVObject>> orderedSegments;
